@@ -318,7 +318,7 @@ function buildQuickThemeRow() {
 
   row.innerHTML = `
     <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">✨ Quick Theme Builder</div>
-    <div class="ci-generic-desc" style="margin-bottom: 12px;">Instantly build a custom theme! Choose a background image, and we'll automatically make the client transparent and apply frosted glass to panels.</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Instantly build a custom theme! Choose a background image, and we'll automatically make the client transparent and apply frosted glass effects. Shows splash art elegantly in a glass card.</div>
 
     <div class="ci-inline-row" style="margin-bottom: 10px;">
       <div class="ci-field" style="grid-column: span 2;"><div class="ci-label">1. Background Image URL</div>
@@ -333,12 +333,12 @@ function buildQuickThemeRow() {
           <input class="ci-input" id="qt-dim-text" type="text" value="0.3" style="width:40px;" readonly>
         </div>
       </div>
-      <div class="ci-field"><div class="ci-label">3. Frosted Glass Blur</div>
+      <div class="ci-field"><div class="ci-label">3. Glass Card Blur</div>
         <select class="ci-select" id="qt-glass-blur">
           <option value="none">None</option>
           <option value="4px">Light (4px)</option>
-          <option value="8px" selected>Medium (8px)</option>
-          <option value="16px">Heavy (16px)</option>
+          <option value="12px" selected>Medium (12px)</option>
+          <option value="20px">Heavy (20px)</option>
         </select>
       </div>
     </div>
@@ -354,8 +354,8 @@ function buildQuickThemeRow() {
       <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
         <input type="checkbox" id="qt-hide-riot" checked style="accent-color:#785a28;cursor:pointer;margin-top:2px;">
         <div style="display:flex;flex-direction:column;">
-            <span style="font-size:11px;color:#a0b4c8;font-weight:600;">Hide Riot's default graphics</span>
-            <span style="font-size:9px;color:#4a6070;">Hides map backgrounds, smoke effects, and default overlays.</span>
+            <span style="font-size:11px;color:#a0b4c8;font-weight:600;">Hide other UI backgrounds</span>
+            <span style="font-size:9px;color:#4a6070;">Hides map backgrounds, overlays, and default graphics (keeps splash art visible).</span>
         </div>
       </label>
     </div>
@@ -387,13 +387,14 @@ function buildQuickThemeRow() {
     }
 
     const lines = [];
-    lines.push(`/* ========================================= */`);
-    lines.push(`/* QUICK THEME GENERATOR                     */`);
-    lines.push(`/* ========================================= */`);
+    lines.push(`/* =========================================== */`);
+    lines.push(`/* QUICK THEME GENERATOR — PREMIUM EDITION      */`);
+    lines.push(`/* =========================================== */`);
     lines.push(`:root { --qt-bg: url('${bgUrl}'); }`);
     lines.push(``);
 
-    lines.push(`/* Apply Background to Root and Specific Overlay Screens */`);
+    lines.push(`/* === BACKGROUND LAYER === */`);
+    lines.push(`/* Apply background to all viewports */`);
     lines.push(
       `#rcp-fe-viewport-root, .rcp-fe-lol-game-in-progress, .rcp-fe-lol-pre-end-of-game, .rcp-fe-lol-reconnect, .rcp-fe-lol-waiting-for-stats, .champion-select, .lol-loading-screen-container.lol-loading-screen-default-state, .reconnect-container {`,
     );
@@ -406,13 +407,74 @@ function buildQuickThemeRow() {
 
     if (parseFloat(dim) > 0) {
       lines.push(``);
-      lines.push(`/* Background Dim Overlay */`);
+      lines.push(`/* === BACKGROUND DIM OVERLAY === */`);
       lines.push(`#rcp-fe-viewport-root::before {`);
       lines.push(`  content: ''; position: absolute; inset: 0;`);
       lines.push(`  background: rgba(0, 0, 0, ${dim});`);
       lines.push(`  pointer-events: none; z-index: 0;`);
       lines.push(`}`);
     }
+
+    lines.push(``);
+    lines.push(`/* === SPLASH ART GLASS CARD (Champion Select) === */`);
+    lines.push(`/* Show splash images */`);
+    lines.push(`img.lol-uikit-background-switcher-image,`);
+    lines.push(`img.champion-background-image,`);
+    lines.push(`div.skin-selection-thumbnail img,`);
+    lines.push(`div.portrait-icon img {`);
+    lines.push(`  opacity: 1 !important;`);
+    lines.push(`  display: block !important;`);
+    lines.push(`  visibility: visible !important;`);
+    lines.push(`}`);
+
+    lines.push(``);
+    lines.push(`/* Frame the splash art in a minimalist glossy glass card */`);
+    lines.push(`.champion-select .champion-splash-background {`);
+    lines.push(`  position: absolute !important;`);
+    lines.push(`  display: block !important;`);
+    lines.push(`  width: 60% !important;`);
+    lines.push(`  height: 75% !important;`);
+    lines.push(`  top: 10% !important;`);
+    lines.push(`  left: 50% !important;`);
+    lines.push(`  transform: translateX(-50%) !important;`);
+    lines.push(
+      `  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(5,5,10,0.4) 100%) !important;`,
+    );
+    if (blur !== "none") {
+      lines.push(`  backdrop-filter: blur(${blur}) saturate(110%) !important;`);
+    }
+    lines.push(`  border: 1px solid rgba(255,255,255,0.1) !important;`);
+    lines.push(`  border-top: 1px solid rgba(255,255,255,0.2) !important;`);
+    lines.push(`  border-radius: 12px !important;`);
+    lines.push(
+      `  box-shadow: 0 24px 48px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.05) !important;`,
+    );
+    lines.push(`  z-index: 0 !important;`);
+    lines.push(`  overflow: hidden !important;`);
+    lines.push(`  -webkit-mask-image: none !important;`);
+    lines.push(`}`);
+
+    lines.push(``);
+    lines.push(`/* Champion splash positioning inside the card */`);
+    lines.push(`.champion-select .background-vignette-container,`);
+    lines.push(`.champion-select .champ-select-bg {`);
+    lines.push(`  position: absolute !important;`);
+    lines.push(`  width: 100% !important;`);
+    lines.push(`  height: 100% !important;`);
+    lines.push(`  inset: 0 !important;`);
+    lines.push(`  background: transparent !important;`);
+    lines.push(`}`);
+
+    lines.push(``);
+    lines.push(`.champion-select .champ-select-bg img {`);
+    lines.push(`  width: 100% !important;`);
+    lines.push(`  height: 100% !important;`);
+    lines.push(`  object-fit: cover !important;`);
+    lines.push(`  object-position: top center !important;`);
+    lines.push(
+      `  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%) !important;`,
+    );
+    lines.push(`}`);
 
     if (doTrans) {
       const transScreens = [
@@ -460,7 +522,7 @@ function buildQuickThemeRow() {
         ".rcp-fe-lol-tft-application-background",
       ];
       lines.push(``);
-      lines.push(`/* Deep Transparency Sweep */`);
+      lines.push(`/* === DEEP TRANSPARENCY SWEEP === */`);
       lines.push(`${transScreens.join(",\n")} {`);
       lines.push(`  background: transparent !important;`);
       lines.push(`  background-image: none !important;`);
@@ -469,32 +531,11 @@ function buildQuickThemeRow() {
       lines.push(`}`);
     }
 
-    if (blur !== "none") {
-      const glassPanels = [
-        ".parties-game-info-panel-content",
-        ".v2-parties-invite-info-panel",
-        ".parties-invite-info-panel",
-        ".ready-check-root-element",
-        ".lol-social-sidebar",
-        "#activity-center .activity-center__tabs_scrollable",
-        ".selection-button-image",
-      ];
-      lines.push(``);
-      lines.push(`/* Frosted Glass Panels */`);
-      lines.push(`${glassPanels.join(",\n")} {`);
-      lines.push(`  backdrop-filter: blur(${blur}) !important;`);
-      lines.push(`  background: rgba(0, 0, 0, 0.25) !important;`);
-      lines.push(`  border-radius: 6px !important;`);
-      lines.push(`}`);
-    }
-
     if (doHide) {
       const hiddenElements = [
         ".bg-current img",
         ".parties-background img",
         ".postgame-background-image img",
-        "img.lol-uikit-background-switcher-image",
-        "img.champion-background-image",
         ".style-profile-background-image img",
         ".style-profile-masked-image img",
         ".background-edge-backlight",
@@ -514,7 +555,8 @@ function buildQuickThemeRow() {
         'img[src*="ready-check-background.png"]',
       ];
       lines.push(``);
-      lines.push(`/* Hide Overlapping Riot Graphics */`);
+      lines.push(`/* === HIDE OTHER UI GRAPHICS === */`);
+      lines.push(`/* NOTE: Splash art is kept visible above */`);
       lines.push(`${hiddenElements.join(",\n")} {`);
       lines.push(`  display: none !important;`);
       lines.push(`  opacity: 0 !important;`);
@@ -523,10 +565,29 @@ function buildQuickThemeRow() {
       lines.push(`}`);
     }
 
+    if (blur !== "none") {
+      const glassPanels = [
+        ".parties-game-info-panel-content",
+        ".v2-parties-invite-info-panel",
+        ".parties-invite-info-panel",
+        ".ready-check-root-element",
+        ".lol-social-sidebar",
+        "#activity-center .activity-center__tabs_scrollable",
+        ".selection-button-image",
+      ];
+      lines.push(``);
+      lines.push(`/* === SUPPLEMENTAL: FROSTED GLASS PANELS === */`);
+      lines.push(`${glassPanels.join(",\n")} {`);
+      lines.push(`  backdrop-filter: blur(${blur}) !important;`);
+      lines.push(`  background: rgba(0, 0, 0, 0.25) !important;`);
+      lines.push(`  border-radius: 6px !important;`);
+      lines.push(`}`);
+    }
+
     sendToRaw(lines.join("\n"));
     flashMessage(
       row.querySelector("#qt-flash"),
-      "Theme Applied Successfully! ✓",
+      "✨ Premium Theme Applied! ✓",
       3000,
     );
   });
@@ -1628,7 +1689,7 @@ ${sel}::before {
 }
 
 // ROOT VIEWPORT OVERLAY (::before on #rcp-fe-viewport-root)
-// Adds a semi-transparent colour wash behind everything  darken/tint the client when using a custom background image.
+// Adds a semi-transparent colour wash to darken/tint the client when using a custom background image.
 function buildRootOverlayRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
@@ -1710,7 +1771,7 @@ function buildRootOverlayRow() {
 }
 
 // GLASS PANEL (targeted backdrop-filter)
-// Apply blur + optional dark background to any panel the frosted glass look
+// Apply blur + optional dark background to give any panel the frosted glass look.
 function buildGlassPanelRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
@@ -1864,7 +1925,7 @@ function buildGlassPanelRow() {
 
 // MASK / FADE EDGE
 // -webkit-mask / mask gradients
-// banners, party containers etc. to fade elements into transparency.
+// Used on banners, party containers etc. to fade elements into transparency.
 function buildMaskFadeRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
@@ -2733,7 +2794,6 @@ function buildBgReplaceControl(cls, propObj, notBadge) {
       "background-repeat": "no-repeat",
     });
     sendToRaw();
-    //switchTab('raw'); scrollRawToBottom();
   });
   inner.appendChild(urlInput);
   inner.appendChild(sizeSelect);

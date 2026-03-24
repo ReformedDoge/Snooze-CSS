@@ -3,6 +3,7 @@ import { Storage } from "./storage.js";
 import { escHtml } from "./utils.js";
 import { updateCssString } from "./css-parser.js";
 import { switchTab } from "./modal.js";
+import { applyCSSToAllRoots } from "./shadow-manager.js";
 
 export function sendToRaw(snippet = null) {
   if (snippet) appendToRaw(snippet);
@@ -721,7 +722,6 @@ function acConfirmItem(el) {
   if (type === "prop") {
     finalValue += ": ";
   }
-  //Add ";" for values? meh
 
   textareaEl.value =
     textareaEl.value.substring(0, insertStart) +
@@ -799,13 +799,7 @@ function flash(msg, color = "#4caf82") {
 function applyCSS() {
   if (!textareaEl) return;
   const css = resolveAssetUrls(textareaEl.value.trim());
-  let el = document.getElementById("__Snooze-CSS");
-  if (!el) {
-    el = document.createElement("style");
-    el.id = "__Snooze-CSS";
-    document.head.appendChild(el);
-  }
-  el.textContent = css;
+  applyCSSToAllRoots(css);
   flash("Applied ✓");
 }
 
@@ -845,7 +839,6 @@ function clearCSS() {
   if (!textareaEl) return;
   textareaEl.value = "";
   updateLineCount();
-  const el = document.getElementById("__Snooze-CSS");
-  if (el) el.textContent = "";
+  applyCSSToAllRoots("");
   flash("Cleared", "#785a28");
 }

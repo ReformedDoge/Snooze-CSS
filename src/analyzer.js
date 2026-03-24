@@ -4,7 +4,7 @@ import { sendToRaw } from './raw.js';
 import { copyText }  from './utils.js';
 
 // CLIENT ARCHITECTURE 
-// These are the fixed structural zones of the League client.
+// These are the static structural zones of the League client.
 // The main viewport swaps content; everything else is persistent.
 
 const CLIENT_ZONES = [

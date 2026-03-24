@@ -44,7 +44,6 @@ export function createModal() {
 
   const backdrop = document.createElement("div");
   backdrop.id = "css-injector-backdrop";
-  //backdrop.style.pointerEvents = 'auto';
 
   const modal = document.createElement("div");
   modal.id = "css-injector-modal";

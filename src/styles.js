@@ -55,7 +55,7 @@ export const STYLES = `
     }
 
     ::-webkit-scrollbar-corner {
-      background: #060e1a; /* Fixes the square where vertical and horizontal tracks meet */
+      background: #060e1a;
     }
 
     #css-injector-modal::before {
