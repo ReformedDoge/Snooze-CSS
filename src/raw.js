@@ -10,6 +10,24 @@ export function sendToRaw(snippet = null) {
   switchTab("raw");
   scrollRawToBottom();
 }
+
+export function replaceOrAppendBlock(snippet, startMarker, endMarker) {
+  if (!textareaEl) return;
+  const val = textareaEl.value;
+  const startIdx = val.indexOf(startMarker);
+  if (startIdx !== -1) {
+    const endIdx = val.indexOf(endMarker, startIdx);
+    if (endIdx !== -1) {
+      textareaEl.value = val.substring(0, startIdx) + snippet + val.substring(endIdx + endMarker.length);
+      updateLineCount();
+      updateScrollBtns();
+      switchTab("raw");
+      scrollRawToBottom();
+      return;
+    }
+  }
+  sendToRaw(snippet);
+}
 let textareaEl = null;
 let tabSize = 2; // visual width of \t
 let acDropdown = null; // single reused autocomplete dropdown element

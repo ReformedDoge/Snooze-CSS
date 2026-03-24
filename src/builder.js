@@ -1,5 +1,5 @@
 import { CATALOG } from "./catalog.js";
-import { setCssProperty, setCssBatch, sendToRaw } from "./raw.js";
+import { setCssProperty, setCssBatch, sendToRaw, replaceOrAppendBlock } from "./raw.js";
 import { setRefreshCallback } from "./settings.js";
 import { rgbToHex, flashMessage } from "./utils.js";
 import { getBackdrop } from "./modal.js";
@@ -386,10 +386,11 @@ function buildQuickThemeRow() {
       return;
     }
 
+    const START_MARKER = '/* =========================================== */\n/* QUICK THEME GENERATOR — PREMIUM EDITION      */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF QUICK THEME                          */\n/* =========================================== */';
+
     const lines = [];
-    lines.push(`/* =========================================== */`);
-    lines.push(`/* QUICK THEME GENERATOR — PREMIUM EDITION      */`);
-    lines.push(`/* =========================================== */`);
+    lines.push(START_MARKER);
     lines.push(`:root { --qt-bg: url('${bgUrl}'); }`);
     lines.push(``);
 
@@ -584,7 +585,9 @@ function buildQuickThemeRow() {
       lines.push(`}`);
     }
 
-    sendToRaw(lines.join("\n"));
+    lines.push(``);
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
     flashMessage(
       row.querySelector("#qt-flash"),
       "✨ Premium Theme Applied! ✓",
@@ -839,8 +842,15 @@ function buildHoverRevealRow() {
     });
 
     if (!lines.length) return;
+
+    const START_MARKER = '/* =========================================== */\n/* HOVER-TO-REVEAL                             */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF HOVER-TO-REVEAL                      */\n/* =========================================== */';
+    lines.unshift(START_MARKER);
+    lines.push(``);
+    lines.push(END_MARKER);
+
     flashMessage(row.querySelector("#ci-flash-htr"));
-    sendToRaw(lines.join("\n"));
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
   });
 
   return row;
@@ -1024,8 +1034,15 @@ function buildMinimalModeRow() {
     });
 
     if (!lines.length) return;
+
+    const START_MARKER = '/* =========================================== */\n/* MINIMAL SWEEP                               */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF MINIMAL SWEEP                        */\n/* =========================================== */';
+    lines.unshift(START_MARKER);
+    lines.push(``);
+    lines.push(END_MARKER);
+
     flashMessage(row.querySelector("#ci-flash-min"));
-    sendToRaw(lines.join("\n"));
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
   });
 
   return row;
@@ -1124,8 +1141,17 @@ function buildCssVarsRow() {
     if (customName && customVal) lines.push(`  ${customName}: ${customVal};`);
 
     if (!lines.length) return;
+
+    const START_MARKER = '/* =========================================== */\n/* CSS VARIABLE PALETTE                        */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF CSS VARIABLE PALETTE                 */\n/* =========================================== */';
+    const payload = [
+      START_MARKER,
+      `:root {\n${lines.join("\n")}\n}`,
+      END_MARKER
+    ].join("\n");
+
     flashMessage(row.querySelector("#ci-flash-cssvar"));
-    sendToRaw(`:root {\n${lines.join("\n")}\n}`);
+    replaceOrAppendBlock(payload, START_MARKER, END_MARKER);
   });
 
   return row;
@@ -1396,8 +1422,15 @@ function buildHueRotateRow() {
     }
 
     if (!lines.length) return;
+
+    const START_MARKER = '/* =========================================== */\n/* GLOBAL HUE ROTATE                           */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF GLOBAL HUE ROTATE                    */\n/* =========================================== */';
+    lines.unshift(START_MARKER);
+    lines.push(``);
+    lines.push(END_MARKER);
+
     flashMessage(row.querySelector("#ci-flash-hue"));
-    sendToRaw(lines.join("\n"));
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
   });
 
   return row;
@@ -1681,8 +1714,15 @@ ${sel}::before {
     );
 
     // If content inside needs to be above the ::before, generate z-index rules
+
+    const START_MARKER = '/* =========================================== */\n/* SCREEN TINT OVERLAY                         */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF SCREEN TINT OVERLAY                  */\n/* =========================================== */';
+    lines.unshift(START_MARKER);
+    lines.push(``);
+    lines.push(END_MARKER);
+
     flashMessage(row.querySelector("#ci-flash-tint"));
-    sendToRaw(lines.join("\n\n"));
+    replaceOrAppendBlock(lines.join("\n\n"), START_MARKER, END_MARKER);
   });
 
   return row;
@@ -1764,8 +1804,13 @@ function buildRootOverlayRow() {
       ";\n  pointer-events: none;\n  z-index: " +
       z +
       ";\n}";
+
+    const START_MARKER = '/* =========================================== */\n/* ROOT VIEWPORT OVERLAY                       */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF ROOT VIEWPORT OVERLAY                */\n/* =========================================== */';
+    const payload = [START_MARKER, css, END_MARKER].join("\n\n");
+
     flashMessage(row.querySelector("#ci-flash-rovl"));
-    sendToRaw(css);
+    replaceOrAppendBlock(payload, START_MARKER, END_MARKER);
   });
   return row;
 }
@@ -1916,8 +1961,13 @@ function buildGlassPanelRow() {
       return sel + " {\n" + props + "\n}";
     });
 
+    const START_MARKER = '/* =========================================== */\n/* FROSTED GLASS PANELS                        */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF FROSTED GLASS PANELS                 */\n/* =========================================== */';
+    lines.unshift(START_MARKER);
+    lines.push(END_MARKER);
+
     flashMessage(row.querySelector("#ci-flash-gp"));
-    sendToRaw(lines.join("\n\n"));
+    replaceOrAppendBlock(lines.join("\n\n"), START_MARKER, END_MARKER);
   });
 
   return row;
@@ -2055,8 +2105,13 @@ function buildMaskFadeRow() {
       return sel + " {\n" + props + "}";
     });
 
+    const START_MARKER = '/* =========================================== */\n/* MASK FADE EDGES                             */\n/* =========================================== */';
+    const END_MARKER = '/* =========================================== */\n/* END OF MASK FADE EDGES                      */\n/* =========================================== */';
+    lines.unshift(START_MARKER);
+    lines.push(END_MARKER);
+
     flashMessage(row.querySelector("#ci-flash-mf"));
-    sendToRaw(lines.join("\n\n"));
+    replaceOrAppendBlock(lines.join("\n\n"), START_MARKER, END_MARKER);
   });
 
   return row;
