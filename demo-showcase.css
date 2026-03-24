@@ -1,0 +1,660 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+/* 
+"\Pengu Loader\plugins\Snooze-CSS\assets\demo - assets\theme's asset folder"
+./assets/demo/maki.jpg 
+https://i.ibb.co/yFNk6Xgg/G-Ro-VL1-WYAA2h1-Q.jpg
+https://images.steamusercontent.com/ugc/879748616164108107/8F44EE6DAFB4F4E2469AA4947059A09E1A78E93C/
+*/
+:root {
+	--font-display: 'Inter', sans-serif !important;
+	--font-body: 'Inter', sans-serif !important;
+	--background-image: url('https://images.steamusercontent.com/ugc/879748616164108107/8F44EE6DAFB4F4E2469AA4947059A09E1A78E93C/');
+}
+
+img.lol-uikit-background-switcher-image,
+img.champion-background-image,
+div.skin-selection-thumbnail img,
+div.portrait-icon img {
+	opacity: 1 !important;
+	display: block !important;
+}
+
+#rcp-fe-viewport-root {
+	background-image: var(--background-image) !important;
+	background-size: cover !important;
+	background-position: center center !important;
+	background-repeat: no-repeat !important;
+	isolation: isolate;
+}
+
+#rcp-fe-viewport-root::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: rgba(0,0,0,0.30);
+	/* global dim*/
+  pointer-events: none;
+	z-index: 0;
+}
+
+.rcp-fe-lol-game-in-progress,
+.rcp-fe-lol-pre-end-of-game,
+.rcp-fe-lol-reconnect,
+.rcp-fe-lol-waiting-for-stats,
+.champion-select,
+.lol-loading-screen-container.lol-loading-screen-default-state {
+	background-color: transparent !important;
+	background-image: var(--background-image) !important;
+	background-size: cover !important;
+	background-position: center center !important;
+	background-repeat: no-repeat !important;
+}
+
+.postgame-background-image {
+	background-color: transparent !important;
+	background-image: var(--background-image) !important;
+	background-size: cover !important;
+	background-position: center center !important;
+	background-repeat: no-repeat !important;
+	filter: brightness(0.5) !important;
+}
+
+.collections-routes,
+.collections-application {
+	background: transparent !important;
+	background-image: none !important;
+}
+
+.parties-game-info-panel-content,
+.v2-parties-invite-info-panel,
+.parties-invite-info-panel {
+	backdrop-filter: blur(8px) !important;
+	background: rgba(0, 0, 0, 0.25) !important;
+	border-radius: 6px;
+}
+
+body,
+html,
+.parties-view,
+.parties-background,
+.parties-background-mask,
+.parties-content,
+.parties-lower-section,
+.lol-social-sidebar,
+.rcp-fe-viewport-sidebar,
+.store-backdrop,
+.__rcp-fe-lol-store,
+.loot-backdrop,
+.loot-backdrop.background-static,
+.loot-loading-screen,
+.collections-application,
+.yourshop-root,
+.clash-root-background,
+.clash-root-background-landing,
+.personalized-offers-root,
+.champ-select-bg-darken,
+.stats-backdrop,
+.match-details-root,
+.cdp-backdrop-component,
+.cdp-backdrop:after,
+.cdp-backdrop.progression:after,
+.rcp-fe-lol-event-shop-application,
+.event-shop-index,
+.event-shop-page-header,
+.event-shop-progression,
+.event-shop-progression-info {
+	background: transparent !important;
+	backdrop-filter: none !important;
+	filter: none !important;
+}
+
+/* .lol-uikit-background-switcher-image,
+ */.bg-current img,
+.parties-background img,
+/* .background-vignette-container img,  */
+.postgame-background-image img {
+	opacity: 0 !important;
+}
+
+/* 1- Force the splash image to be visible */
+.champion-splash-background img,
+.champ-select-bg img,
+.lol-uikit-background-switcher-image {
+	opacity: 1 !important;
+	display: block !important;
+	visibility: visible !important;
+}
+
+/* 2- The Dark Glass Card Container */
+.champion-select .champion-splash-background {
+	position: absolute !important;
+	display: block !important;
+	/* Size and Center */
+  width: 60% !important;
+	height: 75% !important;
+	top: 10% !important;
+	left: 50% !important;
+	transform: translateX(-50%) !important;
+	/* FROSTED GLASS EFFECT: Blurs and darkens the background behind the card */
+  background: linear-gradient(to bottom, rgba(5, 5, 5, 0.4), rgba(5, 5, 5, 0.9)) !important;
+	backdrop-filter: blur(12px) !important;
+	/* Crisp glass border */
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+	border-radius: 12px !important;
+	/* Deep shadow to lift the card off the screen */
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 0, 0, 0.5) !important;
+	z-index: 0 !important;
+	overflow: hidden !important;
+	-webkit-mask-image: none !important;
+}
+
+/* 3- The Champion Image (Fades inside the card) */
+.champion-select .background-vignette-container,
+.champion-select .champ-select-bg {
+	position: absolute !important;
+	width: 100% !important;
+	height: 100% !important;
+	inset: 0 !important;
+	background: transparent !important;
+}
+
+.champion-select .champ-select-bg img {
+	width: 100% !important;
+	height: 100% !important;
+	object-fit: cover !important;
+	object-position: top center !important;
+	/* Fades the champion image out before it hits the bottom text */
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%) !important;
+}
+
+/* 4- Sharp, Clean Blood-Red Top-Left Accent */
+.champion-select .champion-splash-background::before {
+	content: "" !important;
+	position: absolute !important;
+	top: 0 !important;
+	left: 0 !important;
+	width: 80px !important;
+	height: 80px !important;
+	border-top: 3px solid #c21c1c !important;
+	border-left: 3px solid #c21c1c !important;
+	border-top-left-radius: 12px !important;
+	filter: drop-shadow(0 0 8px #c21c1c) !important;
+	pointer-events: none !important;
+	z-index: 10 !important;
+}
+
+/* 5- Sharp, Lantern-Gold Bottom-Right Accent */
+.champion-select .champion-splash-background::after {
+	content: "" !important;
+	position: absolute !important;
+	bottom: 0 !important;
+	right: 0 !important;
+	width: 80px !important;
+	height: 80px !important;
+	border-bottom: 3px solid #d4a351 !important;
+	border-right: 3px solid #d4a351 !important;
+	border-bottom-right-radius: 12px !important;
+	filter: drop-shadow(0 0 8px #d4a351) !important;
+	pointer-events: none !important;
+	z-index: 10 !important;
+}
+
+/* 6. Clean up default client overlays */
+.champion-splash-background .champ-select-bg-darken {
+	display: none !important;
+}
+
+/* Hides the specific map-south background image */
+img[src*="map-south.png"],
+img[src*="map-north.png"],
+img[src*="champ-select-planning-intro.jpg"],
+img[src*="gameflow-background.jpg"],
+img[src*="parties-background.jpg"],
+img[src*="ready-check-background.png"] {
+	display: none !important;
+	opacity: 0 !important;
+	visibility: hidden !important;
+	pointer-events: none !important;
+}
+
+/* cleans up the background of the Summoner Spell / Ward flyout menus 
+   so they don't look like an ugly grey box over the theme */
+.selection-button-image[style*="champ-select-flyout-background.jpg"] {
+	background-image: none !important;
+	background-color: rgba(0, 0, 0, 0.7) !important;
+	/* Replaces with sleek dark glass */
+    backdrop-filter: blur(8px) !important;
+}
+
+/* .background-vignette-container, */
+.background-edge-backlight,
+#background-ambient,
+.lobby-header-overlay,
+.navbar-blur,
+.lobby-intro-animation-container,
+.parties-background,
+#ember6325,
+.loading-content,
+.bottom-gradient,
+.loading-tab,
+.smoke-background-container {
+	display: none !important;
+}
+
+.navbar-blur {
+	background: transparent !important;
+	width: 0 !important;
+}
+
+.rcp-fe-lol-navigation-app .navbar_backdrop {
+	backdrop-filter: none !important;
+}
+
+.navigation-root-component {
+	border-bottom: none !important;
+}
+
+.lol-social-sidebar {
+	background: rgba(0,0,0,0.25) !important;
+	backdrop-filter: blur(8px) !important;
+	border-radius: 6px !important;
+}
+
+.rcp-fe-viewport-sidebar {
+	background: transparent !important;
+}
+
+[class*="activity-center"] {
+	background-color: transparent !important;
+}
+
+.invite-info-panel-container,
+.notifications-button,
+.xp-ring,
+.alpha-version-panel,
+.style-profile-skin-picker-button {
+	opacity: 0 !important;
+	transition: 0.3s !important;
+}
+
+.invite-info-panel-container:hover,
+.notifications-button:hover,
+.alpha-version-panel:hover,
+.style-profile-skin-picker-button:hover {
+	opacity: 1 !important;
+}
+
+.identity-icon:hover > .summoner-level-icon > .xp-ring {
+	opacity: 1 !important;
+}
+
+.right-nav-vertical-rule,
+.navigation-status-ticker,
+.deep-links-promo,
+.deep-links-promo-element,
+.app-controls-support,
+.arrow-container,
+.menu_item_navbar_tft,
+.lobby-header-overlay,
+.lobby-header-vertical-line,
+.parties-game-section,
+.point-eligibility-icon,
+.lol-uikit-flyout-frame,
+.lol-uikit-contextual-notification-targeted-layer {
+	display: none !important;
+}
+
+.play-button-frame {
+	background: none !important;
+}
+
+.find-match-button-container,
+.role-selectors-container,
+.animation-button-icon,
+.confirm-button-container,
+div#ember1029,
+.parties-game-type-select-wrapper,
+.lol-parties-game-info-panel,
+.parties-status-card-bg-container,
+.ready-check-root-element,
+.ready-check-state-machine-timer,
+.ready-check-timer,
+.champion-select-controls,
+/* .summoner-spell-selector, 
+.champion-select-footer,
+.rune-recommender-button-component,*/
+.champion-select .trade-button,
+.champion-select .skin-selector-button,
+.dodge-button-container,
+.main-navigation-menu-item,
+.collections-sub-nav-container,
+.currency-container-stacked,
+.wallet-and-badges,
+.social-count-badge,
+.mission-button .count-badge,
+.friend-requests-header,
+.summoner-level,
+.summoner-xp-radial-container,
+.loot-milestones-tracker-wrapper,
+.event-shop-token-shop-card-available,
+.mission-tracker-component,
+.mission-completed-button,
+.postgame-button-bar,
+.honor-postgame-notification-contents,
+.lobby-header-map-icon,
+.parties-status-card-map,
+div#ember1031 {
+	filter: hue-rotate(180deg) !important;
+}
+
+.player-name,
+.summoner-level,
+.style-profile-summoner-name {
+	color: #e0e0e0 !important;
+}
+
+.summoner-level {
+	background-image: none !important;
+}
+
+.social-count-badge,
+.mission-button .count-badge {
+	background-color: #0f3460 !important;
+}
+
+.style-profile-summoner-name {
+	text-shadow: 0 0 10px rgba(15, 52, 96, 0.8) !important;
+}
+
+::-webkit-scrollbar {
+	width: 6px !important;
+}
+
+::-webkit-scrollbar-thumb {
+	background-color: #785a28 !important;
+	border-radius: 4px !important;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent !important;
+}
+
+.store-loading,
+.loot-to-store-button,
+.clash-root-action-timeline-background-gradient,
+.clash-aram-intro-modal,
+.event-shop-xp-vertical-divider,
+.event-shop-page-header-vertical-divider,
+.tft-home-footer-bg,
+.tft-hub-footer-bg,
+.lol-loading-screen-spinner,
+.lol-loading-screen-status-container,
+.summoner-level-ring,
+.rcp-fe-lol-home-loading-spinner,
+.style-profile-loading-spinner,
+.spinner {
+	display: none !important;
+}
+
+/* Hide the Profile Background Splash Art */
+.style-profile-backdrop-container,
+.style-profile-background-image img,
+.style-profile-masked-image img {
+	display: none !important;
+	opacity: 0 !important;
+	visibility: hidden !important;
+	pointer-events: none !important;
+}
+
+.lol-loading-screen-default-state {
+	background-color: transparent !important;
+	backdrop-filter: blur(20px) brightness(0.7) !important;
+}
+
+.lol-loading-screen-container {
+	background: transparent !important;
+	backdrop-filter: blur(120px) brightness(0.2) !important;
+}
+
+.champ-select-bg-darken {
+	opacity: 0.15 !important;
+}
+
+/* .rune-recommender-button-component {
+	opacity: 0 !important;
+}
+
+.rune-recommender-button-component:hover {
+	opacity: 1 !important;
+}
+
+*/
+
+.postgame-header-section,
+.postgame-champion-background-wrapper,
+.ranked-rewards-component,
+.style-profile-emblem-wrapper,
+.mission-tray-header,
+.chat-box,
+.clash-social-persistent,
+.mythic-shop-backdrop,
+.moon-skin-backdrop,
+.background,
+.ranked-intro-background,
+.rcp-fe-lol-tft-application-background {
+	background: none !important;
+}
+
+.mission-tracker-component {
+	background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.8) 93%) !important;
+	border-radius: 10px !important;
+}
+
+.parties-game-search-divider,
+.parties-footer-warning,
+.lol-parties-status-card {
+	display: none !important;
+}
+
+#activity-center .activity-center__tabs_section-divider {
+	visibility: hidden !important;
+}
+
+#activity-center .activity-center__tabs_scrollable {
+	opacity: 0 !important;
+	transition: 0.3s !important;
+	backdrop-filter: blur(8px) !important;
+	background: rgba(0,0,0,0.25) !important;
+	border-radius: 6px !important;
+}
+
+#activity-center .activity-center__tabs_scrollable:hover {
+	opacity: 1 !important;
+}
+
+/* .player-name__game-name.player-name__force-locale-text-direction {
+	opacity: 0 !important;
+	transition: 0.3s !important;
+}
+
+*/
+
+.player-name__game-name.player-name__force-locale-text-direction:hover {
+	opacity: 1 !important;
+}
+
+.clash-arurf-intro-modal {
+	display: none !important;
+	opacity: 1 !important;
+	transform: scale(1) !important;
+	border-radius: 0px !important;
+	background-color: #15171e !important;
+	background-image: url("https://127.0.0.1:58895/fe/lol-clash/assets/images/arurf-modal/clash-arurf-modal-bg.png") !important;
+	background-size: cover !important;
+	background-position: center !important;
+	background-repeat: repeat !important;
+	font-family: Times New Roman !important;
+	width: 828px !important;
+	height: 508px !important;
+}
+
+.challenge-banner-title-container {
+	color: #ffbf00 !important;
+}
+
+.player-name-input__split-inputs-wrapper {
+	transform: scale(0.8) !important;
+}
+
+.activity-center__background-component__blend {
+	display: none !important;
+}
+
+div#ember8567 {
+	display: none !important;
+}
+
+.parties-game-info-panel-content, .v2-parties-invite-info-panel, .parties-invite-info-panel {
+	backdrop-filter: blur(8px) !important;
+	background: rgba(0,0,0,0.25) !important;
+	border-radius: 6px !important;
+}
+
+.ready-check-root-element {
+	backdrop-filter: blur(8px) !important;
+	background: rgba(0,0,0,0.25) !important;
+	border-radius: 6px !important;
+}
+
+.reconnect-container {
+	background-image: var(--background-image) !important;
+	background-size: cover !important;
+	background-position: center center !important;
+	background-repeat: no-repeat !important;
+	isolation: isolate;
+	filter: brightness(0.8) !important;
+}
+
+.reconnect-to-game {
+	filter: brightness(1.0) !important;
+}
+
+.season-pass-background-shroud {
+	display: none !important;
+}
+
+.season-pass-background-extended {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	max-width: 50vw;
+	max-height: 60vh;
+	border-radius: 20px;
+	box-shadow: 0 40px 120px rgba(0, 0, 0, 0.7),
+    0 0 60px rgba(0, 0, 0, 0.4);
+	-webkit-mask-image: radial-gradient(circle at center,
+    rgba(0,0,0,1) 75%,
+    rgba(0,0,0,0.85) 85%,
+    rgba(0,0,0,0) 100%);
+	filter: contrast(1.05) saturate(1.05);
+}
+
+.season-pass-background-extended::after {
+	content: "";
+	position: absolute;
+	inset: -2px;
+	border-radius: 22px;
+	background: radial-gradient(circle at center,
+    rgba(255,255,255,0.08),
+    transparent 70%);
+	pointer-events: none;
+}
+
+.season-pass-header-background {
+	display: none;
+}
+
+/* Activity-center__background STUFF */
+/* Hide the container completely by default (prevents empty frames) */
+.activity-center__background-component_container {
+	display: none !important;
+}
+
+/* ONLY render the Floating Card IF it contains a video or image */
+.activity-center__background-component_container:has(video),
+.activity-center__background-component_container:has(img) {
+	display: block !important;
+	position: absolute !important;
+	top: 30% !important;
+	right: 40px !important;
+	left: auto !important;
+	transform: translateY(-50%) !important;
+	width: 300px !important;
+	height: 168.5px !important;
+	/* Glass card styling */
+    border-radius: 16px !important;
+	border: 1px solid rgba(255, 255, 255, 0.1) !important;
+	box-shadow: 0 25px 50px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0,0,0,0.4) !important;
+	overflow: hidden !important;
+}
+
+/* Add a slight dim so it isn't blinding */
+.activity-center__background-component_video {
+	filter: brightness(0.8) contrast(1.1) !important;
+	width: 100% !important;
+	height: 100% !important;
+	object-fit: cover !important;
+}
+
+/* Hide the ugly default blending layer */
+.activity-center__background-component__blend {
+	display: none !important;
+}
+
+/* ##Skin PROMO Viewport## */
+/* Turn the Skin Viewport into a Floating Glass Card */
+.activity-center-skin-activity__background-viewport {
+	position: absolute !important;
+	display: block !important;
+	inset: auto !important;
+	top: 39% !important;
+	left: 37% !important;
+	transform: translateY(-50%) !important;
+	width: 500px !important;
+	height: 324.6px !important;
+	border-radius: 16px !important;
+	border: 1px solid rgba(255, 255, 255, 0.1) !important;
+	background: #000 !important;
+	/* Solid black behind image just in case */
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0,0,0,0.4) !important;
+	overflow: hidden !important;
+}
+
+.activity-center-skin-activity__background-image {
+	width: 100% !important;
+	height: 100% !important;
+	object-fit: cover !important;
+	-webkit-mask-image: none !important;
+	mask-image: none !important;
+	filter: brightness(0.9) !important;
+}
+
+.champion-image-container,
+.emote-item-icon,
+.loot-item-visual .icon {
+	opacity: 1.0 !important;
+}
+
+lol-uikit-section[section-id="profile-main-match-history"],
+lol-uikit-section[section-id="challenges-collection"],
+lol-uikit-section[section-id="profile_subsection_leagues"],
+lol-uikit-section[section-id="profile-main-highlights"],
+.loot-backdrop.background-static,
+.collections-application {
+	background: linear-gradient(to bottom, rgba(5, 5, 5, 0.2), rgba(5, 5, 5, 0.65)) !important;
+}
+
+.style-profile-sub-nav {
+	filter: hue-rotate(-90deg)
+}
