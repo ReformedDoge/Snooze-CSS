@@ -1,213 +1,286 @@
-import { CATALOG } from './catalog.js';
-import { setCssProperty, setCssBatch, sendToRaw } from './raw.js';
-import { setRefreshCallback } from './settings.js';
-import { rgbToHex, flashMessage } from './utils.js';
+import { CATALOG } from "./catalog.js";
+import { setCssProperty, setCssBatch, sendToRaw } from "./raw.js";
+import { setRefreshCallback } from "./settings.js";
+import { rgbToHex, flashMessage } from "./utils.js";
+import { getBackdrop } from "./modal.js";
 
-// SESSION STATE 
+// SESSION STATE
 const _collapseState = new Map();
 let _scrollPos = 0;
-let _inputs =[];
-let _bodyEl  = null;
+let _inputs = [];
+let _bodyEl = null;
 
 export function buildBuilderTab(container) {
-  _inputs =[];
-  container.innerHTML = '';
+  _inputs = [];
+  container.innerHTML = "";
 
-  const topBar = document.createElement('div');
-  topBar.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:10px;';
+  const topBar = document.createElement("div");
+  topBar.style.cssText =
+    "display:flex;gap:6px;align-items:center;margin-bottom:10px;";
 
-  const searchInput = document.createElement('input');
-  searchInput.id = 'ci-search';
-  searchInput.type = 'text';
-  searchInput.placeholder = 'Search elements…';
-  searchInput.autocomplete = 'off';
-  searchInput.style.cssText = 'flex:1;background:rgba(0,0,0,0.35);border:1px solid #1e2d3d;border-bottom-color:#785a28;color:#a0b4c8;font-family:Sora,Arial,sans-serif;font-size:11px;padding:7px 10px;outline:none;';
+  const searchInput = document.createElement("input");
+  searchInput.id = "ci-search";
+  searchInput.type = "text";
+  searchInput.placeholder = "Search elements…";
+  searchInput.autocomplete = "off";
+  searchInput.style.cssText =
+    "flex:1;background:rgba(0,0,0,0.35);border:1px solid #1e2d3d;border-bottom-color:#785a28;color:#a0b4c8;font-family:Sora,Arial,sans-serif;font-size:11px;padding:7px 10px;outline:none;";
   topBar.appendChild(searchInput);
 
-  const refreshBtn = makeIconBtn('↻', 'Refresh live values from DOM', () => refreshValues('manual'));
+  const refreshBtn = makeIconBtn("↻", "Refresh live values from DOM", () =>
+    refreshValues("manual"),
+  );
   topBar.appendChild(refreshBtn);
 
   container.appendChild(topBar);
 
-  CATALOG.forEach(group => container.appendChild(buildGroup(group)));
+  CATALOG.forEach((group) => container.appendChild(buildGroup(group)));
 
   requestAnimationFrame(() => {
-    _bodyEl = container.closest('.ci-body');
+    _bodyEl = container.closest(".ci-body");
     if (_bodyEl) {
       _bodyEl.scrollTop = _scrollPos;
       if (!_bodyEl._scrollListenerAttached) {
-        _bodyEl.addEventListener('scroll', () => { _scrollPos = _bodyEl.scrollTop; }, { passive: true });
+        _bodyEl.addEventListener(
+          "scroll",
+          () => {
+            _scrollPos = _bodyEl.scrollTop;
+          },
+          { passive: true },
+        );
         _bodyEl._scrollListenerAttached = true;
       }
 
-      const toTop = document.createElement('button');
-      toTop.title = 'Scroll to top';
-      toTop.style.cssText = 'position:sticky;bottom:12px;float:right;margin-right:4px;width:28px;height:28px;background:#060e1a;border:1px solid #785a28;color:#785a28;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;transition:background 0.15s,color 0.15s;';
-      toTop.textContent = '↑';
-      toTop.addEventListener('mouseenter', () => { toTop.style.background='#785a28'; toTop.style.color='#f0e6d3'; });
-      toTop.addEventListener('mouseleave', () => { toTop.style.background='#060e1a'; toTop.style.color='#785a28'; });
-      toTop.addEventListener('click', () => { _bodyEl.scrollTo({ top: 0, behavior: 'smooth' }); });
+      const toTop = document.createElement("button");
+      toTop.title = "Scroll to top";
+      toTop.style.cssText =
+        "position:sticky;bottom:12px;float:right;margin-right:4px;width:28px;height:28px;background:#060e1a;border:1px solid #785a28;color:#785a28;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;transition:background 0.15s,color 0.15s;";
+      toTop.textContent = "↑";
+      toTop.addEventListener("mouseenter", () => {
+        toTop.style.background = "#785a28";
+        toTop.style.color = "#f0e6d3";
+      });
+      toTop.addEventListener("mouseleave", () => {
+        toTop.style.background = "#060e1a";
+        toTop.style.color = "#785a28";
+      });
+      toTop.addEventListener("click", () => {
+        _bodyEl.scrollTo({ top: 0, behavior: "smooth" });
+      });
       container.appendChild(toTop);
     }
   });
 
-  searchInput.addEventListener('input', function() {
+  searchInput.addEventListener("input", function () {
     const q = this.value.toLowerCase().trim();
-    container.querySelectorAll('.ci-group').forEach(g => {
+    container.querySelectorAll(".ci-group").forEach((g) => {
       if (g.dataset.generic) return;
       const body = g._bodyEl;
       if (!body) return;
-      const rows = g.querySelectorAll('.ci-element-row');
+      const rows = g.querySelectorAll(".ci-element-row");
       let anyVisible = false;
-      rows.forEach(row => {
+      rows.forEach((row) => {
         const match = !q || row.dataset.search.includes(q);
-        row.style.display = match ? '' : 'none';
+        row.style.display = match ? "" : "none";
         if (match) anyVisible = true;
       });
-      g.style.display = anyVisible || !q ? '' : 'none';
-      if (q && anyVisible) body.style.display = 'block';
+      g.style.display = anyVisible || !q ? "" : "none";
+      if (q && anyVisible) body.style.display = "block";
       else if (!q) {
-        const savedOpen = _collapseState.has(g.dataset.groupLabel) ? _collapseState.get(g.dataset.groupLabel) : g.dataset.defaultOpen === 'true';
-        body.style.display = savedOpen ? 'block' : 'none';
+        const savedOpen = _collapseState.has(g.dataset.groupLabel)
+          ? _collapseState.get(g.dataset.groupLabel)
+          : g.dataset.defaultOpen === "true";
+        body.style.display = savedOpen ? "block" : "none";
       }
     });
   });
 
   setRefreshCallback(refreshValues);
-  refreshValues('init');
+  refreshValues("init");
 }
 
 export function refreshValues(source) {
   // Only refresh inputs that are currently VISIBLE to prevent lag
-  _inputs.forEach(reg => {
+  _inputs.forEach((reg) => {
     if (!reg.inputEl) return;
-    const groupBody = reg.inputEl.closest('.ci-group-body');
-    if (!groupBody || groupBody.style.display !== 'none') {
-      try { populateInput(reg); } catch {}
+    const groupBody = reg.inputEl.closest(".ci-group-body");
+    if (!groupBody || groupBody.style.display !== "none") {
+      try {
+        populateInput(reg);
+      } catch {}
     }
   });
 }
 
+function register(reg) {
+  _inputs.push(reg);
+}
 
-function register(reg) { _inputs.push(reg); }
-
-// VALUE READING 
+// VALUE READING
 
 function getLiveValue(cls, prop) {
   const el = document.querySelector(cls);
   if (!el) return null;
   const cs = getComputedStyle(el);
   switch (prop) {
-    case 'display':           return cs.display;
-    case 'opacity':           return cs.opacity;
-    case 'color':             return rgbToHex(cs.color);
-    case 'background-color':  return rgbToHex(cs.backgroundColor);
-    case 'border-color':      return rgbToHex(cs.borderTopColor);
-    case 'background-image':  return cs.backgroundImage === 'none' ? '' : cs.backgroundImage;
-    case 'background-size':   return cs.backgroundSize;
-    case 'background-position': return cs.backgroundPosition;
-    case 'background-repeat': return cs.backgroundRepeat;
-    case 'font-family':       return cs.fontFamily.split(',')[0].replace(/['"]/g,'').trim();
-    case 'font-size':         return cs.fontSize;
-    case 'filter':            return cs.filter;
-    case 'backdrop-filter':   return cs.backdropFilter || '';
-    case 'border-radius':     return cs.borderRadius;
-    case 'transform':         return cs.transform !== 'none' ? cs.transform : 'scale(1)';
-    case 'width':             return cs.width;
-    case 'height':            return cs.height;
-    case 'margin':            return cs.margin;
-    case 'padding':           return cs.padding;
-    case 'visibility':        return cs.visibility;
-    case 'mix-blend-mode':    return cs.mixBlendMode;
-    case 'left':              return cs.left;
-    case 'top':               return cs.top;
-    case 'transition':        return cs.transition !== 'all 0s ease 0s' ? cs.transition : '';
-    default:                  return '';
+    case "display":
+      return cs.display;
+    case "opacity":
+      return cs.opacity;
+    case "color":
+      return rgbToHex(cs.color);
+    case "background-color":
+      return rgbToHex(cs.backgroundColor);
+    case "border-color":
+      return rgbToHex(cs.borderTopColor);
+    case "background-image":
+      return cs.backgroundImage === "none" ? "" : cs.backgroundImage;
+    case "background-size":
+      return cs.backgroundSize;
+    case "background-position":
+      return cs.backgroundPosition;
+    case "background-repeat":
+      return cs.backgroundRepeat;
+    case "font-family":
+      return cs.fontFamily.split(",")[0].replace(/['"]/g, "").trim();
+    case "font-size":
+      return cs.fontSize;
+    case "filter":
+      return cs.filter;
+    case "backdrop-filter":
+      return cs.backdropFilter || "";
+    case "border-radius":
+      return cs.borderRadius;
+    case "transform":
+      return cs.transform !== "none" ? cs.transform : "scale(1)";
+    case "width":
+      return cs.width;
+    case "height":
+      return cs.height;
+    case "margin":
+      return cs.margin;
+    case "padding":
+      return cs.padding;
+    case "visibility":
+      return cs.visibility;
+    case "mix-blend-mode":
+      return cs.mixBlendMode;
+    case "left":
+      return cs.left;
+    case "top":
+      return cs.top;
+    case "transition":
+      return cs.transition !== "all 0s ease 0s" ? cs.transition : "";
+    default:
+      return "";
   }
 }
 
-function isInDOM(cls) { return !!document.querySelector(cls); }
+function isInDOM(cls) {
+  return !!document.querySelector(cls);
+}
 
 function populateInput(reg) {
   const { cls, prop, inputEl, notBadge } = reg;
   const inDOM = isInDOM(cls);
-  if (notBadge) notBadge.style.display = inDOM ? 'none' : 'inline';
+  if (notBadge) notBadge.style.display = inDOM ? "none" : "inline";
   if (!inDOM || !inputEl) return;
   const val = getLiveValue(cls, prop);
-  if (val === null || val === undefined || val === '') return;
-  
-  if (inputEl.tagName === 'SELECT') {
-    const opt = [...inputEl.options].find(o => o.value === val || val.includes(o.value));
+  if (val === null || val === undefined || val === "") return;
+
+  if (inputEl.tagName === "SELECT") {
+    const opt = [...inputEl.options].find(
+      (o) => o.value === val || val.includes(o.value),
+    );
     if (opt) inputEl.value = opt.value;
-  } else if (inputEl.type !== 'color') {
+  } else if (inputEl.type !== "color") {
     inputEl.value = val;
-    inputEl.dispatchEvent(new Event('input')); 
+    inputEl.dispatchEvent(new Event("input"));
   }
 }
 
-// GROUP BUILDER 
+// GROUP BUILDER
 
 function buildGroup(group) {
-  const savedOpen = _collapseState.has(group.label) ? _collapseState.get(group.label) : (group.collapsed === false);
-  const wrap = document.createElement('div');
-  wrap.className = 'ci-group';
+  const savedOpen = _collapseState.has(group.label)
+    ? _collapseState.get(group.label)
+    : group.collapsed === false;
+  const wrap = document.createElement("div");
+  wrap.className = "ci-group";
   wrap.dataset.groupLabel = group.label;
   wrap.dataset.defaultOpen = String(group.collapsed === false);
-  if (group.generic) wrap.dataset.generic = 'true';
+  if (group.generic) wrap.dataset.generic = "true";
 
-  const icon = document.createElement('span');
-  icon.style.cssText = `font-size:9px;color:#785a28;flex-shrink:0;display:inline-block;transition:transform 0.2s;transform:${savedOpen ? 'rotate(90deg)' : 'rotate(0deg)'}`;
-  icon.textContent = '▸';
+  const icon = document.createElement("span");
+  icon.style.cssText = `font-size:9px;color:#785a28;flex-shrink:0;display:inline-block;transition:transform 0.2s;transform:${savedOpen ? "rotate(90deg)" : "rotate(0deg)"}`;
+  icon.textContent = "▸";
 
-  const labelEl = document.createElement('span');
-  labelEl.style.cssText = `font-size:11px;font-weight:600;letter-spacing:0.04em;flex:1;color:${savedOpen || group.generic ? '#c8aa6e' : '#7a8a9a'}`;
+  const labelEl = document.createElement("span");
+  labelEl.style.cssText = `font-size:11px;font-weight:600;letter-spacing:0.04em;flex:1;color:${savedOpen || group.generic ? "#c8aa6e" : "#7a8a9a"}`;
   labelEl.textContent = group.label;
 
-  const countEl = document.createElement('span');
-  countEl.style.cssText = 'font-size:9px;color:#2a3a4a;background:rgba(0,0,0,0.3);border:1px solid #1a2535;padding:1px 6px;border-radius:8px;';
+  const countEl = document.createElement("span");
+  countEl.style.cssText =
+    "font-size:9px;color:#2a3a4a;background:rgba(0,0,0,0.3);border:1px solid #1a2535;padding:1px 6px;border-radius:8px;";
   countEl.textContent = group.elements.length;
 
-  const header = document.createElement('div');
-  header.className = 'ci-group-header';
-  header.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;user-select:none;' + (group.generic ? 'background:#0a1628;border-left:2px solid #c8aa6e;' : 'background:#060e1a;');
-  header.appendChild(icon); header.appendChild(labelEl); header.appendChild(countEl);
+  const header = document.createElement("div");
+  header.className = "ci-group-header";
+  header.style.cssText =
+    "display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;user-select:none;" +
+    (group.generic
+      ? "background:#0a1628;border-left:2px solid #c8aa6e;"
+      : "background:#060e1a;");
+  header.appendChild(icon);
+  header.appendChild(labelEl);
+  header.appendChild(countEl);
   wrap.appendChild(header);
 
-  const body = document.createElement('div');
-  body.className = 'ci-group-body';
-  body.style.cssText = 'background:#050c18;border-top:1px solid #1a2535;display:' + (savedOpen ? 'block' : 'none');
+  const body = document.createElement("div");
+  body.className = "ci-group-body";
+  body.style.cssText =
+    "background:#050c18;border-top:1px solid #1a2535;display:" +
+    (savedOpen ? "block" : "none");
   wrap._bodyEl = body;
 
   if (group.generic) buildGenericTools(body);
-  else group.elements.forEach(el => body.appendChild(buildElementRow(el)));
+  else group.elements.forEach((el) => body.appendChild(buildElementRow(el)));
 
   wrap.appendChild(body);
 
-  header.addEventListener('click', () => {
-    const open = body.style.display === 'none';
-    body.style.display = open ? 'block' : 'none';
-    icon.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
-    labelEl.style.color = open ? '#c8aa6e' : (group.generic ? '#c8aa6e' : '#7a8a9a');
+  header.addEventListener("click", () => {
+    const open = body.style.display === "none";
+    body.style.display = open ? "block" : "none";
+    icon.style.transform = open ? "rotate(90deg)" : "rotate(0deg)";
+    labelEl.style.color = open
+      ? "#c8aa6e"
+      : group.generic
+        ? "#c8aa6e"
+        : "#7a8a9a";
     _collapseState.set(group.label, open);
 
     // Load live DOM values *only* when the group is opened!
     if (open) {
-      _inputs.filter(reg => body.contains(reg.inputEl)).forEach(reg => {
-        try { populateInput(reg); } catch {}
-      });
+      _inputs
+        .filter((reg) => body.contains(reg.inputEl))
+        .forEach((reg) => {
+          try {
+            populateInput(reg);
+          } catch {}
+        });
     }
   });
 
   return wrap;
 }
 
-// GENERIC TOOLS 
+// GENERIC TOOLS
 
 function buildGenericTools(body) {
   // --- Quick Theme (Level 1 User Hero Block) ---
   body.appendChild(buildQuickThemeRow());
 
-  // Inspectors 
+  // Inspectors
   body.appendChild(buildOmniRow());
 
   // High-value one-click tools
@@ -223,12 +296,12 @@ function buildGenericTools(body) {
   body.appendChild(buildGlassPanelRow());
   body.appendChild(buildMaskFadeRow());
 
-  // Asset / background tools 
+  // Asset / background tools
   body.appendChild(buildLocalAssetRow());
   body.appendChild(buildBgRow());
   body.appendChild(buildImgReplaceRow());
 
-  // Element tools 
+  // Element tools
   body.appendChild(buildHideRow());
   body.appendChild(buildColorRow());
   body.appendChild(buildScrollbarRow());
@@ -237,11 +310,11 @@ function buildGenericTools(body) {
 
 // QUICK THEME (Easy Mode for Level 1 Users)
 function buildQuickThemeRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
-  row.style.borderBottom = '2px solid #c8aa6e';
-  row.style.background = 'rgba(200, 170, 110, 0.05)';
-  row.style.padding = '16px 14px';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.borderBottom = "2px solid #c8aa6e";
+  row.style.background = "rgba(200, 170, 110, 0.05)";
+  row.style.padding = "16px 14px";
 
   row.innerHTML = `
     <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">✨ Quick Theme Builder</div>
@@ -293,19 +366,23 @@ function buildQuickThemeRow() {
     </div>
   `;
 
-  const dimSlider = row.querySelector('#qt-dim-slider');
-  const dimText = row.querySelector('#qt-dim-text');
-  dimSlider.addEventListener('input', () => dimText.value = dimSlider.value);
+  const dimSlider = row.querySelector("#qt-dim-slider");
+  const dimText = row.querySelector("#qt-dim-text");
+  dimSlider.addEventListener("input", () => (dimText.value = dimSlider.value));
 
-  row.querySelector('#qt-apply-btn').addEventListener('click', () => {
-    const bgUrl = row.querySelector('#qt-bg-url').value.trim();
+  row.querySelector("#qt-apply-btn").addEventListener("click", () => {
+    const bgUrl = row.querySelector("#qt-bg-url").value.trim();
     const dim = dimSlider.value;
-    const blur = row.querySelector('#qt-glass-blur').value;
-    const doTrans = row.querySelector('#qt-transparent').checked;
-    const doHide = row.querySelector('#qt-hide-riot').checked;
+    const blur = row.querySelector("#qt-glass-blur").value;
+    const doTrans = row.querySelector("#qt-transparent").checked;
+    const doHide = row.querySelector("#qt-hide-riot").checked;
 
     if (!bgUrl) {
-      flashMessage(row.querySelector('#qt-flash'), 'Please enter an image URL!', '#c84b4b');
+      flashMessage(
+        row.querySelector("#qt-flash"),
+        "Please enter an image URL!",
+        "#c84b4b",
+      );
       return;
     }
 
@@ -315,16 +392,18 @@ function buildQuickThemeRow() {
     lines.push(`/* ========================================= */`);
     lines.push(`:root { --qt-bg: url('${bgUrl}'); }`);
     lines.push(``);
-    
+
     lines.push(`/* Apply Background to Root and Specific Overlay Screens */`);
-    lines.push(`#rcp-fe-viewport-root, .rcp-fe-lol-game-in-progress, .rcp-fe-lol-pre-end-of-game, .rcp-fe-lol-reconnect, .rcp-fe-lol-waiting-for-stats, .champion-select, .lol-loading-screen-container.lol-loading-screen-default-state, .reconnect-container {`);
+    lines.push(
+      `#rcp-fe-viewport-root, .rcp-fe-lol-game-in-progress, .rcp-fe-lol-pre-end-of-game, .rcp-fe-lol-reconnect, .rcp-fe-lol-waiting-for-stats, .champion-select, .lol-loading-screen-container.lol-loading-screen-default-state, .reconnect-container {`,
+    );
     lines.push(`  background-image: var(--qt-bg) !important;`);
     lines.push(`  background-size: cover !important;`);
     lines.push(`  background-position: center center !important;`);
     lines.push(`  background-repeat: no-repeat !important;`);
     lines.push(`  isolation: isolate;`);
     lines.push(`}`);
-    
+
     if (parseFloat(dim) > 0) {
       lines.push(``);
       lines.push(`/* Background Dim Overlay */`);
@@ -337,21 +416,52 @@ function buildQuickThemeRow() {
 
     if (doTrans) {
       const transScreens = [
-        'body', 'html', '.parties-view', '.parties-background', '.parties-background-mask',
-        '.parties-content', '.parties-lower-section', '.lol-social-sidebar', '.rcp-fe-viewport-sidebar',
-        '.store-backdrop', '.__rcp-fe-lol-store', '.loot-backdrop', '.loot-backdrop.background-static',
-        '.loot-loading-screen', '.collections-application', '.collections-routes', '.yourshop-root',
-        '.clash-root-background', '.clash-root-background-landing', '.personalized-offers-root',
-        '.champ-select-bg-darken', '.stats-backdrop', '.match-details-root', '.cdp-backdrop-component',
-        '.cdp-backdrop:after', '.cdp-backdrop.progression:after', '.rcp-fe-lol-event-shop-application',
-        '.event-shop-index', '.event-shop-page-header', '.event-shop-progression', '.event-shop-progression-info',
-        '.postgame-header-section', '.postgame-champion-background-wrapper', '.ranked-rewards-component',
-        '.style-profile-emblem-wrapper', '.mission-tray-header', '.chat-box', '.clash-social-persistent',
-        '.mythic-shop-backdrop', '.moon-skin-backdrop', '.ranked-intro-background', '.rcp-fe-lol-tft-application-background'
+        "body",
+        "html",
+        ".parties-view",
+        ".parties-background",
+        ".parties-background-mask",
+        ".parties-content",
+        ".parties-lower-section",
+        ".lol-social-sidebar",
+        ".rcp-fe-viewport-sidebar",
+        ".store-backdrop",
+        ".__rcp-fe-lol-store",
+        ".loot-backdrop",
+        ".loot-backdrop.background-static",
+        ".loot-loading-screen",
+        ".collections-application",
+        ".collections-routes",
+        ".yourshop-root",
+        ".clash-root-background",
+        ".clash-root-background-landing",
+        ".personalized-offers-root",
+        ".champ-select-bg-darken",
+        ".stats-backdrop",
+        ".match-details-root",
+        ".cdp-backdrop-component",
+        ".cdp-backdrop:after",
+        ".cdp-backdrop.progression:after",
+        ".rcp-fe-lol-event-shop-application",
+        ".event-shop-index",
+        ".event-shop-page-header",
+        ".event-shop-progression",
+        ".event-shop-progression-info",
+        ".postgame-header-section",
+        ".postgame-champion-background-wrapper",
+        ".ranked-rewards-component",
+        ".style-profile-emblem-wrapper",
+        ".mission-tray-header",
+        ".chat-box",
+        ".clash-social-persistent",
+        ".mythic-shop-backdrop",
+        ".moon-skin-backdrop",
+        ".ranked-intro-background",
+        ".rcp-fe-lol-tft-application-background",
       ];
       lines.push(``);
       lines.push(`/* Deep Transparency Sweep */`);
-      lines.push(`${transScreens.join(',\n')} {`);
+      lines.push(`${transScreens.join(",\n")} {`);
       lines.push(`  background: transparent !important;`);
       lines.push(`  background-image: none !important;`);
       lines.push(`  backdrop-filter: none !important;`);
@@ -359,15 +469,19 @@ function buildQuickThemeRow() {
       lines.push(`}`);
     }
 
-    if (blur !== 'none') {
+    if (blur !== "none") {
       const glassPanels = [
-        '.parties-game-info-panel-content', '.v2-parties-invite-info-panel', '.parties-invite-info-panel',
-        '.ready-check-root-element', '.lol-social-sidebar', '#activity-center .activity-center__tabs_scrollable',
-        '.selection-button-image'
+        ".parties-game-info-panel-content",
+        ".v2-parties-invite-info-panel",
+        ".parties-invite-info-panel",
+        ".ready-check-root-element",
+        ".lol-social-sidebar",
+        "#activity-center .activity-center__tabs_scrollable",
+        ".selection-button-image",
       ];
       lines.push(``);
       lines.push(`/* Frosted Glass Panels */`);
-      lines.push(`${glassPanels.join(',\n')} {`);
+      lines.push(`${glassPanels.join(",\n")} {`);
       lines.push(`  backdrop-filter: blur(${blur}) !important;`);
       lines.push(`  background: rgba(0, 0, 0, 0.25) !important;`);
       lines.push(`  border-radius: 6px !important;`);
@@ -376,18 +490,32 @@ function buildQuickThemeRow() {
 
     if (doHide) {
       const hiddenElements = [
-        '.bg-current img', '.parties-background img', '.postgame-background-image img',
-        'img.lol-uikit-background-switcher-image', 'img.champion-background-image',
-        '.style-profile-background-image img', '.style-profile-masked-image img',
-        '.background-edge-backlight', '#background-ambient', '.lobby-header-overlay',
-        '.navbar-blur', '.lobby-intro-animation-container', '.loading-content',
-        '.bottom-gradient', '.smoke-background-container', '.activity-center__background-component__blend',
-        'img[src*="map-south.png"]', 'img[src*="map-north.png"]', 'img[src*="champ-select-planning-intro.jpg"]',
-        'img[src*="gameflow-background.jpg"]', 'img[src*="parties-background.jpg"]', 'img[src*="ready-check-background.png"]'
+        ".bg-current img",
+        ".parties-background img",
+        ".postgame-background-image img",
+        "img.lol-uikit-background-switcher-image",
+        "img.champion-background-image",
+        ".style-profile-background-image img",
+        ".style-profile-masked-image img",
+        ".background-edge-backlight",
+        "#background-ambient",
+        ".lobby-header-overlay",
+        ".navbar-blur",
+        ".lobby-intro-animation-container",
+        ".loading-content",
+        ".bottom-gradient",
+        ".smoke-background-container",
+        ".activity-center__background-component__blend",
+        'img[src*="map-south.png"]',
+        'img[src*="map-north.png"]',
+        'img[src*="champ-select-planning-intro.jpg"]',
+        'img[src*="gameflow-background.jpg"]',
+        'img[src*="parties-background.jpg"]',
+        'img[src*="ready-check-background.png"]',
       ];
       lines.push(``);
       lines.push(`/* Hide Overlapping Riot Graphics */`);
-      lines.push(`${hiddenElements.join(',\n')} {`);
+      lines.push(`${hiddenElements.join(",\n")} {`);
       lines.push(`  display: none !important;`);
       lines.push(`  opacity: 0 !important;`);
       lines.push(`  visibility: hidden !important;`);
@@ -395,17 +523,21 @@ function buildQuickThemeRow() {
       lines.push(`}`);
     }
 
-    sendToRaw(lines.join('\n'));
-    flashMessage(row.querySelector('#qt-flash'), 'Theme Applied Successfully! ✓', 3000);
+    sendToRaw(lines.join("\n"));
+    flashMessage(
+      row.querySelector("#qt-flash"),
+      "Theme Applied Successfully! ✓",
+      3000,
+    );
   });
 
   return row;
 }
 
 function buildOmniRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
-  row.style.borderBottom = '2px solid #785a28';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.borderBottom = "2px solid #785a28";
   row.innerHTML = `
     <div class="ci-generic-title" style="color:#f0e6d3; font-size:12px;">✨ Omni Inspector</div>
     <div class="ci-generic-desc">Type any selector OR use the picker (🎯). Then click Inspect to see and edit its live CSS properties.</div>
@@ -432,48 +564,49 @@ function buildOmniRow() {
     </div>
   `;
 
-  const selInput = row.querySelector('#omni-sel-input');
-  const pickerBtn = row.querySelector('#omni-picker-btn');
-  const inspectBtn = row.querySelector('#omni-inspect-btn');
-  const status = row.querySelector('#omni-status');
-  const panel = row.querySelector('#omni-panel');
-  const selBadge = row.querySelector('#omni-sel-badge');
-  const catalogMatchEl = row.querySelector('#omni-catalog-match');
-  const propCount = row.querySelector('#omni-prop-count');
-  const controlsWrap = row.querySelector('#omni-controls-wrap');
-  const addAllBtn = row.querySelector('#omni-add-all-btn');
-  const addAllFlash = row.querySelector('#omni-add-all-flash');
+  const selInput = row.querySelector("#omni-sel-input");
+  const pickerBtn = row.querySelector("#omni-picker-btn");
+  const inspectBtn = row.querySelector("#omni-inspect-btn");
+  const status = row.querySelector("#omni-status");
+  const panel = row.querySelector("#omni-panel");
+  const selBadge = row.querySelector("#omni-sel-badge");
+  const catalogMatchEl = row.querySelector("#omni-catalog-match");
+  const propCount = row.querySelector("#omni-prop-count");
+  const controlsWrap = row.querySelector("#omni-controls-wrap");
+  const addAllBtn = row.querySelector("#omni-add-all-btn");
+  const addAllFlash = row.querySelector("#omni-add-all-flash");
 
-  let _inspInputs =[];
+  let _inspInputs = [];
 
   const runInspect = () => {
     const sel = selInput.value.trim();
     if (!sel) return;
     const el = document.querySelector(sel);
-    status.style.display = 'block';
+    status.style.display = "block";
     if (!el) {
-      status.style.color = '#c84b4b';
+      status.style.color = "#c84b4b";
       status.textContent = `No element found for "${sel}"`;
-      panel.style.display = 'none';
+      panel.style.display = "none";
       return;
     }
-    status.style.color = '#4caf82';
+    status.style.color = "#4caf82";
     status.textContent = `Found <${el.tagName.toLowerCase()}>`;
     selBadge.textContent = sel;
     const match = findCatalogMatch(sel);
     if (match) {
       catalogMatchEl.innerHTML = `Matches <b>${match.label}</b>`;
-      catalogMatchEl.style.display = 'inline';
+      catalogMatchEl.style.display = "inline";
     } else {
-      catalogMatchEl.style.display = 'none';
+      catalogMatchEl.style.display = "none";
     }
     const props = getSmartProperties(el);
     propCount.textContent = `${props.length} props`;
-    _inputs = _inputs.filter(r => !r.isOmni);
-    _inspInputs =[];
-    controlsWrap.innerHTML = '';
-    const notBadge = document.createElement('span'); notBadge.style.display = 'none';
-    props.forEach(prop => {
+    _inputs = _inputs.filter((r) => !r.isOmni);
+    _inspInputs = [];
+    controlsWrap.innerHTML = "";
+    const notBadge = document.createElement("span");
+    notBadge.style.display = "none";
+    props.forEach((prop) => {
       const ctrl = buildPropControl(sel, prop, notBadge);
       if (_inputs.length > 0) {
         _inputs[_inputs.length - 1].isOmni = true;
@@ -481,34 +614,42 @@ function buildOmniRow() {
       }
       controlsWrap.appendChild(ctrl);
     });
-    _inspInputs.forEach(reg => { try { populateInput(reg); } catch {} });
-    panel.style.display = 'block';
+    _inspInputs.forEach((reg) => {
+      try {
+        populateInput(reg);
+      } catch {}
+    });
+    panel.style.display = "block";
   };
 
-  pickerBtn.addEventListener('click', () => startElementPicker((sel) => {
-    selInput.value = sel;
-    runInspect();
-  }));
-  inspectBtn.addEventListener('click', runInspect);
-  selInput.addEventListener('keydown', e => { if (e.key === 'Enter') runInspect(); });
+  pickerBtn.addEventListener("click", () =>
+    startElementPicker((sel) => {
+      selInput.value = sel;
+      runInspect();
+    }),
+  );
+  inspectBtn.addEventListener("click", runInspect);
+  selInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runInspect();
+  });
 
-  addAllBtn.addEventListener('click', () => {
+  addAllBtn.addEventListener("click", () => {
     const sel = selInput.value.trim();
     if (!sel || !_inspInputs.length) return;
-    
+
     // Use batch update to keep CSS clean
     const batch = {};
-    _inspInputs.forEach(reg => {
+    _inspInputs.forEach((reg) => {
       const val = reg.inputEl?.value?.trim();
-      if (!val || val === '' || val === 'auto' || val === 'normal') return;
-      const finalProp = reg.prop === 'scale' ? 'transform' : reg.prop;
+      if (!val || val === "" || val === "auto" || val === "normal") return;
+      const finalProp = reg.prop === "scale" ? "transform" : reg.prop;
       batch[finalProp] = val;
     });
 
     if (Object.keys(batch).length === 0) return;
-    
+
     setCssBatch(sel, batch); // SMART UPDATE HERE
-    
+
     flashMessage(addAllFlash);
     sendToRaw();
   });
@@ -516,10 +657,10 @@ function buildOmniRow() {
   return row;
 }
 
-// HOVER-TO-REVEAL 
+// HOVER-TO-REVEAL
 function buildHoverRevealRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
   row.innerHTML = `
     <div class="ci-generic-title">👻 Hover-to-Reveal</div>
@@ -538,55 +679,107 @@ function buildHoverRevealRow() {
     <span class="ci-flash" id="ci-flash-htr">Added ✓</span>
   `;
 
-  const items =[
-    { id: 'htr-invite',     sel: '.invite-info-panel-container',  label: 'Party invite panel' },
-    { id: 'htr-notif',      sel: '.notifications-button',          label: 'Notifications button' },
-    { id: 'htr-xp',         sel: '.xp-ring',                       label: 'XP ring (on avatar hover)', hover: '.identity-icon:hover > .summoner-level-icon > .xp-ring' },
-    { id: 'htr-status',     sel: '.lower-details',                 label: 'Status / availability' },
-    { id: 'htr-alpha',      sel: '.alpha-version-panel',           label: 'Version / misc panel' },
-    { id: 'htr-social',     sel: '.lol-social-actions-bar > .actions-bar > buttons:not(:first-child)', label: 'Social action buttons' },
-    { id: 'htr-xpradial',   sel: '.summoner-xp-radial-container',  label: 'XP radial container' },
-    { id: 'htr-skinpicker', sel: '.style-profile-skin-picker-button', label: 'Skin picker button' },
-    { id: 'htr-lor',        sel: '.launch-lor-button-container',   label: 'LoR button' },
-    { id: 'htr-promo',      sel: '.deep-links-promo',              label: 'Deep links promo' },
-    { id: 'htr-playbtn',    sel: '.play-button-container',         label: 'Play button' },
-    { id: 'htr-rune',       sel: '.rune-recommender-button-component', label: 'Auto-rune button' },
-    { id: 'htr-activity',   sel: '#activity-center .activity-center__tabs_scrollable', label: 'Activity center tabs' },
-    { id: 'htr-navcurrency',sel: '.currency-container-stacked',    label: 'Currency display' },
-    { id: 'htr-navitems',   sel: '.main-navigation-menu-item',     label: 'Nav menu items' },
+  const items = [
+    {
+      id: "htr-invite",
+      sel: ".invite-info-panel-container",
+      label: "Party invite panel",
+    },
+    {
+      id: "htr-notif",
+      sel: ".notifications-button",
+      label: "Notifications button",
+    },
+    {
+      id: "htr-xp",
+      sel: ".xp-ring",
+      label: "XP ring (on avatar hover)",
+      hover: ".identity-icon:hover > .summoner-level-icon > .xp-ring",
+    },
+    { id: "htr-status", sel: ".lower-details", label: "Status / availability" },
+    {
+      id: "htr-alpha",
+      sel: ".alpha-version-panel",
+      label: "Version / misc panel",
+    },
+    {
+      id: "htr-social",
+      sel: ".lol-social-actions-bar > .actions-bar > buttons:not(:first-child)",
+      label: "Social action buttons",
+    },
+    {
+      id: "htr-xpradial",
+      sel: ".summoner-xp-radial-container",
+      label: "XP radial container",
+    },
+    {
+      id: "htr-skinpicker",
+      sel: ".style-profile-skin-picker-button",
+      label: "Skin picker button",
+    },
+    { id: "htr-lor", sel: ".launch-lor-button-container", label: "LoR button" },
+    { id: "htr-promo", sel: ".deep-links-promo", label: "Deep links promo" },
+    { id: "htr-playbtn", sel: ".play-button-container", label: "Play button" },
+    {
+      id: "htr-rune",
+      sel: ".rune-recommender-button-component",
+      label: "Auto-rune button",
+    },
+    {
+      id: "htr-activity",
+      sel: "#activity-center .activity-center__tabs_scrollable",
+      label: "Activity center tabs",
+    },
+    {
+      id: "htr-navcurrency",
+      sel: ".currency-container-stacked",
+      label: "Currency display",
+    },
+    {
+      id: "htr-navitems",
+      sel: ".main-navigation-menu-item",
+      label: "Nav menu items",
+    },
   ];
 
-  const list = row.querySelector('#htr-list');
-  items.forEach(item => {
-    const label = document.createElement('label');
-    label.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;color:#8a9aaa;padding:2px 0;';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.id = item.id;
-    cb.style.cssText = 'accent-color:#785a28;cursor:pointer;flex-shrink:0;';
-    const span = document.createElement('span');
+  const list = row.querySelector("#htr-list");
+  items.forEach((item) => {
+    const label = document.createElement("label");
+    label.style.cssText =
+      "display:flex;align-items:center;gap:6px;cursor:pointer;color:#8a9aaa;padding:2px 0;";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = item.id;
+    cb.style.cssText = "accent-color:#785a28;cursor:pointer;flex-shrink:0;";
+    const span = document.createElement("span");
     span.textContent = item.label;
-    span.style.cssText = 'font-size:10px;';
-    label.appendChild(cb); label.appendChild(span);
+    span.style.cssText = "font-size:10px;";
+    label.appendChild(cb);
+    label.appendChild(span);
     list.appendChild(label);
   });
 
-  row.querySelector('[data-action="htr"]').addEventListener('click', () => {
-    const speed = row.querySelector('#htr-speed').value;
-    const lines =[];
+  row.querySelector('[data-action="htr"]').addEventListener("click", () => {
+    const speed = row.querySelector("#htr-speed").value;
+    const lines = [];
 
-    items.forEach(item => {
-      const cb = row.querySelector('#' + item.id);
+    items.forEach((item) => {
+      const cb = row.querySelector("#" + item.id);
       if (!cb?.checked) return;
       const hideSel = item.sel;
       // If element has a special hover selector (like xp-ring), use that; else self:hover
-      const hoverSel = item.hover || (hideSel + ':hover');
-      lines.push(`${hideSel} {\n  opacity: 0 !important;\n  transition: ${speed} !important;\n}`);
-      lines.push(`${hoverSel} {\n  opacity: 1 !important;\n  transition: ${speed} !important;\n}`);
+      const hoverSel = item.hover || hideSel + ":hover";
+      lines.push(
+        `${hideSel} {\n  opacity: 0 !important;\n  transition: ${speed} !important;\n}`,
+      );
+      lines.push(
+        `${hoverSel} {\n  opacity: 1 !important;\n  transition: ${speed} !important;\n}`,
+      );
     });
 
     if (!lines.length) return;
-    flashMessage(row.querySelector('#ci-flash-htr'));
-    sendToRaw(lines.join('\n'));
+    flashMessage(row.querySelector("#ci-flash-htr"));
+    sendToRaw(lines.join("\n"));
   });
 
   return row;
@@ -594,80 +787,123 @@ function buildHoverRevealRow() {
 
 // MINIMAL
 function buildMinimalModeRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
   // Categories for the sweep
-  const categories =[
+  const categories = [
     {
-      id: 'min-backgrounds',
-      label: 'Transparent backgrounds',
-      desc: 'Party view, sidebar, store, loot, clash, event shop, etc.',
-      selectors:[
-        '.parties-view', '.parties-background', '.parties-background-mask',
-        '.lol-social-sidebar', '.rcp-fe-viewport-sidebar',
-        '.store-backdrop', '.loot-backdrop.background-static',
-        '.clash-root-background', '.clash-root-background-landing',
-        '.yourshop-root', '.collections-application',
-        '.postgame-background-image', '.postgame-champion-background-wrapper',
-        '.champ-select-bg-darken', '.stats-backdrop',
-        '.match-details-root', '.cdp-backdrop-component',
-        'body', 'html',
+      id: "min-backgrounds",
+      label: "Transparent backgrounds",
+      desc: "Party view, sidebar, store, loot, clash, event shop, etc.",
+      selectors: [
+        ".parties-view",
+        ".parties-background",
+        ".parties-background-mask",
+        ".lol-social-sidebar",
+        ".rcp-fe-viewport-sidebar",
+        ".store-backdrop",
+        ".loot-backdrop.background-static",
+        ".clash-root-background",
+        ".clash-root-background-landing",
+        ".yourshop-root",
+        ".collections-application",
+        ".postgame-background-image",
+        ".postgame-champion-background-wrapper",
+        ".champ-select-bg-darken",
+        ".stats-backdrop",
+        ".match-details-root",
+        ".cdp-backdrop-component",
+        "body",
+        "html",
       ],
-      props: { 'background-color': 'transparent', 'background': 'transparent', 'backdrop-filter': 'none' }
+      props: {
+        "background-color": "transparent",
+        background: "transparent",
+        "backdrop-filter": "none",
+      },
     },
     {
-      id: 'min-nav',
-      label: 'Clean navigation',
-      desc: 'Remove nav borders, blur, dividers, decorations.',
-      selectors:['.navbar-blur', '.play-button-frame', '.navigation-root-component', '.lobby-header-overlay'],
-      props: { 'background': 'transparent', 'border': 'none', 'backdrop-filter': 'none' },
-      displayNone:['.right-nav-vertical-rule', '.lobby-header-overlay', '#background-ambient', '.app-controls-support']
-    },
-    {
-      id: 'min-party',
-      label: 'Clean party / lobby',
-      desc: 'Hide empty party banners, search dividers, warnings.',
-      displayNone:[
-        '.v2-banner-placeholder', '.parties-game-search-divider',
-        '.parties-footer-warning', '.lol-parties-status-card',
-        '.point-eligibility-icon', '.lol-uikit-flyout-frame',
-        '.lol-uikit-contextual-notification-targeted-layer',
-      ]
-    },
-    {
-      id: 'min-spinners',
-      label: 'Hide loading spinners',
-      desc: 'All the loading spinners and store loaders.',
-      displayNone:[
-        '.rcp-fe-lol-home-loading-spinner', '.style-profile-loading-spinner',
-        '.spinner', '.store-loading', '.lol-loading-screen-spinner',
-      ]
-    },
-    {
-      id: 'min-misc',
-      label: 'Misc noise',
-      desc: 'LoR button, status ticker, scrollbar thumb, tooltip layer.',
-      displayNone:['.navigation-status-ticker', '.deep-links-promo', '.arrow-container'],
-      extra: `::-webkit-scrollbar-thumb { background-color: transparent !important; }\n.lol-uikit-layer-manager-wrapper > .tooltip { display: none !important; }`
-    },
-    {
-      id: 'min-activity',
-      label: 'Activity center transparent',
-      desc: 'Clear backgrounds on all activity-center sub-elements using attribute wildcard.',
-      extra: `[class*="activity-center"] {\n  background-color: transparent !important;\n}`
-    },
-    {
-      id: 'min-filterreset',
-      label: 'Reset inherited filters',
-      desc: 'Explicitly clear filter/backdrop-filter on elements that inherit unwanted values.',
-      selectors:[
-        '.collections-application', '.yourshop-root', '.__rcp-fe-lol-store',
-        '.loot-backdrop', '.rcp-fe-viewport-sidebar', '.lol-social-sidebar',
-        '.cdp-backdrop-component', '.cdp-backdrop:after',
+      id: "min-nav",
+      label: "Clean navigation",
+      desc: "Remove nav borders, blur, dividers, decorations.",
+      selectors: [
+        ".navbar-blur",
+        ".play-button-frame",
+        ".navigation-root-component",
+        ".lobby-header-overlay",
       ],
-      props: { 'filter': 'none', 'backdrop-filter': 'none' }
-    }
+      props: {
+        background: "transparent",
+        border: "none",
+        "backdrop-filter": "none",
+      },
+      displayNone: [
+        ".right-nav-vertical-rule",
+        ".lobby-header-overlay",
+        "#background-ambient",
+        ".app-controls-support",
+      ],
+    },
+    {
+      id: "min-party",
+      label: "Clean party / lobby",
+      desc: "Hide empty party banners, search dividers, warnings.",
+      displayNone: [
+        ".v2-banner-placeholder",
+        ".parties-game-search-divider",
+        ".parties-footer-warning",
+        ".lol-parties-status-card",
+        ".point-eligibility-icon",
+        ".lol-uikit-flyout-frame",
+        ".lol-uikit-contextual-notification-targeted-layer",
+      ],
+    },
+    {
+      id: "min-spinners",
+      label: "Hide loading spinners",
+      desc: "All the loading spinners and store loaders.",
+      displayNone: [
+        ".rcp-fe-lol-home-loading-spinner",
+        ".style-profile-loading-spinner",
+        ".spinner",
+        ".store-loading",
+        ".lol-loading-screen-spinner",
+      ],
+    },
+    {
+      id: "min-misc",
+      label: "Misc noise",
+      desc: "LoR button, status ticker, scrollbar thumb, tooltip layer.",
+      displayNone: [
+        ".navigation-status-ticker",
+        ".deep-links-promo",
+        ".arrow-container",
+      ],
+      extra: `::-webkit-scrollbar-thumb { background-color: transparent !important; }\n.lol-uikit-layer-manager-wrapper > .tooltip { display: none !important; }`,
+    },
+    {
+      id: "min-activity",
+      label: "Activity center transparent",
+      desc: "Clear backgrounds on all activity-center sub-elements using attribute wildcard.",
+      extra: `[class*="activity-center"] {\n  background-color: transparent !important;\n}`,
+    },
+    {
+      id: "min-filterreset",
+      label: "Reset inherited filters",
+      desc: "Explicitly clear filter/backdrop-filter on elements that inherit unwanted values.",
+      selectors: [
+        ".collections-application",
+        ".yourshop-root",
+        ".__rcp-fe-lol-store",
+        ".loot-backdrop",
+        ".rcp-fe-viewport-sidebar",
+        ".lol-social-sidebar",
+        ".cdp-backdrop-component",
+        ".cdp-backdrop:after",
+      ],
+      props: { filter: "none", "backdrop-filter": "none" },
+    },
   ];
 
   row.innerHTML = `
@@ -678,38 +914,48 @@ function buildMinimalModeRow() {
     <span class="ci-flash" id="ci-flash-min">Added ✓</span>
   `;
 
-  const catWrap = row.querySelector('#min-cats');
-  categories.forEach(cat => {
-    const label = document.createElement('label');
-    label.style.cssText = 'display:flex;align-items:flex-start;gap:8px;cursor:pointer;padding:4px 0;border-bottom:1px solid #0d1824;';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.id = cat.id; cb.checked = true;
-    cb.style.cssText = 'accent-color:#785a28;cursor:pointer;margin-top:2px;flex-shrink:0;';
-    const textWrap = document.createElement('div');
-    const title = document.createElement('div');
-    title.style.cssText = 'font-size:10px;color:#a0b4c8;font-weight:600;';
+  const catWrap = row.querySelector("#min-cats");
+  categories.forEach((cat) => {
+    const label = document.createElement("label");
+    label.style.cssText =
+      "display:flex;align-items:flex-start;gap:8px;cursor:pointer;padding:4px 0;border-bottom:1px solid #0d1824;";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = cat.id;
+    cb.checked = true;
+    cb.style.cssText =
+      "accent-color:#785a28;cursor:pointer;margin-top:2px;flex-shrink:0;";
+    const textWrap = document.createElement("div");
+    const title = document.createElement("div");
+    title.style.cssText = "font-size:10px;color:#a0b4c8;font-weight:600;";
     title.textContent = cat.label;
-    const descEl = document.createElement('div');
-    descEl.style.cssText = 'font-size:9px;color:#3a5060;margin-top:1px;';
+    const descEl = document.createElement("div");
+    descEl.style.cssText = "font-size:9px;color:#3a5060;margin-top:1px;";
     descEl.textContent = cat.desc;
-    textWrap.appendChild(title); textWrap.appendChild(descEl);
-    label.appendChild(cb); label.appendChild(textWrap);
+    textWrap.appendChild(title);
+    textWrap.appendChild(descEl);
+    label.appendChild(cb);
+    label.appendChild(textWrap);
     catWrap.appendChild(label);
   });
 
-  row.querySelector('[data-action="min"]').addEventListener('click', () => {
-    const lines =[];
+  row.querySelector('[data-action="min"]').addEventListener("click", () => {
+    const lines = [];
 
-    categories.forEach(cat => {
-      const cb = row.querySelector('#' + cat.id);
+    categories.forEach((cat) => {
+      const cb = row.querySelector("#" + cat.id);
       if (!cb?.checked) return;
 
       if (cat.selectors && cat.props) {
-        const propLines = Object.entries(cat.props).map(([p,v]) => `  ${p}: ${v} !important;`).join('\n');
-        lines.push(`${cat.selectors.join(',\n')} {\n${propLines}\n}`);
+        const propLines = Object.entries(cat.props)
+          .map(([p, v]) => `  ${p}: ${v} !important;`)
+          .join("\n");
+        lines.push(`${cat.selectors.join(",\n")} {\n${propLines}\n}`);
       }
       if (cat.displayNone) {
-        lines.push(`${cat.displayNone.join(',\n')} {\n  display: none !important;\n}`);
+        lines.push(
+          `${cat.displayNone.join(",\n")} {\n  display: none !important;\n}`,
+        );
       }
       if (cat.extra) {
         lines.push(cat.extra);
@@ -717,25 +963,45 @@ function buildMinimalModeRow() {
     });
 
     if (!lines.length) return;
-    flashMessage(row.querySelector('#ci-flash-min'));
-    sendToRaw(lines.join('\n'));
+    flashMessage(row.querySelector("#ci-flash-min"));
+    sendToRaw(lines.join("\n"));
   });
 
   return row;
 }
 
-// CSS VARIABLE PALETTE 
+// CSS VARIABLE PALETTE
 // :root color variables
 function buildCssVarsRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
-  const vars =[
-    { id: 'var-dark',   name: '--dark-brown',  label: 'Dark accent',  default: '#352a17' },
-    { id: 'var-light',  name: '--light-brown', label: 'Light accent', default: '#785a28' },
-    { id: 'var-pale',   name: '--pale-brown',  label: 'Pale accent',  default: '#c8aa6e' },
-    { id: 'var-text',   name: '--text',         label: 'Text color',   default: '#e8dfcc' },
-    { id: 'var-bg',     name: '--background',   label: 'BG color',     default: '#0a1428' },
+  const vars = [
+    {
+      id: "var-dark",
+      name: "--dark-brown",
+      label: "Dark accent",
+      default: "#352a17",
+    },
+    {
+      id: "var-light",
+      name: "--light-brown",
+      label: "Light accent",
+      default: "#785a28",
+    },
+    {
+      id: "var-pale",
+      name: "--pale-brown",
+      label: "Pale accent",
+      default: "#c8aa6e",
+    },
+    { id: "var-text", name: "--text", label: "Text color", default: "#e8dfcc" },
+    {
+      id: "var-bg",
+      name: "--background",
+      label: "BG color",
+      default: "#0a1428",
+    },
   ];
 
   row.innerHTML = `
@@ -754,50 +1020,61 @@ function buildCssVarsRow() {
     <span class="ci-flash" id="ci-flash-cssvar">Added ✓</span>
   `;
 
-  const list = row.querySelector('#cssvar-list');
-  vars.forEach(v => {
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
-    const lbl = document.createElement('div');
-    lbl.style.cssText = 'font-size:9px;color:#4a6070;font-family:"Fira Code",monospace;';
+  const list = row.querySelector("#cssvar-list");
+  vars.forEach((v) => {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "display:flex;flex-direction:column;gap:2px;";
+    const lbl = document.createElement("div");
+    lbl.style.cssText =
+      'font-size:9px;color:#4a6070;font-family:"Fira Code",monospace;';
     lbl.textContent = v.name;
-    const pair = document.createElement('div');
-    pair.className = 'ci-color-pair';
-    const picker = document.createElement('input');
-    picker.type = 'color'; picker.className = 'ci-color-input'; picker.value = v.default; picker.id = v.id + '-picker';
-    const textIn = document.createElement('input');
-    textIn.type = 'text'; textIn.className = 'ci-input'; textIn.value = v.default; textIn.style.width = '70px';
-    textIn.id = v.id + '-text';
-    picker.addEventListener('input', () => textIn.value = picker.value);
-    textIn.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(textIn.value)) picker.value = textIn.value; });
-    pair.appendChild(picker); pair.appendChild(textIn);
-    wrap.appendChild(lbl); wrap.appendChild(pair);
+    const pair = document.createElement("div");
+    pair.className = "ci-color-pair";
+    const picker = document.createElement("input");
+    picker.type = "color";
+    picker.className = "ci-color-input";
+    picker.value = v.default;
+    picker.id = v.id + "-picker";
+    const textIn = document.createElement("input");
+    textIn.type = "text";
+    textIn.className = "ci-input";
+    textIn.value = v.default;
+    textIn.style.width = "70px";
+    textIn.id = v.id + "-text";
+    picker.addEventListener("input", () => (textIn.value = picker.value));
+    textIn.addEventListener("input", () => {
+      if (/^#[0-9a-f]{6}$/i.test(textIn.value)) picker.value = textIn.value;
+    });
+    pair.appendChild(picker);
+    pair.appendChild(textIn);
+    wrap.appendChild(lbl);
+    wrap.appendChild(pair);
     list.appendChild(wrap);
   });
 
-  row.querySelector('[data-action="cssvar"]').addEventListener('click', () => {
-    const lines =[];
-    vars.forEach(v => {
-      const val = row.querySelector('#' + v.id + '-text').value.trim();
+  row.querySelector('[data-action="cssvar"]').addEventListener("click", () => {
+    const lines = [];
+    vars.forEach((v) => {
+      const val = row.querySelector("#" + v.id + "-text").value.trim();
       if (val) lines.push(`  ${v.name}: ${val};`);
     });
-    const customName = row.querySelector('#var-custom-name').value.trim();
-    const customVal  = row.querySelector('#var-custom-val').value.trim();
+    const customName = row.querySelector("#var-custom-name").value.trim();
+    const customVal = row.querySelector("#var-custom-val").value.trim();
     if (customName && customVal) lines.push(`  ${customName}: ${customVal};`);
 
     if (!lines.length) return;
-    flashMessage(row.querySelector('#ci-flash-cssvar'));
-    sendToRaw(`:root {\n${lines.join('\n')}\n}`);
+    flashMessage(row.querySelector("#ci-flash-cssvar"));
+    sendToRaw(`:root {\n${lines.join("\n")}\n}`);
   });
 
   return row;
 }
 
-// CLIENT FRAME GLOW 
+// CLIENT FRAME GLOW
 // Border + drop-shadow on the entire client window
 function buildClientFrameRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
   row.innerHTML = `
     <div class="ci-generic-title">🖼 Client Frame & Glow</div>
     <div class="ci-generic-desc">Add a colored border and glow around the entire client window. Targets <code style="color:#c8aa6e;font-size:9px;">#rcp-fe-viewport-root</code>.</div>
@@ -841,83 +1118,125 @@ function buildClientFrameRow() {
     <span class="ci-flash" id="ci-flash-frame">Added ✓</span>
   `;
 
-  const picker = row.querySelector('#frame-picker');
-  const text   = row.querySelector('#frame-text');
-  picker.addEventListener('input', () => text.value = picker.value);
-  text.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(text.value)) picker.value = text.value; });
+  const picker = row.querySelector("#frame-picker");
+  const text = row.querySelector("#frame-text");
+  picker.addEventListener("input", () => (text.value = picker.value));
+  text.addEventListener("input", () => {
+    if (/^#[0-9a-f]{6}$/i.test(text.value)) picker.value = text.value;
+  });
 
-  row.querySelector('[data-action="frame"]').addEventListener('click', () => {
+  row.querySelector('[data-action="frame"]').addEventListener("click", () => {
     const color = text.value.trim() || picker.value;
-    const width = row.querySelector('#frame-width').value;
-    const glowSize = row.querySelector('#frame-glow').value;
-    const bg = row.querySelector('#frame-bg').value;
+    const width = row.querySelector("#frame-width").value;
+    const glowSize = row.querySelector("#frame-glow").value;
+    const bg = row.querySelector("#frame-bg").value;
 
     const props = {};
-    if (width !== '0') {
-      props['border'] = `${width} solid ${color}`;
+    if (width !== "0") {
+      props["border"] = `${width} solid ${color}`;
     }
-    if (glowSize !== 'none') {
-      props['filter'] = `drop-shadow(1px 1px ${glowSize} ${color})`;
+    if (glowSize !== "none") {
+      props["filter"] = `drop-shadow(1px 1px ${glowSize} ${color})`;
     }
-    if (bg !== 'none') {
-      props['background'] = bg;
+    if (bg !== "none") {
+      props["background"] = bg;
     }
 
     if (Object.keys(props).length) {
-      setCssBatch('#rcp-fe-viewport-root', props);
-      flashMessage(row.querySelector('#ci-flash-frame'));
+      setCssBatch("#rcp-fe-viewport-root", props);
+      flashMessage(row.querySelector("#ci-flash-frame"));
       sendToRaw();
     }
   });
   return row;
 }
 
-// GLOBAL HUE-ROTATE 
+// GLOBAL HUE-ROTATE
 function buildHueRotateRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
   // Curated target groups from theme analysis
-  const targetGroups =[
+  const targetGroups = [
     {
-      id: 'hue-nav',
-      label: 'Navigation & lobby buttons',
-      selectors:['.main-navigation-menu-item', '.navigation-bar', '.navigation-bar.left', '.alpha-version-panel', '.summoner-level-ring', '.summoner-level', '.dropdown-container']
+      id: "hue-nav",
+      label: "Navigation & lobby buttons",
+      selectors: [
+        ".main-navigation-menu-item",
+        ".navigation-bar",
+        ".navigation-bar.left",
+        ".alpha-version-panel",
+        ".summoner-level-ring",
+        ".summoner-level",
+        ".dropdown-container",
+      ],
     },
     {
-      id: 'hue-ui',
-      label: 'UI kit elements (dialogs, buttons)',
-      selectors:['.lol-uikit-dialog-frame', '.lol-uikit-flyout-frame-wrapper', 'lol-uikit-close-button', 'lol-uikit-flat-button-secondary', '.lol-uikit-flat-button-inner', '.lol-uikit-flat-button-normal', '.dialog-frame']
+      id: "hue-ui",
+      label: "UI kit elements (dialogs, buttons)",
+      selectors: [
+        ".lol-uikit-dialog-frame",
+        ".lol-uikit-flyout-frame-wrapper",
+        "lol-uikit-close-button",
+        "lol-uikit-flat-button-secondary",
+        ".lol-uikit-flat-button-inner",
+        ".lol-uikit-flat-button-normal",
+        ".dialog-frame",
+      ],
     },
     {
-      id: 'hue-currency',
-      label: 'Currency & wallet icons',
-      selectors: ['.currency-be-icon-container', '.currency-rp']
+      id: "hue-currency",
+      label: "Currency & wallet icons",
+      selectors: [".currency-be-icon-container", ".currency-rp"],
     },
     {
-      id: 'hue-lobby',
-      label: 'Party & lobby elements',
-      selectors:['.game-type-card .parties-game-type-upper-half', '.parties-game-type-card-categories', '.parties-player-positions', '.parties-position-selector-hextech-dashed-ring', '.confirm-button-container button.confirm']
+      id: "hue-lobby",
+      label: "Party & lobby elements",
+      selectors: [
+        ".game-type-card .parties-game-type-upper-half",
+        ".parties-game-type-card-categories",
+        ".parties-player-positions",
+        ".parties-position-selector-hextech-dashed-ring",
+        ".confirm-button-container button.confirm",
+      ],
     },
     {
-      id: 'hue-loot',
-      label: 'Loot & loading',
-      selectors:['.loot-backdrop', '.loading-spinner', '.hextech-loading-animation', '.icon-ring', '.border']
+      id: "hue-loot",
+      label: "Loot & loading",
+      selectors: [
+        ".loot-backdrop",
+        ".loading-spinner",
+        ".hextech-loading-animation",
+        ".icon-ring",
+        ".border",
+      ],
     },
     {
-      id: 'hue-chat',
-      label: 'Chat & social elements',
-      selectors:['.action-bar-button', 'lol-social-panel', '.conversation-close-button', 'lol-social-chat-input .chat-input']
+      id: "hue-chat",
+      label: "Chat & social elements",
+      selectors: [
+        ".action-bar-button",
+        "lol-social-panel",
+        ".conversation-close-button",
+        "lol-social-chat-input .chat-input",
+      ],
     },
     {
-      id: 'hue-readycheck',
-      label: 'Ready check / match accept',
-      selectors:['.ready-check-state-machine-timer']
+      id: "hue-readycheck",
+      label: "Ready check / match accept",
+      selectors: [".ready-check-state-machine-timer"],
     },
     {
-      id: 'hue-collections',
-      label: 'Collections & store',
-      selectors:['.collection-details', '.collection-ownership-filter', '.collection-grouping-options', '.rcp-fe-lol-collections-collection-details', '.nav-tab', '.loot-display-category-tab .loot-category-tab.selected::after']
+      id: "hue-collections",
+      label: "Collections & store",
+      selectors: [
+        ".collection-details",
+        ".collection-ownership-filter",
+        ".collection-grouping-options",
+        ".rcp-fe-lol-collections-collection-details",
+        ".nav-tab",
+        ".loot-display-category-tab .loot-category-tab.selected::after",
+      ],
     },
   ];
 
@@ -950,54 +1269,65 @@ function buildHueRotateRow() {
     <span class="ci-flash" id="ci-flash-hue">Added ✓</span>
   `;
 
-  const slider = row.querySelector('#hue-slider');
-  const text   = row.querySelector('#hue-text');
-  const preview = row.querySelector('#hue-preview');
+  const slider = row.querySelector("#hue-slider");
+  const text = row.querySelector("#hue-text");
+  const preview = row.querySelector("#hue-preview");
 
   const updateHue = () => {
     const deg = parseInt(slider.value) || 0;
-    text.value = deg + 'deg';
+    text.value = deg + "deg";
     // Rotate the gold color to preview
     preview.style.filter = `hue-rotate(${deg}deg)`;
   };
-  slider.addEventListener('input', () => { updateHue(); });
-  text.addEventListener('input', () => {
+  slider.addEventListener("input", () => {
+    updateHue();
+  });
+  text.addEventListener("input", () => {
     const m = text.value.match(/-?\d+/);
-    if (m) { slider.value = m[0]; updateHue(); }
+    if (m) {
+      slider.value = m[0];
+      updateHue();
+    }
   });
 
   // Build target checkboxes
-  const targetsWrap = row.querySelector('#hue-targets');
-  targetGroups.forEach(g => {
-    const label = document.createElement('label');
-    label.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;color:#8a9aaa;padding:2px 0;';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.id = g.id; cb.checked = false;
-    cb.style.cssText = 'accent-color:#785a28;cursor:pointer;flex-shrink:0;';
-    const span = document.createElement('span');
-    span.style.cssText = 'font-size:10px;';
+  const targetsWrap = row.querySelector("#hue-targets");
+  targetGroups.forEach((g) => {
+    const label = document.createElement("label");
+    label.style.cssText =
+      "display:flex;align-items:center;gap:5px;cursor:pointer;color:#8a9aaa;padding:2px 0;";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = g.id;
+    cb.checked = false;
+    cb.style.cssText = "accent-color:#785a28;cursor:pointer;flex-shrink:0;";
+    const span = document.createElement("span");
+    span.style.cssText = "font-size:10px;";
     span.textContent = g.label;
-    label.appendChild(cb); label.appendChild(span);
+    label.appendChild(cb);
+    label.appendChild(span);
     targetsWrap.appendChild(label);
   });
 
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => {
-    startElementPicker(sel => row.querySelector('#hue-custom-sel').value = sel);
+  row.querySelector(".ci-picker-btn").addEventListener("click", () => {
+    startElementPicker(
+      (sel) => (row.querySelector("#hue-custom-sel").value = sel),
+    );
   });
 
-  row.querySelector('[data-action="hue"]').addEventListener('click', () => {
-    const deg = text.value.trim() || '0deg';
-    const lines =[];
+  row.querySelector('[data-action="hue"]').addEventListener("click", () => {
+    const deg = text.value.trim() || "0deg";
+    const lines = [];
 
-    targetGroups.forEach(g => {
-      const cb = row.querySelector('#' + g.id);
+    targetGroups.forEach((g) => {
+      const cb = row.querySelector("#" + g.id);
       if (!cb?.checked) return;
-      lines.push(`${g.selectors.join(',')} {
+      lines.push(`${g.selectors.join(",")} {
   filter: hue-rotate(${deg}) !important;
 }`);
     });
 
-    const customSel = row.querySelector('#hue-custom-sel').value.trim();
+    const customSel = row.querySelector("#hue-custom-sel").value.trim();
     if (customSel) {
       lines.push(`${customSel} {
   filter: hue-rotate(${deg}) !important;
@@ -1005,17 +1335,17 @@ function buildHueRotateRow() {
     }
 
     if (!lines.length) return;
-    flashMessage(row.querySelector('#ci-flash-hue'));
-    sendToRaw(lines.join('\n'));
+    flashMessage(row.querySelector("#ci-flash-hue"));
+    sendToRaw(lines.join("\n"));
   });
 
   return row;
 }
 
-// GRADIENT BACKGROUND 
+// GRADIENT BACKGROUND
 function buildGradientBgRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
   row.innerHTML = `
     <div class="ci-generic-title">🎨 Gradient Background</div>
     <div class="ci-generic-desc">Apply a linear gradient to any element. Used by themes on the play button, sidebar, nav items, and screen overlays.</div>
@@ -1072,59 +1402,86 @@ function buildGradientBgRow() {
   `;
 
   const syncColor = (picker, textEl) => {
-    picker.addEventListener('input', () => { textEl.value = picker.value; updatePreview(); });
-    textEl.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(textEl.value)) { picker.value = textEl.value; updatePreview(); } });
+    picker.addEventListener("input", () => {
+      textEl.value = picker.value;
+      updatePreview();
+    });
+    textEl.addEventListener("input", () => {
+      if (/^#[0-9a-f]{6}$/i.test(textEl.value)) {
+        picker.value = textEl.value;
+        updatePreview();
+      }
+    });
   };
-  syncColor(row.querySelector('#grad-c1-picker'), row.querySelector('#grad-c1-text'));
-  syncColor(row.querySelector('#grad-c2-picker'), row.querySelector('#grad-c2-text'));
-  row.querySelector('#grad-dir').addEventListener('change', updatePreview);
+  syncColor(
+    row.querySelector("#grad-c1-picker"),
+    row.querySelector("#grad-c1-text"),
+  );
+  syncColor(
+    row.querySelector("#grad-c2-picker"),
+    row.querySelector("#grad-c2-text"),
+  );
+  row.querySelector("#grad-dir").addEventListener("change", updatePreview);
 
   function updatePreview() {
-    const dir = row.querySelector('#grad-dir').value;
-    const c1  = row.querySelector('#grad-c1-text').value || '#382b7a';
-    const c2  = row.querySelector('#grad-c2-text').value || '#241666';
-    row.querySelector('#grad-preview').style.background = `linear-gradient(${dir}, ${c1}, ${c2})`;
+    const dir = row.querySelector("#grad-dir").value;
+    const c1 = row.querySelector("#grad-c1-text").value || "#382b7a";
+    const c2 = row.querySelector("#grad-c2-text").value || "#241666";
+    row.querySelector("#grad-preview").style.background =
+      `linear-gradient(${dir}, ${c1}, ${c2})`;
   }
   updatePreview();
 
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => {
-    startElementPicker(sel => row.querySelector('#grad-sel').value = sel);
+  row.querySelector(".ci-picker-btn").addEventListener("click", () => {
+    startElementPicker((sel) => (row.querySelector("#grad-sel").value = sel));
   });
 
-  row.querySelector('[data-action="grad"]').addEventListener('click', () => {
-    const sel    = row.querySelector('#grad-sel').value.trim();
-    const dir    = row.querySelector('#grad-dir').value;
-    const c1     = row.querySelector('#grad-c1-text').value || row.querySelector('#grad-c1-picker').value;
-    const c2     = row.querySelector('#grad-c2-text').value || row.querySelector('#grad-c2-picker').value;
-    const prop   = row.querySelector('#grad-prop').value;
-    const radius = row.querySelector('#grad-radius').value;
+  row.querySelector('[data-action="grad"]').addEventListener("click", () => {
+    const sel = row.querySelector("#grad-sel").value.trim();
+    const dir = row.querySelector("#grad-dir").value;
+    const c1 =
+      row.querySelector("#grad-c1-text").value ||
+      row.querySelector("#grad-c1-picker").value;
+    const c2 =
+      row.querySelector("#grad-c2-text").value ||
+      row.querySelector("#grad-c2-picker").value;
+    const prop = row.querySelector("#grad-prop").value;
+    const radius = row.querySelector("#grad-radius").value;
     if (!sel) return;
 
     const batch = { [prop]: `linear-gradient(${dir}, ${c1}, ${c2})` };
-    if (radius) batch['border-radius'] = radius;
+    if (radius) batch["border-radius"] = radius;
     setCssBatch(sel, batch);
 
-    flashMessage(row.querySelector('#ci-flash-grad'));
+    flashMessage(row.querySelector("#ci-flash-grad"));
     sendToRaw();
   });
   return row;
 }
 
-// SCREEN TINT (::before) 
+// SCREEN TINT (::before)
 // mix-blend-mode: hue overlay via ::before
 function buildScreenTintRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
-  const screens =[
-    { id: 'tint-collections', sel: '.collections-application', label: 'Collections' },
-    { id: 'tint-yourshop',    sel: '.yourshop-root',           label: 'Your Shop' },
-    { id: 'tint-store',       sel: '.store-backdrop',          label: 'Store' },
-    { id: 'tint-loot',        sel: '.loot-backdrop',           label: 'Loot' },
-    { id: 'tint-home',        sel: '.parties-view',            label: 'Home' },
-    { id: 'tint-champ',       sel: '.champion-select',         label: 'Champ Select' },
-    { id: 'tint-postgame',    sel: '.postgame-root-component', label: 'Post-Game' },
-    { id: 'tint-custom',      sel: '',                          label: 'Custom…' },
+  const screens = [
+    {
+      id: "tint-collections",
+      sel: ".collections-application",
+      label: "Collections",
+    },
+    { id: "tint-yourshop", sel: ".yourshop-root", label: "Your Shop" },
+    { id: "tint-store", sel: ".store-backdrop", label: "Store" },
+    { id: "tint-loot", sel: ".loot-backdrop", label: "Loot" },
+    { id: "tint-home", sel: ".parties-view", label: "Home" },
+    { id: "tint-champ", sel: ".champion-select", label: "Champ Select" },
+    {
+      id: "tint-postgame",
+      sel: ".postgame-root-component",
+      label: "Post-Game",
+    },
+    { id: "tint-custom", sel: "", label: "Custom…" },
   ];
 
   row.innerHTML = `
@@ -1175,63 +1532,76 @@ function buildScreenTintRow() {
   `;
 
   // Build screen checkboxes
-  const screensWrap = row.querySelector('#tint-screens');
-  screens.forEach(s => {
-    const lbl = document.createElement('label');
-    lbl.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;color:#8a9aaa;padding:2px 0;';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.id = s.id;
-    cb.style.cssText = 'accent-color:#785a28;cursor:pointer;flex-shrink:0;';
-    const span = document.createElement('span');
-    span.style.cssText = 'font-size:10px;';
+  const screensWrap = row.querySelector("#tint-screens");
+  screens.forEach((s) => {
+    const lbl = document.createElement("label");
+    lbl.style.cssText =
+      "display:flex;align-items:center;gap:5px;cursor:pointer;color:#8a9aaa;padding:2px 0;";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = s.id;
+    cb.style.cssText = "accent-color:#785a28;cursor:pointer;flex-shrink:0;";
+    const span = document.createElement("span");
+    span.style.cssText = "font-size:10px;";
     span.textContent = s.label;
-    lbl.appendChild(cb); lbl.appendChild(span);
+    lbl.appendChild(cb);
+    lbl.appendChild(span);
     screensWrap.appendChild(lbl);
-    if (s.id === 'tint-custom') {
-      cb.addEventListener('change', () => {
-        row.querySelector('#tint-custom-wrap').style.display = cb.checked ? 'block' : 'none';
+    if (s.id === "tint-custom") {
+      cb.addEventListener("change", () => {
+        row.querySelector("#tint-custom-wrap").style.display = cb.checked
+          ? "block"
+          : "none";
       });
     }
   });
 
   // Color sync
-  const picker = row.querySelector('#tint-picker');
-  const text   = row.querySelector('#tint-text');
-  picker.addEventListener('input', () => text.value = picker.value);
-  text.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(text.value)) picker.value = text.value; });
-
-  // Opacity sync
-  const opSlider = row.querySelector('#tint-opacity-slider');
-  const opText   = row.querySelector('#tint-opacity-text');
-  opSlider.addEventListener('input', () => opText.value = opSlider.value);
-  opText.addEventListener('input', () => { const v = parseFloat(opText.value); if (!isNaN(v)) opSlider.value = v; });
-
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => {
-    startElementPicker(sel => row.querySelector('#tint-custom-sel').value = sel);
+  const picker = row.querySelector("#tint-picker");
+  const text = row.querySelector("#tint-text");
+  picker.addEventListener("input", () => (text.value = picker.value));
+  text.addEventListener("input", () => {
+    if (/^#[0-9a-f]{6}$/i.test(text.value)) picker.value = text.value;
   });
 
-  row.querySelector('[data-action="tint"]').addEventListener('click', () => {
-    const color   = text.value.trim() || picker.value;
-    const opacity = opText.value.trim() || opSlider.value;
-    const blend   = row.querySelector('#tint-blend').value;
-    const z       = row.querySelector('#tint-z').value;
+  // Opacity sync
+  const opSlider = row.querySelector("#tint-opacity-slider");
+  const opText = row.querySelector("#tint-opacity-text");
+  opSlider.addEventListener("input", () => (opText.value = opSlider.value));
+  opText.addEventListener("input", () => {
+    const v = parseFloat(opText.value);
+    if (!isNaN(v)) opSlider.value = v;
+  });
 
-    const sels =[];
-    screens.forEach(s => {
-      if (s.id === 'tint-custom') return;
-      const cb = row.querySelector('#' + s.id);
+  row.querySelector(".ci-picker-btn").addEventListener("click", () => {
+    startElementPicker(
+      (sel) => (row.querySelector("#tint-custom-sel").value = sel),
+    );
+  });
+
+  row.querySelector('[data-action="tint"]').addEventListener("click", () => {
+    const color = text.value.trim() || picker.value;
+    const opacity = opText.value.trim() || opSlider.value;
+    const blend = row.querySelector("#tint-blend").value;
+    const z = row.querySelector("#tint-z").value;
+
+    const sels = [];
+    screens.forEach((s) => {
+      if (s.id === "tint-custom") return;
+      const cb = row.querySelector("#" + s.id);
       if (cb?.checked) sels.push(s.sel);
     });
-    const customCb = row.querySelector('#tint-custom');
+    const customCb = row.querySelector("#tint-custom");
     if (customCb?.checked) {
-      const customSel = row.querySelector('#tint-custom-sel').value.trim();
+      const customSel = row.querySelector("#tint-custom-sel").value.trim();
       if (customSel) sels.push(customSel);
     }
     if (!sels.length) return;
 
     // Generate ::before block for each selector
-    const lines = sels.map(sel =>
-      `${sel} {
+    const lines = sels.map(
+      (sel) =>
+        `${sel} {
   position: relative;
   isolation: isolate;
 }
@@ -1246,23 +1616,22 @@ ${sel}::before {
   mix-blend-mode: ${blend};
   z-index: ${z};
   pointer-events: none;
-}`
+}`,
     );
 
     // If content inside needs to be above the ::before, generate z-index rules
-    flashMessage(row.querySelector('#ci-flash-tint'));
-    sendToRaw(lines.join('\n\n'));
+    flashMessage(row.querySelector("#ci-flash-tint"));
+    sendToRaw(lines.join("\n\n"));
   });
 
   return row;
 }
 
-
-// ROOT VIEWPORT OVERLAY (::before on #rcp-fe-viewport-root) 
+// ROOT VIEWPORT OVERLAY (::before on #rcp-fe-viewport-root)
 // Adds a semi-transparent colour wash behind everything  darken/tint the client when using a custom background image.
 function buildRootOverlayRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
   row.innerHTML = `
     <div class="ci-generic-title">🌑 Root Viewport Overlay</div>
     <div class="ci-generic-desc">Adds a <code style="color:#c8aa6e;font-size:9px;">::before</code> dark tint behind the entire client. Used in every background-image theme to darken the wallpaper without affecting UI elements. Targets <code style="color:#c8aa6e;font-size:9px;">#rcp-fe-viewport-root</code>.</div>
@@ -1299,42 +1668,71 @@ function buildRootOverlayRow() {
     <span class="ci-flash" id="ci-flash-rovl">Added ✓</span>
   `;
 
-  const picker  = row.querySelector('#rovl-picker');
-  const text    = row.querySelector('#rovl-text');
-  const slider  = row.querySelector('#rovl-slider');
-  const optext  = row.querySelector('#rovl-optext');
-  picker.addEventListener('input', () => { text.value = picker.value; });
-  text.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(text.value)) picker.value = text.value; });
-  slider.addEventListener('input', () => { optext.value = slider.value; });
-  optext.addEventListener('input', () => { const v = parseFloat(optext.value); if (!isNaN(v)) slider.value = v; });
+  const picker = row.querySelector("#rovl-picker");
+  const text = row.querySelector("#rovl-text");
+  const slider = row.querySelector("#rovl-slider");
+  const optext = row.querySelector("#rovl-optext");
+  picker.addEventListener("input", () => {
+    text.value = picker.value;
+  });
+  text.addEventListener("input", () => {
+    if (/^#[0-9a-f]{6}$/i.test(text.value)) picker.value = text.value;
+  });
+  slider.addEventListener("input", () => {
+    optext.value = slider.value;
+  });
+  optext.addEventListener("input", () => {
+    const v = parseFloat(optext.value);
+    if (!isNaN(v)) slider.value = v;
+  });
 
-  row.querySelector('[data-action="rovl"]').addEventListener('click', () => {
-    const color   = text.value.trim() || picker.value;
+  row.querySelector('[data-action="rovl"]').addEventListener("click", () => {
+    const color = text.value.trim() || picker.value;
     const opacity = optext.value.trim() || slider.value;
-    const z       = row.querySelector('#rovl-z').value;
-    const iso     = row.querySelector('#rovl-iso').value;
+    const z = row.querySelector("#rovl-z").value;
+    const iso = row.querySelector("#rovl-iso").value;
 
-    const rootProps = iso === 'yes' ? '  isolation: isolate;\n' : '';
-    const css = '#rcp-fe-viewport-root {\n' + rootProps + '}\n\n#rcp-fe-viewport-root::before {\n  content: \'\';\n  position: absolute;\n  inset: 0;\n  background: ' + color + ';\n  opacity: ' + opacity + ';\n  pointer-events: none;\n  z-index: ' + z + ';\n}';
-    flashMessage(row.querySelector('#ci-flash-rovl'));
+    const rootProps = iso === "yes" ? "  isolation: isolate;\n" : "";
+    const css =
+      "#rcp-fe-viewport-root {\n" +
+      rootProps +
+      "}\n\n#rcp-fe-viewport-root::before {\n  content: '';\n  position: absolute;\n  inset: 0;\n  background: " +
+      color +
+      ";\n  opacity: " +
+      opacity +
+      ";\n  pointer-events: none;\n  z-index: " +
+      z +
+      ";\n}";
+    flashMessage(row.querySelector("#ci-flash-rovl"));
     sendToRaw(css);
   });
   return row;
 }
 
-
-// GLASS PANEL (targeted backdrop-filter) 
+// GLASS PANEL (targeted backdrop-filter)
 // Apply blur + optional dark background to any panel the frosted glass look
 function buildGlassPanelRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
-  const presets =[
-    { id: 'gp-lobby',    sel: '.parties-game-info-panel-content, .v2-parties-invite-info-panel, .parties-invite-info-panel', label: 'Lobby invite panels' },
-    { id: 'gp-activity', sel: '#activity-center .activity-center__tabs_scrollable',                                          label: 'Activity center tabs' },
-    { id: 'gp-readycheck', sel: '.ready-check-root-element',                                                                 label: 'Ready check popup' },
-    { id: 'gp-social',   sel: '.lol-social-sidebar',                                                                         label: 'Social sidebar' },
-    { id: 'gp-custom',   sel: '',                                                                                             label: 'Custom…' },
+  const presets = [
+    {
+      id: "gp-lobby",
+      sel: ".parties-game-info-panel-content, .v2-parties-invite-info-panel, .parties-invite-info-panel",
+      label: "Lobby invite panels",
+    },
+    {
+      id: "gp-activity",
+      sel: "#activity-center .activity-center__tabs_scrollable",
+      label: "Activity center tabs",
+    },
+    {
+      id: "gp-readycheck",
+      sel: ".ready-check-root-element",
+      label: "Ready check popup",
+    },
+    { id: "gp-social", sel: ".lol-social-sidebar", label: "Social sidebar" },
+    { id: "gp-custom", sel: "", label: "Custom…" },
   ];
 
   row.innerHTML = `
@@ -1388,83 +1786,121 @@ function buildGlassPanelRow() {
     <span class="ci-flash" id="ci-flash-gp">Added ✓</span>
   `;
 
-  const presetsWrap = row.querySelector('#gp-presets');
-  presets.forEach(p => {
-    const lbl = document.createElement('label');
-    lbl.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;color:#8a9aaa;padding:2px 0;';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.id = p.id;
-    cb.style.cssText = 'accent-color:#785a28;cursor:pointer;flex-shrink:0;';
-    const span = document.createElement('span');
-    span.style.cssText = 'font-size:10px;'; span.textContent = p.label;
-    lbl.appendChild(cb); lbl.appendChild(span);
+  const presetsWrap = row.querySelector("#gp-presets");
+  presets.forEach((p) => {
+    const lbl = document.createElement("label");
+    lbl.style.cssText =
+      "display:flex;align-items:center;gap:5px;cursor:pointer;color:#8a9aaa;padding:2px 0;";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = p.id;
+    cb.style.cssText = "accent-color:#785a28;cursor:pointer;flex-shrink:0;";
+    const span = document.createElement("span");
+    span.style.cssText = "font-size:10px;";
+    span.textContent = p.label;
+    lbl.appendChild(cb);
+    lbl.appendChild(span);
     presetsWrap.appendChild(lbl);
-    if (p.id === 'gp-custom') {
-      cb.addEventListener('change', () => {
-        row.querySelector('#gp-custom-wrap').style.display = cb.checked ? 'block' : 'none';
+    if (p.id === "gp-custom") {
+      cb.addEventListener("change", () => {
+        row.querySelector("#gp-custom-wrap").style.display = cb.checked
+          ? "block"
+          : "none";
       });
     }
   });
 
-  const picker = row.querySelector('#gp-picker');
-  const text   = row.querySelector('#gp-text');
-  picker.addEventListener('input', () => { text.value = picker.value; });
-
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => {
-    startElementPicker(sel => row.querySelector('#gp-custom-sel').value = sel);
+  const picker = row.querySelector("#gp-picker");
+  const text = row.querySelector("#gp-text");
+  picker.addEventListener("input", () => {
+    text.value = picker.value;
   });
 
-  row.querySelector('[data-action="gp"]').addEventListener('click', () => {
-    const blur    = row.querySelector('#gp-blur').value;
-    const bright  = row.querySelector('#gp-bright').value;
-    const bg      = text.value.trim();
-    const radius  = row.querySelector('#gp-radius').value;
+  row.querySelector(".ci-picker-btn").addEventListener("click", () => {
+    startElementPicker(
+      (sel) => (row.querySelector("#gp-custom-sel").value = sel),
+    );
+  });
 
-    const bfVal = bright ? blur + ' ' + bright : blur;
+  row.querySelector('[data-action="gp"]').addEventListener("click", () => {
+    const blur = row.querySelector("#gp-blur").value;
+    const bright = row.querySelector("#gp-bright").value;
+    const bg = text.value.trim();
+    const radius = row.querySelector("#gp-radius").value;
 
-    const sels =[];
-    presets.forEach(p => {
-      if (p.id === 'gp-custom') return;
-      const cb = row.querySelector('#' + p.id);
+    const bfVal = bright ? blur + " " + bright : blur;
+
+    const sels = [];
+    presets.forEach((p) => {
+      if (p.id === "gp-custom") return;
+      const cb = row.querySelector("#" + p.id);
       if (cb?.checked) sels.push(p.sel);
     });
-    const customCb = row.querySelector('#gp-custom');
+    const customCb = row.querySelector("#gp-custom");
     if (customCb?.checked) {
-      const customSel = row.querySelector('#gp-custom-sel').value.trim();
+      const customSel = row.querySelector("#gp-custom-sel").value.trim();
       if (customSel) sels.push(customSel);
     }
     if (!sels.length) return;
 
-    const lines = sels.map(sel => {
-      let props = '  backdrop-filter: blur(' + blur + ')' + (bright ? ' ' + bright : '') + ' !important;';
-      if (bg)     props += '\n  background: ' + bg + ' !important;';
-      if (radius) props += '\n  border-radius: ' + radius + ' !important;';
-      return sel + ' {\n' + props + '\n}';
+    const lines = sels.map((sel) => {
+      let props =
+        "  backdrop-filter: blur(" +
+        blur +
+        ")" +
+        (bright ? " " + bright : "") +
+        " !important;";
+      if (bg) props += "\n  background: " + bg + " !important;";
+      if (radius) props += "\n  border-radius: " + radius + " !important;";
+      return sel + " {\n" + props + "\n}";
     });
 
-    flashMessage(row.querySelector('#ci-flash-gp'));
-    sendToRaw(lines.join('\n\n'));
+    flashMessage(row.querySelector("#ci-flash-gp"));
+    sendToRaw(lines.join("\n\n"));
   });
 
   return row;
 }
 
-
-// MASK / FADE EDGE 
+// MASK / FADE EDGE
 // -webkit-mask / mask gradients
 // banners, party containers etc. to fade elements into transparency.
 function buildMaskFadeRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
-  const presets =[
-    { id: 'mf-splash',   sel: '.background-vignette-container.champ-select-bg > img', label: 'Champ select splash art' },
-    { id: 'mf-party',    sel: '.party-members-container',                              label: 'Party members container' },
-    { id: 'mf-ranked',   sel: '.ranked-banner-component',                              label: 'Ranked banner' },
-    { id: 'mf-screen',   sel: '.screen-root.active',                                   label: 'Active screen root' },
-    { id: 'mf-sidebar',  sel: '.rcp-fe-viewport-persistent',                           label: 'Viewport persistent sidebar' },
-    { id: 'mf-roster',   sel: '.clash-roster-team-logo-background',                    label: 'Clash team logo' },
-    { id: 'mf-custom',   sel: '',                                                       label: 'Custom…' },
+  const presets = [
+    {
+      id: "mf-splash",
+      sel: ".background-vignette-container.champ-select-bg > img",
+      label: "Champ select splash art",
+    },
+    {
+      id: "mf-party",
+      sel: ".party-members-container",
+      label: "Party members container",
+    },
+    {
+      id: "mf-ranked",
+      sel: ".ranked-banner-component",
+      label: "Ranked banner",
+    },
+    {
+      id: "mf-screen",
+      sel: ".screen-root.active",
+      label: "Active screen root",
+    },
+    {
+      id: "mf-sidebar",
+      sel: ".rcp-fe-viewport-persistent",
+      label: "Viewport persistent sidebar",
+    },
+    {
+      id: "mf-roster",
+      sel: ".clash-roster-team-logo-background",
+      label: "Clash team logo",
+    },
+    { id: "mf-custom", sel: "", label: "Custom…" },
   ];
 
   row.innerHTML = `
@@ -1502,64 +1938,73 @@ function buildMaskFadeRow() {
     <span class="ci-flash" id="ci-flash-mf">Added ✓</span>
   `;
 
-  const presetsWrap = row.querySelector('#mf-presets');
-  presets.forEach(p => {
-    const lbl = document.createElement('label');
-    lbl.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;color:#8a9aaa;padding:2px 0;';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.id = p.id;
-    cb.style.cssText = 'accent-color:#785a28;cursor:pointer;flex-shrink:0;';
-    const span = document.createElement('span');
-    span.style.cssText = 'font-size:10px;'; span.textContent = p.label;
-    lbl.appendChild(cb); lbl.appendChild(span);
+  const presetsWrap = row.querySelector("#mf-presets");
+  presets.forEach((p) => {
+    const lbl = document.createElement("label");
+    lbl.style.cssText =
+      "display:flex;align-items:center;gap:5px;cursor:pointer;color:#8a9aaa;padding:2px 0;";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = p.id;
+    cb.style.cssText = "accent-color:#785a28;cursor:pointer;flex-shrink:0;";
+    const span = document.createElement("span");
+    span.style.cssText = "font-size:10px;";
+    span.textContent = p.label;
+    lbl.appendChild(cb);
+    lbl.appendChild(span);
     presetsWrap.appendChild(lbl);
-    if (p.id === 'mf-custom') {
-      cb.addEventListener('change', () => {
-        row.querySelector('#mf-custom-wrap').style.display = cb.checked ? 'block' : 'none';
+    if (p.id === "mf-custom") {
+      cb.addEventListener("change", () => {
+        row.querySelector("#mf-custom-wrap").style.display = cb.checked
+          ? "block"
+          : "none";
       });
     }
   });
 
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => {
-    startElementPicker(sel => row.querySelector('#mf-custom-sel').value = sel);
+  row.querySelector(".ci-picker-btn").addEventListener("click", () => {
+    startElementPicker(
+      (sel) => (row.querySelector("#mf-custom-sel").value = sel),
+    );
   });
 
-  row.querySelector('[data-action="mf"]').addEventListener('click', () => {
-    const pattern = row.querySelector('#mf-pattern').value;
-    const target  = row.querySelector('#mf-target').value;
+  row.querySelector('[data-action="mf"]').addEventListener("click", () => {
+    const pattern = row.querySelector("#mf-pattern").value;
+    const target = row.querySelector("#mf-target").value;
 
-    const sels =[];
-    presets.forEach(p => {
-      if (p.id === 'mf-custom') return;
-      const cb = row.querySelector('#' + p.id);
+    const sels = [];
+    presets.forEach((p) => {
+      if (p.id === "mf-custom") return;
+      const cb = row.querySelector("#" + p.id);
       if (cb?.checked) sels.push(p.sel);
     });
-    const customCb = row.querySelector('#mf-custom');
+    const customCb = row.querySelector("#mf-custom");
     if (customCb?.checked) {
-      const customSel = row.querySelector('#mf-custom-sel').value.trim();
+      const customSel = row.querySelector("#mf-custom-sel").value.trim();
       if (customSel) sels.push(customSel);
     }
     if (!sels.length) return;
 
-    const lines = sels.map(sel => {
-      let props = '';
-      if (target === 'both' || target === 'webkit')   props += '  -webkit-mask: ' + pattern + ';\n';
-      if (target === 'both' || target === 'standard') props += '  mask: ' + pattern + ';\n';
-      return sel + ' {\n' + props + '}';
+    const lines = sels.map((sel) => {
+      let props = "";
+      if (target === "both" || target === "webkit")
+        props += "  -webkit-mask: " + pattern + ";\n";
+      if (target === "both" || target === "standard")
+        props += "  mask: " + pattern + ";\n";
+      return sel + " {\n" + props + "}";
     });
 
-    flashMessage(row.querySelector('#ci-flash-mf'));
-    sendToRaw(lines.join('\n\n'));
+    flashMessage(row.querySelector("#ci-flash-mf"));
+    sendToRaw(lines.join("\n\n"));
   });
 
   return row;
 }
 
-
-// LOCAL ASSET HELPER 
+// LOCAL ASSET HELPER
 function buildLocalAssetRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
   row.innerHTML = `
     <div class="ci-generic-title">📁 Local Asset Path</div>
@@ -1591,54 +2036,56 @@ function buildLocalAssetRow() {
     <span class="ci-flash" id="ci-flash-asset">Added ✓</span>
   `;
 
-  const themeInput = row.querySelector('#asset-theme');
-  const fileInput  = row.querySelector('#asset-file');
-  const preview    = row.querySelector('#asset-preview');
+  const themeInput = row.querySelector("#asset-theme");
+  const fileInput = row.querySelector("#asset-file");
+  const preview = row.querySelector("#asset-preview");
 
   const updatePreview = () => {
-    const theme = themeInput.value.trim() || 'mytheme';
-    const file  = fileInput.value.trim() || 'image.jpg';
+    const theme = themeInput.value.trim() || "mytheme";
+    const file = fileInput.value.trim() || "image.jpg";
     preview.textContent = `./assets/${theme}/${file}`;
   };
-  themeInput.addEventListener('input', updatePreview);
-  fileInput.addEventListener('input', updatePreview);
+  themeInput.addEventListener("input", updatePreview);
+  fileInput.addEventListener("input", updatePreview);
 
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => {
-    startElementPicker(sel => row.querySelector('#asset-sel').value = sel);
+  row.querySelector(".ci-picker-btn").addEventListener("click", () => {
+    startElementPicker((sel) => (row.querySelector("#asset-sel").value = sel));
   });
 
-  row.querySelector('[data-action="asset"]').addEventListener('click', () => {
+  row.querySelector('[data-action="asset"]').addEventListener("click", () => {
     const path = preview.textContent;
-    const use  = row.querySelector('#asset-use').value;
-    const sel  = row.querySelector('#asset-sel').value.trim();
+    const use = row.querySelector("#asset-use").value;
+    const sel = row.querySelector("#asset-sel").value.trim();
 
     let cssToAppend = null;
-    if (use === 'copy') {
+    if (use === "copy") {
       // Just append the path as a comment so user can use it manually
       cssToAppend = `/* Local asset path: ${path} */`;
-    } else if (use === 'bg' && sel) {
+    } else if (use === "bg" && sel) {
       setCssBatch(sel, {
-        'background-image': `url('${path}')`,
-        'background-size': 'cover',
-        'background-position': 'center',
-        'background-repeat': 'no-repeat'
+        "background-image": `url('${path}')`,
+        "background-size": "cover",
+        "background-position": "center",
+        "background-repeat": "no-repeat",
       });
-    } else if (use === 'content' && sel) {
-      setCssProperty(sel, 'content', `url('${path}')`);
+    } else if (use === "content" && sel) {
+      setCssProperty(sel, "content", `url('${path}')`);
     } else {
       return;
     }
 
-    flashMessage(row.querySelector('#ci-flash-asset'));
+    flashMessage(row.querySelector("#ci-flash-asset"));
     sendToRaw(cssToAppend);
   });
 
   return row;
 }
 
-// SCROLLBAR STYLER 
+// SCROLLBAR STYLER
 function buildScrollbarRow() {
-  const row = makeGenericRow('↕ Scrollbar Style', 'Customize the scrollbar used throughout the client.',
+  const row = makeGenericRow(
+    "↕ Scrollbar Style",
+    "Customize the scrollbar used throughout the client.",
     `<div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Thumb style</div>
         <select class="ci-select" id="ci-scroll-style">
@@ -1665,33 +2112,48 @@ function buildScrollbarRow() {
           <option value="4px">Rounded (4px)</option>
           <option value="0">Square</option>
         </select></div>
-    </div>`, 'scrollbar');
+    </div>`,
+    "scrollbar",
+  );
 
-  const styleSelect  = row.querySelector('#ci-scroll-style');
-  const customWrap   = row.querySelector('#ci-scroll-custom-wrap');
-  const colorPicker  = row.querySelector('#ci-scroll-picker');
-  const colorText    = row.querySelector('#ci-scroll-text');
-  styleSelect.addEventListener('change', () => { customWrap.style.display = styleSelect.value === 'custom' ? 'block' : 'none'; });
-  colorPicker.addEventListener('input', () => colorText.value = colorPicker.value);
-  colorText.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(colorText.value)) colorPicker.value = colorText.value; });
-
-  row.querySelector('[data-action="scrollbar"]').addEventListener('click', () => {
-    const width  = row.querySelector('#ci-scroll-width').value;
-    const radius = row.querySelector('#ci-scroll-radius').value;
-    let color = styleSelect.value;
-    if (color === 'custom') color = colorText.value.trim() || colorPicker.value;
-
-    const css = `::-webkit-scrollbar {\n  width: ${width} !important;\n}\n\n::-webkit-scrollbar-thumb {\n  background-color: ${color} !important;\n  border-radius: ${radius} !important;\n}\n\n::-webkit-scrollbar-track {\n  background: transparent !important;\n}`;
-    flashMessage(row.querySelector('#ci-flash-scrollbar'));
-    sendToRaw(css);
+  const styleSelect = row.querySelector("#ci-scroll-style");
+  const customWrap = row.querySelector("#ci-scroll-custom-wrap");
+  const colorPicker = row.querySelector("#ci-scroll-picker");
+  const colorText = row.querySelector("#ci-scroll-text");
+  styleSelect.addEventListener("change", () => {
+    customWrap.style.display =
+      styleSelect.value === "custom" ? "block" : "none";
   });
+  colorPicker.addEventListener(
+    "input",
+    () => (colorText.value = colorPicker.value),
+  );
+  colorText.addEventListener("input", () => {
+    if (/^#[0-9a-f]{6}$/i.test(colorText.value))
+      colorPicker.value = colorText.value;
+  });
+
+  row
+    .querySelector('[data-action="scrollbar"]')
+    .addEventListener("click", () => {
+      const width = row.querySelector("#ci-scroll-width").value;
+      const radius = row.querySelector("#ci-scroll-radius").value;
+      let color = styleSelect.value;
+      if (color === "custom")
+        color = colorText.value.trim() || colorPicker.value;
+
+      const css = `::-webkit-scrollbar {\n  width: ${width} !important;\n}\n\n::-webkit-scrollbar-thumb {\n  background-color: ${color} !important;\n  border-radius: ${radius} !important;\n}\n\n::-webkit-scrollbar-track {\n  background: transparent !important;\n}`;
+      flashMessage(row.querySelector("#ci-flash-scrollbar"));
+      sendToRaw(css);
+    });
 
   return row;
 }
 
-
 function buildBgRow() {
-  const row = makeGenericRow('Replace Background Image', "Replace a container's background with a custom image URL.",
+  const row = makeGenericRow(
+    "Replace Background Image",
+    "Replace a container's background with a custom image URL.",
     `<div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Container Selector</div>
         <div style="display:flex; gap:4px;">
@@ -1711,30 +2173,40 @@ function buildBgRow() {
         <select class="ci-select" id="ci-bg-pos">
           <option value="center">center</option><option value="center top">top</option><option value="center bottom">bottom</option>
         </select></div>
-    </div>`, 'bg');
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => startElementPicker((sel) => row.querySelector('#ci-bg-sel').value = sel));
-  row.querySelector('[data-action="bg"]').addEventListener('click', () => {
-    const sel  = row.querySelector('#ci-bg-sel').value.trim();
-    const url  = row.querySelector('#ci-bg-url').value.trim();
+    </div>`,
+    "bg",
+  );
+  row
+    .querySelector(".ci-picker-btn")
+    .addEventListener("click", () =>
+      startElementPicker(
+        (sel) => (row.querySelector("#ci-bg-sel").value = sel),
+      ),
+    );
+  row.querySelector('[data-action="bg"]').addEventListener("click", () => {
+    const sel = row.querySelector("#ci-bg-sel").value.trim();
+    const url = row.querySelector("#ci-bg-url").value.trim();
     if (!sel || !url) return;
-    const size = row.querySelector('#ci-bg-size').value;
-    const pos = row.querySelector('#ci-bg-pos').value;
-    
+    const size = row.querySelector("#ci-bg-size").value;
+    const pos = row.querySelector("#ci-bg-pos").value;
+
     setCssBatch(sel, {
-      'background-image': `url('${url}')`,
-      'background-size': size,
-      'background-position': pos,
-      'background-repeat': 'no-repeat'
+      "background-image": `url('${url}')`,
+      "background-size": size,
+      "background-position": pos,
+      "background-repeat": "no-repeat",
     });
-    
-    flashMessage(row.querySelector('#ci-flash-bg'));
+
+    flashMessage(row.querySelector("#ci-flash-bg"));
     sendToRaw();
   });
   return row;
 }
 
 function buildImgReplaceRow() {
-  const row = makeGenericRow('Replace Image Element', 'Replace an <img> with a background on its container. Great for avatars.',
+  const row = makeGenericRow(
+    "Replace Image Element",
+    "Replace an <img> with a background on its container. Great for avatars.",
     `<div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Container Selector</div>
         <div style="display:flex; gap:4px;">
@@ -1744,29 +2216,39 @@ function buildImgReplaceRow() {
       </div>
       <div class="ci-field"><div class="ci-label">New Image URL</div>
         <input class="ci-input" id="ci-img-url" type="text" placeholder="https://... or file:///..."></div>
-    </div>`, 'img-replace');
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => startElementPicker((sel) => row.querySelector('#ci-img-sel').value = sel));
-  row.querySelector('[data-action="img-replace"]').addEventListener('click', () => {
-    const sel = row.querySelector('#ci-img-sel').value.trim();
-    const url = row.querySelector('#ci-img-url').value.trim();
-    if (!sel || !url) return;
-    
-    setCssProperty(`${sel} img`, 'opacity', '0'); // Hide child img
-    setCssBatch(sel, {
-      'background-image': `url('${url}')`,
-      'background-size': 'cover',
-      'background-position': 'center'
+    </div>`,
+    "img-replace",
+  );
+  row
+    .querySelector(".ci-picker-btn")
+    .addEventListener("click", () =>
+      startElementPicker(
+        (sel) => (row.querySelector("#ci-img-sel").value = sel),
+      ),
+    );
+  row
+    .querySelector('[data-action="img-replace"]')
+    .addEventListener("click", () => {
+      const sel = row.querySelector("#ci-img-sel").value.trim();
+      const url = row.querySelector("#ci-img-url").value.trim();
+      if (!sel || !url) return;
+
+      setCssProperty(`${sel} img`, "opacity", "0"); // Hide child img
+      setCssBatch(sel, {
+        "background-image": `url('${url}')`,
+        "background-size": "cover",
+        "background-position": "center",
+      });
+
+      flashMessage(row.querySelector("#ci-flash-img-replace"));
+      sendToRaw();
     });
-    
-    flashMessage(row.querySelector('#ci-flash-img-replace'));
-    sendToRaw();
-  });
   return row;
 }
 
 function buildFontRow() {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
 
   row.innerHTML = `
     <div class="ci-generic-title">🔤 Font Override</div>
@@ -1791,31 +2273,36 @@ function buildFontRow() {
     <span class="ci-flash" id="ci-flash-font">Added ✓</span>
   `;
 
-  row.querySelector('[data-action="font"]').addEventListener('click', () => {
-    const url   = row.querySelector('#ci-font-url').value.trim();
-    const name  = row.querySelector('#ci-font-name').value.trim();
-    const scope = row.querySelector('#ci-font-scope').value;
+  row.querySelector('[data-action="font"]').addEventListener("click", () => {
+    const url = row.querySelector("#ci-font-url").value.trim();
+    const name = row.querySelector("#ci-font-name").value.trim();
+    const scope = row.querySelector("#ci-font-scope").value;
     if (!name) return;
 
-    const lines =[];
+    const lines = [];
     if (url) lines.push(`@import url('${url}');`);
 
-    const vars =[];
-    if (scope === 'both' || scope === 'display') vars.push(`  --font-display: '${name}', sans-serif !important;`);
-    if (scope === 'both' || scope === 'body')    vars.push(`  --font-body: '${name}', sans-serif !important;`);
-    if (vars.length) lines.push(`:root {
-${vars.join('\n')}
+    const vars = [];
+    if (scope === "both" || scope === "display")
+      vars.push(`  --font-display: '${name}', sans-serif !important;`);
+    if (scope === "both" || scope === "body")
+      vars.push(`  --font-body: '${name}', sans-serif !important;`);
+    if (vars.length)
+      lines.push(`:root {
+${vars.join("\n")}
 }`);
 
-    flashMessage(row.querySelector('#ci-flash-font'));
-    sendToRaw(lines.join('\n'));
+    flashMessage(row.querySelector("#ci-flash-font"));
+    sendToRaw(lines.join("\n"));
   });
 
   return row;
 }
 
 function buildHideRow() {
-  const row = makeGenericRow('Hide Any Element', 'Quickly hide an element. Use the crosshair to pick.',
+  const row = makeGenericRow(
+    "Hide Any Element",
+    "Quickly hide an element. Use the crosshair to pick.",
     `<div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Selector</div>
         <div style="display:flex; gap:4px;">
@@ -1826,20 +2313,31 @@ function buildHideRow() {
       <div class="ci-field"><div class="ci-label">Method</div>
         <select class="ci-select" id="ci-hide-method"><option value="display:none">display: none</option><option value="opacity:0">opacity: 0</option></select>
       </div>
-    </div>`, 'hide');
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => startElementPicker((sel) => row.querySelector('#ci-hide-sel').value = sel));
-  row.querySelector('[data-action="hide"]').addEventListener('click', () => {
-    const sel = row.querySelector('#ci-hide-sel').value.trim(); if (!sel) return;
-    const [prop, val] = row.querySelector('#ci-hide-method').value.split(':');
+    </div>`,
+    "hide",
+  );
+  row
+    .querySelector(".ci-picker-btn")
+    .addEventListener("click", () =>
+      startElementPicker(
+        (sel) => (row.querySelector("#ci-hide-sel").value = sel),
+      ),
+    );
+  row.querySelector('[data-action="hide"]').addEventListener("click", () => {
+    const sel = row.querySelector("#ci-hide-sel").value.trim();
+    if (!sel) return;
+    const [prop, val] = row.querySelector("#ci-hide-method").value.split(":");
     setCssProperty(sel, prop, val); // UPDATE
-    flashMessage(row.querySelector('#ci-flash-hide'));
+    flashMessage(row.querySelector("#ci-flash-hide"));
     sendToRaw();
   });
   return row;
 }
 
 function buildColorRow() {
-  const row = makeGenericRow('Color Override', 'Change text or background color on any element.',
+  const row = makeGenericRow(
+    "Color Override",
+    "Change text or background color on any element.",
     `<div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Selector</div>
         <div style="display:flex; gap:4px;">
@@ -1856,19 +2354,29 @@ function buildColorRow() {
         <input class="ci-color-input" id="ci-color-picker" type="color" value="#c8aa6e">
         <input class="ci-input" id="ci-color-text" type="text" placeholder="hex / rgba" style="width:100px">
       </div>
-    </div>`, 'color');
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => startElementPicker((sel) => row.querySelector('#ci-color-sel').value = sel));
-  const picker = row.querySelector('#ci-color-picker');
-  const textIn = row.querySelector('#ci-color-text');
-  picker.addEventListener('input', () => textIn.value = picker.value);
-  textIn.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(textIn.value)) picker.value = textIn.value; });
-  row.querySelector('[data-action="color"]').addEventListener('click', () => {
-    const sel = row.querySelector('#ci-color-sel').value.trim();
-    const prop = row.querySelector('#ci-color-prop').value;
-    const val  = textIn.value.trim() || picker.value;
+    </div>`,
+    "color",
+  );
+  row
+    .querySelector(".ci-picker-btn")
+    .addEventListener("click", () =>
+      startElementPicker(
+        (sel) => (row.querySelector("#ci-color-sel").value = sel),
+      ),
+    );
+  const picker = row.querySelector("#ci-color-picker");
+  const textIn = row.querySelector("#ci-color-text");
+  picker.addEventListener("input", () => (textIn.value = picker.value));
+  textIn.addEventListener("input", () => {
+    if (/^#[0-9a-f]{6}$/i.test(textIn.value)) picker.value = textIn.value;
+  });
+  row.querySelector('[data-action="color"]').addEventListener("click", () => {
+    const sel = row.querySelector("#ci-color-sel").value.trim();
+    const prop = row.querySelector("#ci-color-prop").value;
+    const val = textIn.value.trim() || picker.value;
     if (sel && val) {
       setCssProperty(sel, prop, val);
-      flashMessage(row.querySelector('#ci-flash-color'));
+      flashMessage(row.querySelector("#ci-flash-color"));
       sendToRaw();
     }
   });
@@ -1876,7 +2384,9 @@ function buildColorRow() {
 }
 
 function buildCustomRow() {
-  const row = makeGenericRow('Custom CSS Rule', 'Manually write any single CSS property.',
+  const row = makeGenericRow(
+    "Custom CSS Rule",
+    "Manually write any single CSS property.",
     `<div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Selector</div>
         <div style="display:flex; gap:4px;">
@@ -1889,23 +2399,31 @@ function buildCustomRow() {
     </div>
     <div class="ci-field"><div class="ci-label">Value</div>
       <input class="ci-input" id="ci-custom-val" type="text" placeholder="scale(1.2)">
-    </div>`, 'custom');
-  row.querySelector('.ci-picker-btn').addEventListener('click', () => startElementPicker((sel) => row.querySelector('#ci-custom-sel').value = sel));
-  row.querySelector('[data-action="custom"]').addEventListener('click', () => {
-    const sel  = row.querySelector('#ci-custom-sel').value.trim();
-    const prop = row.querySelector('#ci-custom-prop').value.trim();
-    const val  = row.querySelector('#ci-custom-val').value.trim();
+    </div>`,
+    "custom",
+  );
+  row
+    .querySelector(".ci-picker-btn")
+    .addEventListener("click", () =>
+      startElementPicker(
+        (sel) => (row.querySelector("#ci-custom-sel").value = sel),
+      ),
+    );
+  row.querySelector('[data-action="custom"]').addEventListener("click", () => {
+    const sel = row.querySelector("#ci-custom-sel").value.trim();
+    const prop = row.querySelector("#ci-custom-prop").value.trim();
+    const val = row.querySelector("#ci-custom-val").value.trim();
     if (!sel || !prop || !val) return;
     setCssProperty(sel, prop, val); // UPDATE
-    flashMessage(row.querySelector('#ci-flash-custom'));
+    flashMessage(row.querySelector("#ci-flash-custom"));
     sendToRaw();
   });
   return row;
 }
 
 function makeGenericRow(title, desc, fieldsHTML, flashId) {
-  const row = document.createElement('div');
-  row.className = 'ci-generic-row';
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
   row.innerHTML = `
     <div class="ci-generic-title">${title}</div>
     <div class="ci-generic-desc">${desc}</div>
@@ -1916,264 +2434,556 @@ function makeGenericRow(title, desc, fieldsHTML, flashId) {
   return row;
 }
 
-// CATALOG ELEMENT ROWS 
+// CATALOG ELEMENT ROWS
 function buildElementRow(el) {
-  const row = document.createElement('div');
-  row.className = 'ci-element-row';
-  row.dataset.search = (el.label + ' ' + el.cls).toLowerCase();
-  const notBadge = document.createElement('span');
-  notBadge.title = 'Element not found in current DOM';
-  notBadge.style.cssText = 'font-size:8px;color:#2a3a4a;background:rgba(0,0,0,0.3);border:1px solid #1a2535;padding:1px 5px;letter-spacing:0.05em;display:none;flex-shrink:0;';
-  notBadge.textContent = 'not in DOM';
-  const info = document.createElement('div');
-  info.style.cssText = 'display:flex;align-items:baseline;gap:8px;';
-  const labelSpan = document.createElement('span'); labelSpan.className = 'ci-element-label'; labelSpan.textContent = el.label;
-  const clsCode = document.createElement('code'); clsCode.className = 'ci-element-cls'; clsCode.textContent = el.cls;
-  info.appendChild(labelSpan); info.appendChild(clsCode); info.appendChild(notBadge);
+  const row = document.createElement("div");
+  row.className = "ci-element-row";
+  row.dataset.search = (el.label + " " + el.cls).toLowerCase();
+  const notBadge = document.createElement("span");
+  notBadge.title = "Element not found in current DOM";
+  notBadge.style.cssText =
+    "font-size:8px;color:#2a3a4a;background:rgba(0,0,0,0.3);border:1px solid #1a2535;padding:1px 5px;letter-spacing:0.05em;display:none;flex-shrink:0;";
+  notBadge.textContent = "not in DOM";
+  const info = document.createElement("div");
+  info.style.cssText = "display:flex;align-items:baseline;gap:8px;";
+  const labelSpan = document.createElement("span");
+  labelSpan.className = "ci-element-label";
+  labelSpan.textContent = el.label;
+  const clsCode = document.createElement("code");
+  clsCode.className = "ci-element-cls";
+  clsCode.textContent = el.cls;
+  info.appendChild(labelSpan);
+  info.appendChild(clsCode);
+  info.appendChild(notBadge);
   row.appendChild(info);
-  const controls = document.createElement('div');
-  controls.className = 'ci-element-controls';
-  el.props.forEach(prop => controls.appendChild(buildPropControl(el.cls, prop, notBadge)));
+  const controls = document.createElement("div");
+  controls.className = "ci-element-controls";
+  el.props.forEach((prop) =>
+    controls.appendChild(buildPropControl(el.cls, prop, notBadge)),
+  );
   row.appendChild(controls);
   return row;
 }
 
-// PROP CONTROLS 
+// PROP CONTROLS
 function buildPropControl(cls, prop, notBadge) {
-  if (typeof prop === 'object') {
-    if (prop.type === 'bg-replace')  return buildBgReplaceControl(cls, prop, notBadge);
-    if (prop.type === 'img-replace') return buildImgReplaceControl(cls, prop, notBadge);
-    return document.createElement('span'); 
+  if (typeof prop === "object") {
+    if (prop.type === "bg-replace")
+      return buildBgReplaceControl(cls, prop, notBadge);
+    if (prop.type === "img-replace")
+      return buildImgReplaceControl(cls, prop, notBadge);
+    return document.createElement("span");
   }
 
   // Handle special pseudo-properties generated by the Omni Inspector
-  if (prop === 'child-img-replace') {
+  if (prop === "child-img-replace") {
     return buildChildImgReplaceControl(cls);
   }
 
-  const wrap = document.createElement('div');
-  wrap.className = 'ci-prop-wrap';
-  const lbl = document.createElement('div');
-  lbl.className = 'ci-prop-label';
+  const wrap = document.createElement("div");
+  wrap.className = "ci-prop-wrap";
+  const lbl = document.createElement("div");
+  lbl.className = "ci-prop-label";
   lbl.textContent = prop;
   wrap.appendChild(lbl);
-  const inner = document.createElement('div');
-  inner.className = 'ci-prop-inner';
+  const inner = document.createElement("div");
+  inner.className = "ci-prop-inner";
 
   let input;
-  if (prop === 'opacity') input = makeHybridSlider(0, 1, 0.05, 1, (v) => v, (v) => v);
-  else if (prop === 'scale') input = makeHybridSlider(0.1, 3, 0.1, 1, (v) => `scale(${v})`, (v) => { const m = v.match(/scale\(([^)]+)\)/); return m ? parseFloat(m[1]) : 1; });
-  else if (prop === 'border-radius') input = makeHybridSlider(0, 50, 1, 0, (v) => `${v}%`, (v) => parseFloat(v) || 0);
-  else if (prop === 'text-shadow') input = makeGlowInput();
-  else if (['color', 'background-color', 'border-color'].includes(prop)) input = makeColorInput();
-  else if (prop === 'display') input = { container: makeSelect([['initial','initial'],['block','block'],['flex','flex'],['grid','grid'],['inline-flex','inline-flex'],['none','none']]), get value() { return this.container.value; } };
-  else if (prop === 'visibility') input = { container: makeSelect([['visible','visible'],['hidden','hidden'],['collapse','collapse']]), get value() { return this.container.value; } };
-  else if (prop === 'background-size') input = { container: makeSelect([['cover','cover'],['contain','contain'],['100% 100%','stretch']]), get value() { return this.container.value; } };
-  else if (prop === 'background-position') input = { container: makeSelect([['center','center'],['center top','top'],['center bottom','bottom'],['left center','left'],['right center','right']]), get value() { return this.container.value; } };
-  else if (prop === 'background-repeat') input = { container: makeSelect([['no-repeat','no-repeat'],['repeat','repeat'],['repeat-x','repeat-x'],['repeat-y','repeat-y']]), get value() { return this.container.value; } };
-  else if (prop === 'filter') input = { container: makeSelect([['none','none'],['blur(4px)','blur (4px)'],['blur(10px)','blur (10px)'],['grayscale(1)','grayscale'],['grayscale(0.5)','grayscale 50%'],['brightness(0.5)','dim (50%)'],['brightness(1.3)','brighten (130%)'],['hue-rotate(90deg)','hue-rotate 90°'],['hue-rotate(180deg)','hue-rotate 180°'],['saturate(0)','desaturate'],['saturate(0.5)','low saturation'],['saturate(1.5)','oversaturate'],['saturate(2)','vivid (2x)'],['sepia(1)','sepia'],['invert(1)','invert'],['contrast(1.5)','contrast+'],['contrast(0.7)','contrast-']]), get value() { return this.container.value; } };
-  else if (prop === 'backdrop-filter') input = { container: makeSelect([['none','none'],['blur(4px)','blur (4px)'],['blur(10px)','blur (10px)'],['blur(20px)','blur (20px)'],['blur(120px) brightness(0.2)','heavy blur + dim'],['blur(10px) brightness(0.7)','blur + slight dim'],['blur(1px)','subtle blur']]), get value() { return this.container.value; } };
-  else if (prop === 'mix-blend-mode') input = { container: makeSelect([['normal','normal'],['multiply','multiply'],['screen','screen'],['overlay','overlay'],['darken','darken'],['lighten','lighten'],['color-dodge','color-dodge'],['hard-light','hard-light'],['soft-light','soft-light'],['difference','difference'],['exclusion','exclusion'],['hue','hue'],['saturation','saturation'],['color','color'],['luminosity','luminosity']]), get value() { return this.container.value; } };
-  else if (prop === 'transition') input = { container: makeSelect([['none','none'],['0.2s','0.2s fast'],['0.3s','0.3s default'],['0.5s','0.5s medium'],['0.2s opacity','0.2s opacity only'],['0.3s all ease-in-out','0.3s all ease-in-out'],['0.5s all ease','0.5s all ease']]), get value() { return this.container.value; } };
-  else if (prop === 'left' || prop === 'top') {
-    const textIn = makeTextInput('e.g. 3.95px', '75px');
-    input = { container: textIn, get value() { return textIn.value; } };
-  }
-  else {
-    const textIn = makeTextInput('value', '90px');
-    input = { container: textIn, get value() { return textIn.value; } };
+  if (prop === "opacity")
+    input = makeHybridSlider(
+      0,
+      1,
+      0.05,
+      1,
+      (v) => v,
+      (v) => v,
+    );
+  else if (prop === "scale")
+    input = makeHybridSlider(
+      0.1,
+      3,
+      0.1,
+      1,
+      (v) => `scale(${v})`,
+      (v) => {
+        const m = v.match(/scale\(([^)]+)\)/);
+        return m ? parseFloat(m[1]) : 1;
+      },
+    );
+  else if (prop === "border-radius")
+    input = makeHybridSlider(
+      0,
+      50,
+      1,
+      0,
+      (v) => `${v}%`,
+      (v) => parseFloat(v) || 0,
+    );
+  else if (prop === "text-shadow") input = makeGlowInput();
+  else if (["color", "background-color", "border-color"].includes(prop))
+    input = makeColorInput();
+  else if (prop === "display")
+    input = {
+      container: makeSelect([
+        ["initial", "initial"],
+        ["block", "block"],
+        ["flex", "flex"],
+        ["grid", "grid"],
+        ["inline-flex", "inline-flex"],
+        ["none", "none"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "visibility")
+    input = {
+      container: makeSelect([
+        ["visible", "visible"],
+        ["hidden", "hidden"],
+        ["collapse", "collapse"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "background-size")
+    input = {
+      container: makeSelect([
+        ["cover", "cover"],
+        ["contain", "contain"],
+        ["100% 100%", "stretch"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "background-position")
+    input = {
+      container: makeSelect([
+        ["center", "center"],
+        ["center top", "top"],
+        ["center bottom", "bottom"],
+        ["left center", "left"],
+        ["right center", "right"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "background-repeat")
+    input = {
+      container: makeSelect([
+        ["no-repeat", "no-repeat"],
+        ["repeat", "repeat"],
+        ["repeat-x", "repeat-x"],
+        ["repeat-y", "repeat-y"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "filter")
+    input = {
+      container: makeSelect([
+        ["none", "none"],
+        ["blur(4px)", "blur (4px)"],
+        ["blur(10px)", "blur (10px)"],
+        ["grayscale(1)", "grayscale"],
+        ["grayscale(0.5)", "grayscale 50%"],
+        ["brightness(0.5)", "dim (50%)"],
+        ["brightness(1.3)", "brighten (130%)"],
+        ["hue-rotate(90deg)", "hue-rotate 90°"],
+        ["hue-rotate(180deg)", "hue-rotate 180°"],
+        ["saturate(0)", "desaturate"],
+        ["saturate(0.5)", "low saturation"],
+        ["saturate(1.5)", "oversaturate"],
+        ["saturate(2)", "vivid (2x)"],
+        ["sepia(1)", "sepia"],
+        ["invert(1)", "invert"],
+        ["contrast(1.5)", "contrast+"],
+        ["contrast(0.7)", "contrast-"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "backdrop-filter")
+    input = {
+      container: makeSelect([
+        ["none", "none"],
+        ["blur(4px)", "blur (4px)"],
+        ["blur(10px)", "blur (10px)"],
+        ["blur(20px)", "blur (20px)"],
+        ["blur(120px) brightness(0.2)", "heavy blur + dim"],
+        ["blur(10px) brightness(0.7)", "blur + slight dim"],
+        ["blur(1px)", "subtle blur"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "mix-blend-mode")
+    input = {
+      container: makeSelect([
+        ["normal", "normal"],
+        ["multiply", "multiply"],
+        ["screen", "screen"],
+        ["overlay", "overlay"],
+        ["darken", "darken"],
+        ["lighten", "lighten"],
+        ["color-dodge", "color-dodge"],
+        ["hard-light", "hard-light"],
+        ["soft-light", "soft-light"],
+        ["difference", "difference"],
+        ["exclusion", "exclusion"],
+        ["hue", "hue"],
+        ["saturation", "saturation"],
+        ["color", "color"],
+        ["luminosity", "luminosity"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "transition")
+    input = {
+      container: makeSelect([
+        ["none", "none"],
+        ["0.2s", "0.2s fast"],
+        ["0.3s", "0.3s default"],
+        ["0.5s", "0.5s medium"],
+        ["0.2s opacity", "0.2s opacity only"],
+        ["0.3s all ease-in-out", "0.3s all ease-in-out"],
+        ["0.5s all ease", "0.5s all ease"],
+      ]),
+      get value() {
+        return this.container.value;
+      },
+    };
+  else if (prop === "left" || prop === "top") {
+    const textIn = makeTextInput("e.g. 3.95px", "75px");
+    input = {
+      container: textIn,
+      get value() {
+        return textIn.value;
+      },
+    };
+  } else {
+    const textIn = makeTextInput("value", "90px");
+    input = {
+      container: textIn,
+      get value() {
+        return textIn.value;
+      },
+    };
   }
 
   const btn = makeAddBtn(() => {
-    const val = input.value; if (!val) return;
-    const finalProp = prop === 'scale' ? 'transform' : prop;
+    const val = input.value;
+    if (!val) return;
+    const finalProp = prop === "scale" ? "transform" : prop;
     setCssProperty(cls, finalProp, val);
     sendToRaw();
   });
 
-  inner.appendChild(input.container); inner.appendChild(btn);
+  inner.appendChild(input.container);
+  inner.appendChild(btn);
   wrap.appendChild(inner);
-  register({ cls, prop: prop === 'scale' ? 'transform' : prop, inputEl: input.textIn || input.container, notBadge });
+  register({
+    cls,
+    prop: prop === "scale" ? "transform" : prop,
+    inputEl: input.textIn || input.container,
+    notBadge,
+  });
   return wrap;
 }
 
 function buildBgReplaceControl(cls, propObj, notBadge) {
-  const wrap = document.createElement('div');
-  wrap.className = 'ci-prop-wrap';
-  wrap.style.cssText = 'flex-basis:100%;margin-top:4px;';
-  const lbl = document.createElement('div');
-  lbl.className = 'ci-prop-label';
-  lbl.textContent = propObj.label || 'replace background image';
+  const wrap = document.createElement("div");
+  wrap.className = "ci-prop-wrap";
+  wrap.style.cssText = "flex-basis:100%;margin-top:4px;";
+  const lbl = document.createElement("div");
+  lbl.className = "ci-prop-label";
+  lbl.textContent = propObj.label || "replace background image";
   wrap.appendChild(lbl);
-  const inner = document.createElement('div');
-  inner.style.cssText = 'display:flex;align-items:center;gap:4px;flex-wrap:wrap;';
-  const urlInput = makeTextInput("image URL", '160px');
-  const sizeSelect = makeSelect([['cover','cover'],['contain','contain'],['100% 100%','stretch']]);
-  sizeSelect.style.cssText += 'padding:4px 22px 4px 6px !important;font-size:10px !important;width:auto !important;';
+  const inner = document.createElement("div");
+  inner.style.cssText =
+    "display:flex;align-items:center;gap:4px;flex-wrap:wrap;";
+  const urlInput = makeTextInput("image URL", "160px");
+  const sizeSelect = makeSelect([
+    ["cover", "cover"],
+    ["contain", "contain"],
+    ["100% 100%", "stretch"],
+  ]);
+  sizeSelect.style.cssText +=
+    "padding:4px 22px 4px 6px !important;font-size:10px !important;width:auto !important;";
   const btn = makeAddBtn(() => {
-    const url = urlInput.value.trim(); if (!url) return;
+    const url = urlInput.value.trim();
+    if (!url) return;
     const size = sizeSelect.value;
-    
-    if (propObj.hideImg) setCssProperty(propObj.hideImg, 'opacity', '0');
-    
+
+    if (propObj.hideImg) setCssProperty(propObj.hideImg, "opacity", "0");
+
     setCssBatch(cls, {
-      'background-image': `url('${url}')`,
-      'background-size': size,
-      'background-position': 'center',
-      'background-repeat': 'no-repeat'
+      "background-image": `url('${url}')`,
+      "background-size": size,
+      "background-position": "center",
+      "background-repeat": "no-repeat",
     });
     sendToRaw();
     //switchTab('raw'); scrollRawToBottom();
   });
-  inner.appendChild(urlInput); inner.appendChild(sizeSelect); inner.appendChild(btn);
+  inner.appendChild(urlInput);
+  inner.appendChild(sizeSelect);
+  inner.appendChild(btn);
   wrap.appendChild(inner);
   return wrap;
 }
 
 function buildImgReplaceControl(cls, propObj, notBadge) {
-  const wrap = document.createElement('div');
-  wrap.className = 'ci-prop-wrap';
-  wrap.style.cssText = 'flex-basis:100%;margin-top:4px;';
-  const lbl = document.createElement('div');
-  lbl.className = 'ci-prop-label';
-  lbl.textContent = propObj.label || 'replace image';
+  const wrap = document.createElement("div");
+  wrap.className = "ci-prop-wrap";
+  wrap.style.cssText = "flex-basis:100%;margin-top:4px;";
+  const lbl = document.createElement("div");
+  lbl.className = "ci-prop-label";
+  lbl.textContent = propObj.label || "replace image";
   wrap.appendChild(lbl);
-  const inner = document.createElement('div');
-  inner.style.cssText = 'display:flex;align-items:center;gap:4px;flex-wrap:wrap;';
-  const urlInput = makeTextInput('image URL or file:/// path', '200px');
+  const inner = document.createElement("div");
+  inner.style.cssText =
+    "display:flex;align-items:center;gap:4px;flex-wrap:wrap;";
+  const urlInput = makeTextInput("image URL or file:/// path", "200px");
   const btn = makeAddBtn(() => {
-    const url = urlInput.value.trim(); if (!url) return;
-    setCssProperty(cls, 'content', `url('${url}')`);
+    const url = urlInput.value.trim();
+    if (!url) return;
+    setCssProperty(cls, "content", `url('${url}')`);
     sendToRaw();
   });
-  inner.appendChild(urlInput); inner.appendChild(btn);
+  inner.appendChild(urlInput);
+  inner.appendChild(btn);
   wrap.appendChild(inner);
   return wrap;
 }
 
 function buildChildImgReplaceControl(cls) {
-  const wrap = document.createElement('div');
-  wrap.className = 'ci-prop-wrap';
-  wrap.style.flexBasis = '100%';
-  const lbl = document.createElement('div');
-  lbl.className = 'ci-prop-label';
-  lbl.textContent = 'REPLACE CHILD <img>';
-  lbl.style.color = '#c8aa6e';
+  const wrap = document.createElement("div");
+  wrap.className = "ci-prop-wrap";
+  wrap.style.flexBasis = "100%";
+  const lbl = document.createElement("div");
+  lbl.className = "ci-prop-label";
+  lbl.textContent = "REPLACE CHILD <img>";
+  lbl.style.color = "#c8aa6e";
   wrap.appendChild(lbl);
-  const inner = document.createElement('div');
-  inner.className = 'ci-prop-inner';
-  inner.style.gap = '6px';
-  const urlInput = makeTextInput('new image URL...', '160px');
-  const sizeSelect = makeSelect([['cover','cover'],['contain','contain'],['100% 100%','stretch']]);
-  sizeSelect.style.width = 'auto';
+  const inner = document.createElement("div");
+  inner.className = "ci-prop-inner";
+  inner.style.gap = "6px";
+  const urlInput = makeTextInput("new image URL...", "160px");
+  const sizeSelect = makeSelect([
+    ["cover", "cover"],
+    ["contain", "contain"],
+    ["100% 100%", "stretch"],
+  ]);
+  sizeSelect.style.width = "auto";
   const btn = makeAddBtn(() => {
-    const url = urlInput.value.trim(); if (!url) return;
+    const url = urlInput.value.trim();
+    if (!url) return;
     const size = sizeSelect.value;
-    
-    setCssBatch(`${cls} img`, { 'opacity': '0', 'visibility': 'hidden' });
+
+    setCssBatch(`${cls} img`, { opacity: "0", visibility: "hidden" });
     setCssBatch(cls, {
-      'background-image': `url('${url}')`,
-      'background-size': size,
-      'background-position': 'center'
+      "background-image": `url('${url}')`,
+      "background-size": size,
+      "background-position": "center",
     });
 
     sendToRaw();
   });
-  inner.appendChild(urlInput); inner.appendChild(sizeSelect); inner.appendChild(btn);
+  inner.appendChild(urlInput);
+  inner.appendChild(sizeSelect);
+  inner.appendChild(btn);
   wrap.appendChild(inner);
   return wrap;
 }
 
 function makeHybridSlider(min, max, step, defaultVal, formatOut, parseIn) {
-  const container = document.createElement('div');
-  container.style.cssText = 'display:flex;align-items:center;gap:6px;';
-  const slider = document.createElement('input');
-  slider.type = 'range'; slider.min = min; slider.max = max; slider.step = step; slider.value = defaultVal;
-  slider.className = 'ci-slider'; slider.style.width = '60px';
-  const textIn = makeTextInput('', '50px');
+  const container = document.createElement("div");
+  container.style.cssText = "display:flex;align-items:center;gap:6px;";
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = min;
+  slider.max = max;
+  slider.step = step;
+  slider.value = defaultVal;
+  slider.className = "ci-slider";
+  slider.style.width = "60px";
+  const textIn = makeTextInput("", "50px");
   textIn.value = formatOut(defaultVal);
-  slider.addEventListener('input', () => textIn.value = formatOut(slider.value));
-  textIn.addEventListener('input', () => { const p = parseIn(textIn.value); if (!isNaN(p)) slider.value = p; });
-  container.appendChild(slider); container.appendChild(textIn);
-  return { container, textIn, get value() { return textIn.value; } };
+  slider.addEventListener(
+    "input",
+    () => (textIn.value = formatOut(slider.value)),
+  );
+  textIn.addEventListener("input", () => {
+    const p = parseIn(textIn.value);
+    if (!isNaN(p)) slider.value = p;
+  });
+  container.appendChild(slider);
+  container.appendChild(textIn);
+  return {
+    container,
+    textIn,
+    get value() {
+      return textIn.value;
+    },
+  };
 }
 
 function makeColorInput() {
-  const container = document.createElement('div');
-  container.className = 'ci-color-pair';
-  const picker = document.createElement('input'); picker.type = 'color'; picker.className = 'ci-color-input'; picker.value = '#c8aa6e';
-  const textIn = makeTextInput('hex / rgba', '80px');
-  picker.addEventListener('input', () => textIn.value = picker.value);
-  textIn.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(textIn.value)) picker.value = textIn.value; });
-  container.appendChild(picker); container.appendChild(textIn);
-  return { container, textIn, get value() { return textIn.value.trim() || picker.value; } };
+  const container = document.createElement("div");
+  container.className = "ci-color-pair";
+  const picker = document.createElement("input");
+  picker.type = "color";
+  picker.className = "ci-color-input";
+  picker.value = "#c8aa6e";
+  const textIn = makeTextInput("hex / rgba", "80px");
+  picker.addEventListener("input", () => (textIn.value = picker.value));
+  textIn.addEventListener("input", () => {
+    if (/^#[0-9a-f]{6}$/i.test(textIn.value)) picker.value = textIn.value;
+  });
+  container.appendChild(picker);
+  container.appendChild(textIn);
+  return {
+    container,
+    textIn,
+    get value() {
+      return textIn.value.trim() || picker.value;
+    },
+  };
 }
 
 function makeGlowInput() {
-  const container = document.createElement('div');
-  container.className = 'ci-color-pair';
-  const picker = document.createElement('input'); picker.type = 'color'; picker.className = 'ci-color-input'; picker.value = '#00ffff';
-  const slider = document.createElement('input');
-  slider.type = 'range'; slider.min = 0; slider.max = 20; slider.step = 1; slider.value = 10;
-  slider.className = 'ci-slider'; slider.style.width = '50px';
-  container.appendChild(picker); container.appendChild(slider);
-  return { container, textIn: null, get value() { return `0 0 ${slider.value}px ${picker.value}, 0 0 ${slider.value * 2}px ${picker.value}`; } };
+  const container = document.createElement("div");
+  container.className = "ci-color-pair";
+  const picker = document.createElement("input");
+  picker.type = "color";
+  picker.className = "ci-color-input";
+  picker.value = "#00ffff";
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = 0;
+  slider.max = 20;
+  slider.step = 1;
+  slider.value = 10;
+  slider.className = "ci-slider";
+  slider.style.width = "50px";
+  container.appendChild(picker);
+  container.appendChild(slider);
+  return {
+    container,
+    textIn: null,
+    get value() {
+      return `0 0 ${slider.value}px ${picker.value}, 0 0 ${slider.value * 2}px ${picker.value}`;
+    },
+  };
 }
 
 function makeSelect(options) {
-  const sel = document.createElement('select'); sel.className = 'ci-select ci-prop-select';
-  options.forEach(([v,t]) => { const o = document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); });
+  const sel = document.createElement("select");
+  sel.className = "ci-select ci-prop-select";
+  options.forEach(([v, t]) => {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = t;
+    sel.appendChild(o);
+  });
   return sel;
 }
 
 function makeTextInput(placeholder, width) {
-  const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'ci-input ci-prop-input';
-  inp.placeholder = placeholder; inp.style.width = width;
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.className = "ci-input ci-prop-input";
+  inp.placeholder = placeholder;
+  inp.style.width = width;
   return inp;
 }
 
 function makeIconBtn(icon, title, onClick) {
-  const btn = document.createElement('button'); btn.title = title; btn.textContent = icon;
-  btn.style.cssText = 'flex-shrink:0;width:30px;height:30px;background:transparent;border:1px solid #785a28;color:#785a28;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,color 0.15s;';
-  btn.addEventListener('mouseenter', () => { btn.style.background='#785a28'; btn.style.color='#f0e6d3'; });
-  btn.addEventListener('mouseleave', () => { btn.style.background='transparent'; btn.style.color='#785a28'; });
-  btn.addEventListener('click', onClick); return btn;
+  const btn = document.createElement("button");
+  btn.title = title;
+  btn.textContent = icon;
+  btn.style.cssText =
+    "flex-shrink:0;width:30px;height:30px;background:transparent;border:1px solid #785a28;color:#785a28;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,color 0.15s;";
+  btn.addEventListener("mouseenter", () => {
+    btn.style.background = "#785a28";
+    btn.style.color = "#f0e6d3";
+  });
+  btn.addEventListener("mouseleave", () => {
+    btn.style.background = "transparent";
+    btn.style.color = "#785a28";
+  });
+  btn.addEventListener("click", onClick);
+  return btn;
 }
 
 function makeAddBtn(onClick) {
-  const btn = document.createElement('button'); btn.className = 'ci-btn-prop'; btn.textContent = '→'; btn.title = 'Add to CSS';
-  btn.addEventListener('click', onClick); return btn;
+  const btn = document.createElement("button");
+  btn.className = "ci-btn-prop";
+  btn.textContent = "→";
+  btn.title = "Add to CSS";
+  btn.addEventListener("click", onClick);
+  return btn;
 }
 
-// THE DYNAMIC PROPERTY ENGINE 
+// THE DYNAMIC PROPERTY ENGINE
 function getSmartProperties(el) {
   const props = new Set();
-  const genericProps = ['display', 'opacity', 'scale', 'border-radius', 'text-shadow'];
-  genericProps.forEach(p => props.add(p));
+  const genericProps = [
+    "display",
+    "opacity",
+    "scale",
+    "border-radius",
+    "text-shadow",
+  ];
+  genericProps.forEach((p) => props.add(p));
   if (!el) return Array.from(props);
   const cs = window.getComputedStyle(el);
-  if (cs.color && cs.color !== 'rgb(0, 0, 0)' && cs.color !== 'rgba(0, 0, 0, 0)') props.add('color');
-  if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent') props.add('background-color');
-  if (cs.borderTopWidth && cs.borderTopWidth !== '0px') props.add('border-color');
-  if (cs.backgroundImage && cs.backgroundImage !== 'none') {
-    props.add('background-image');
-    props.add('background-size');
-    props.add('background-position');
-    props.add('background-repeat');
+  if (
+    cs.color &&
+    cs.color !== "rgb(0, 0, 0)" &&
+    cs.color !== "rgba(0, 0, 0, 0)"
+  )
+    props.add("color");
+  if (
+    cs.backgroundColor &&
+    cs.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+    cs.backgroundColor !== "transparent"
+  )
+    props.add("background-color");
+  if (cs.borderTopWidth && cs.borderTopWidth !== "0px")
+    props.add("border-color");
+  if (cs.backgroundImage && cs.backgroundImage !== "none") {
+    props.add("background-image");
+    props.add("background-size");
+    props.add("background-position");
+    props.add("background-repeat");
   }
-  if (cs.fontFamily) props.add('font-family');
-  if (cs.fontSize && cs.fontSize !== '16px') props.add('font-size');
-  if (cs.width && cs.width !== 'auto' && cs.width !== '0px') props.add('width');
-  if (cs.height && cs.height !== 'auto' && cs.height !== '0px') props.add('height');
-  if (cs.margin && cs.margin !== '0px') props.add('margin');
-  if (cs.padding && cs.padding !== '0px') props.add('padding');
-  if (cs.filter && cs.filter !== 'none') props.add('filter');
-  if (cs.backdropFilter && cs.backdropFilter !== 'none') props.add('backdrop-filter');
-  if (cs.visibility && cs.visibility === 'hidden') props.add('visibility');
-  if (cs.mixBlendMode && cs.mixBlendMode !== 'normal') props.add('mix-blend-mode');
+  if (cs.fontFamily) props.add("font-family");
+  if (cs.fontSize && cs.fontSize !== "16px") props.add("font-size");
+  if (cs.width && cs.width !== "auto" && cs.width !== "0px") props.add("width");
+  if (cs.height && cs.height !== "auto" && cs.height !== "0px")
+    props.add("height");
+  if (cs.margin && cs.margin !== "0px") props.add("margin");
+  if (cs.padding && cs.padding !== "0px") props.add("padding");
+  if (cs.filter && cs.filter !== "none") props.add("filter");
+  if (cs.backdropFilter && cs.backdropFilter !== "none")
+    props.add("backdrop-filter");
+  if (cs.visibility && cs.visibility === "hidden") props.add("visibility");
+  if (cs.mixBlendMode && cs.mixBlendMode !== "normal")
+    props.add("mix-blend-mode");
   // SMART ADDITIONS
-  if (el.querySelector('img')) {
-    props.add('child-img-replace');
+  if (el.querySelector("img")) {
+    props.add("child-img-replace");
   }
   return Array.from(props);
 }
@@ -2183,7 +2993,7 @@ function findCatalogMatch(sel) {
     if (group.generic) continue;
     for (const el of group.elements) {
       if (el.cls === sel || sel.includes(el.cls)) {
-        const cleanGroup = group.label.replace(/[\u1000-\uFFFF]/g, '').trim();
+        const cleanGroup = group.label.replace(/[\u1000-\uFFFF]/g, "").trim();
         return { group: cleanGroup, label: el.label };
       }
     }
@@ -2191,15 +3001,17 @@ function findCatalogMatch(sel) {
   return null;
 }
 
-// ELEMENT PICKER (INSPECTOR WITH DOM TRAVERSAL & TOOLTIP) 
+// ELEMENT PICKER (INSPECTOR WITH DOM TRAVERSAL & TOOLTIP)
 export function startElementPicker(onPickCallback) {
-  const backdrop = document.getElementById('css-injector-backdrop');
-  if (backdrop) backdrop.style.display = 'none';
-  const overlay = document.createElement('div');
-  overlay.id = 'ci-inspector-overlay';
-  overlay.style.cssText = 'position:fixed; pointer-events:none; z-index:999998; border:2px solid #c8aa6e; background:rgba(200, 170, 110, 0.2); transition:all 0.1s ease-out; display:none;';
-  const label = document.createElement('div');
-  label.style.cssText = 'position:fixed; pointer-events:none; z-index:999999; background:#091220; color:#c8aa6e; border:1px solid #c8aa6e; font-family:"Fira Code",monospace; padding:4px 8px; white-space:nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.7); display:none; transition:all 0.1s ease-out;';
+  const backdrop = getBackdrop();
+  if (backdrop) backdrop.style.display = "none";
+  const overlay = document.createElement("div");
+  overlay.id = "ci-inspector-overlay";
+  overlay.style.cssText =
+    "position:fixed; pointer-events:none; z-index:999998; border:2px solid #c8aa6e; background:rgba(200, 170, 110, 0.2); transition:all 0.1s ease-out; display:none;";
+  const label = document.createElement("div");
+  label.style.cssText =
+    'position:fixed; pointer-events:none; z-index:999999; background:#091220; color:#c8aa6e; border:1px solid #c8aa6e; font-family:"Fira Code",monospace; padding:4px 8px; white-space:nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.7); display:none; transition:all 0.1s ease-out;';
   document.body.appendChild(overlay);
   document.body.appendChild(label);
   let currentTarget = null;
@@ -2207,102 +3019,145 @@ export function startElementPicker(onPickCallback) {
   function renderOverlay() {
     if (!currentTarget) return;
     const rect = currentTarget.getBoundingClientRect();
-    overlay.style.display = 'block';
-    overlay.style.top = rect.top + 'px'; 
-    overlay.style.left = rect.left + 'px';
-    overlay.style.width = rect.width + 'px'; 
-    overlay.style.height = rect.height + 'px';
+    overlay.style.display = "block";
+    overlay.style.top = rect.top + "px";
+    overlay.style.left = rect.left + "px";
+    overlay.style.width = rect.width + "px";
+    overlay.style.height = rect.height + "px";
     let selector = currentTarget.tagName.toLowerCase();
-    if (currentTarget.id) selector += '#' + currentTarget.id;
+    if (currentTarget.id) selector += "#" + currentTarget.id;
     else if (currentTarget.classList.length > 0) {
-      const validClasses = [...currentTarget.classList].filter(c => !/^(ng-|ember|active|hover|focus)/i.test(c));
-      if (validClasses.length > 0) selector += '.' + validClasses.join('.');
+      const validClasses = [...currentTarget.classList].filter(
+        (c) => !/^(ng-|ember|active|hover|focus)/i.test(c),
+      );
+      if (validClasses.length > 0) selector += "." + validClasses.join(".");
     }
     if (isLocked) {
-      overlay.style.borderColor = '#4caf82';
-      overlay.style.backgroundColor = 'rgba(76, 175, 130, 0.2)';
-      label.style.borderColor = '#4caf82';
-      label.style.color = '#4caf82';
+      overlay.style.borderColor = "#4caf82";
+      overlay.style.backgroundColor = "rgba(76, 175, 130, 0.2)";
+      label.style.borderColor = "#4caf82";
+      label.style.color = "#4caf82";
       label.innerHTML = `<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Scroll / Arrows] Change Depth •[Click / Enter] Confirm • [Esc] Unlock</div>`;
     } else {
-      overlay.style.borderColor = '#c8aa6e';
-      overlay.style.backgroundColor = 'rgba(200, 170, 110, 0.2)';
-      label.style.borderColor = '#c8aa6e';
-      label.style.color = '#c8aa6e';
+      overlay.style.borderColor = "#c8aa6e";
+      overlay.style.backgroundColor = "rgba(200, 170, 110, 0.2)";
+      label.style.borderColor = "#c8aa6e";
+      label.style.color = "#c8aa6e";
       label.innerHTML = `<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Click] Lock element • [Esc] Cancel</div>`;
     }
-    label.style.display = 'block';
+    label.style.display = "block";
     const pad = 6;
     let lTop = rect.top - label.offsetHeight - pad;
     let lLeft = rect.left;
     if (lTop < pad) lTop = Math.max(pad, rect.top + pad);
-    if (lTop + label.offsetHeight > window.innerHeight - pad) lTop = window.innerHeight - label.offsetHeight - pad;
+    if (lTop + label.offsetHeight > window.innerHeight - pad)
+      lTop = window.innerHeight - label.offsetHeight - pad;
     if (lLeft < pad) lLeft = pad;
-    else if (lLeft + label.offsetWidth > window.innerWidth - pad) lLeft = window.innerWidth - label.offsetWidth - pad;
-    label.style.top = lTop + 'px';
-    label.style.left = lLeft + 'px';
+    else if (lLeft + label.offsetWidth > window.innerWidth - pad)
+      lLeft = window.innerWidth - label.offsetWidth - pad;
+    label.style.top = lTop + "px";
+    label.style.left = lLeft + "px";
   }
   function onMouseMove(e) {
-    if (isLocked) return; 
+    if (isLocked) return;
     const target = document.elementFromPoint(e.clientX, e.clientY);
-    if (!target || target.id === 'css-injector-backdrop' || target.id === 'ci-inspector-overlay' || target === currentTarget) return;
+    if (
+      !target ||
+      target.id === "css-injector-backdrop" ||
+      target.id === "ci-inspector-overlay" ||
+      target === currentTarget
+    )
+      return;
     currentTarget = target;
     renderOverlay();
   }
   function cleanup() {
-    document.removeEventListener('mousemove', onMouseMove, true);
-    document.removeEventListener('click', onClick, true);
-    document.removeEventListener('keydown', onKeyDown, true);
-    document.removeEventListener('wheel', onWheel, true);
+    document.removeEventListener("mousemove", onMouseMove, true);
+    document.removeEventListener("click", onClick, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("wheel", onWheel, true);
     overlay.remove();
     label.remove();
-    if (backdrop) backdrop.style.display = 'flex'; // restore modal
+    if (backdrop) backdrop.style.display = "flex"; // restore modal
   }
   function confirmSelection() {
     cleanup();
     if (!currentTarget) return;
     let finalSelector = currentTarget.tagName.toLowerCase();
-    if (currentTarget.id) finalSelector += '#' + currentTarget.id;
+    if (currentTarget.id) finalSelector += "#" + currentTarget.id;
     else if (currentTarget.classList.length > 0) {
-        const validClasses =[...currentTarget.classList].filter(c => !/^(ng-|ember|active|hover)/i.test(c));
-        if (validClasses.length > 0) finalSelector = '.' + validClasses.join('.');
+      const validClasses = [...currentTarget.classList].filter(
+        (c) => !/^(ng-|ember|active|hover)/i.test(c),
+      );
+      if (validClasses.length > 0) finalSelector = "." + validClasses.join(".");
     }
     onPickCallback(finalSelector);
   }
   function onClick(e) {
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
     if (!currentTarget) return;
-    if (!isLocked) { isLocked = true; renderOverlay(); }
-    else { confirmSelection(); }
+    if (!isLocked) {
+      isLocked = true;
+      renderOverlay();
+    } else {
+      confirmSelection();
+    }
   }
   function onWheel(e) {
     if (!isLocked) return;
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
     let nextTarget = null;
     if (e.deltaY < 0) nextTarget = currentTarget.parentElement;
     else if (e.deltaY > 0) nextTarget = currentTarget.firstElementChild;
-    if (nextTarget && nextTarget.tagName !== 'HTML' && nextTarget.tagName !== 'BODY') { currentTarget = nextTarget; renderOverlay(); }
+    if (
+      nextTarget &&
+      nextTarget.tagName !== "HTML" &&
+      nextTarget.tagName !== "BODY"
+    ) {
+      currentTarget = nextTarget;
+      renderOverlay();
+    }
   }
   function onKeyDown(e) {
-    e.preventDefault(); e.stopImmediatePropagation();
-    if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.key === "Escape") {
       if (isLocked) {
-        isLocked = false; currentTarget = null;
-        overlay.style.display = 'none'; label.style.display = 'none';
-      } else { cleanup(); }
-    } else if (isLocked && e.key === 'Enter') {
+        isLocked = false;
+        currentTarget = null;
+        overlay.style.display = "none";
+        label.style.display = "none";
+      } else {
+        cleanup();
+      }
+    } else if (isLocked && e.key === "Enter") {
       confirmSelection();
     } else if (isLocked) {
       let nextTarget = null;
-      if (e.key === 'ArrowUp') nextTarget = currentTarget.parentElement;
-      else if (e.key === 'ArrowDown') nextTarget = currentTarget.firstElementChild;
-      else if (e.key === 'ArrowLeft') nextTarget = currentTarget.previousElementSibling;
-      else if (e.key === 'ArrowRight') nextTarget = currentTarget.nextElementSibling;
-      if (nextTarget && nextTarget.tagName !== 'HTML' && nextTarget.tagName !== 'BODY') { currentTarget = nextTarget; renderOverlay(); }
+      if (e.key === "ArrowUp") nextTarget = currentTarget.parentElement;
+      else if (e.key === "ArrowDown")
+        nextTarget = currentTarget.firstElementChild;
+      else if (e.key === "ArrowLeft")
+        nextTarget = currentTarget.previousElementSibling;
+      else if (e.key === "ArrowRight")
+        nextTarget = currentTarget.nextElementSibling;
+      if (
+        nextTarget &&
+        nextTarget.tagName !== "HTML" &&
+        nextTarget.tagName !== "BODY"
+      ) {
+        currentTarget = nextTarget;
+        renderOverlay();
+      }
     }
   }
-  document.addEventListener('mousemove', onMouseMove, true);
-  document.addEventListener('click', onClick, true);
-  document.addEventListener('keydown', onKeyDown, true);
-  document.addEventListener('wheel', onWheel, { capture: true, passive: false });
+  document.addEventListener("mousemove", onMouseMove, true);
+  document.addEventListener("click", onClick, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("wheel", onWheel, {
+    capture: true,
+    passive: false,
+  });
 }
