@@ -17,7 +17,7 @@ let _shadowRegistry = new Map();
 let _isInitialized = false;
 let _originalAttachShadow = null;
 let _currentCssCache = "";
-let _globalSheet = new CSSStyleSheet();
+export const _globalSheet = new CSSStyleSheet();
 
 /**
  * Initialize the shadow root manager.

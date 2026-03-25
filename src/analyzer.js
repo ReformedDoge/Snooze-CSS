@@ -2,6 +2,7 @@
 
 import { sendToRaw } from './raw.js';
 import { copyText }  from './utils.js';
+import { getShadowRoots, _globalSheet } from './shadow-manager.js';
 
 // CLIENT ARCHITECTURE 
 // These are the static structural zones of the League client.
@@ -232,6 +233,7 @@ function walkDOM(roots, maxDepth, skipInvisible = true) {
   const elements  = [];
   const treeLines = [];
   const shadowStylesheets = []; // collected by walk() when shadow roots are encountered
+  const allTrackedRoots = typeof getShadowRoots === 'function' ? getShadowRoots() : [];
 
   function walk(el, depth, prefix, isLast, fromShadow) {
     if (depth > maxDepth) return;
@@ -268,11 +270,19 @@ function walkDOM(roots, maxDepth, skipInvisible = true) {
     const lightChildren  = [...el.children];
 
     // If this element has a shadow root, extract its stylesheets before walking children
-    if (el.shadowRoot) {
+    const sRoot = el.shadowRoot || allTrackedRoots.find(r => r.host === el)?.shadowRoot;
+
+    if (sRoot) {
       try {
         const hostSel = buildSelector(el);
-        const sheets = [...el.shadowRoot.styleSheets];
-        sheets.forEach(sheet => {
+        const standardSheets = [...sRoot.styleSheets];
+        const adoptedSheets = sRoot.adoptedStyleSheets ? [...sRoot.adoptedStyleSheets] : [];
+        const allSheets = [...standardSheets, ...adoptedSheets];
+
+        allSheets.forEach(sheet => {
+          // Skip our Snooze-CSS global sheet to prevent infinite loop/duplicate themes
+          if (sheet === _globalSheet || sheet.href?.includes('Snooze-CSS')) return;
+
           try {
             const rules = [...sheet.cssRules];
             rules.forEach(rule => {
@@ -285,7 +295,7 @@ function walkDOM(roots, maxDepth, skipInvisible = true) {
       } catch { /* ignore */ }
     }
 
-    const shadowChildren = el.shadowRoot ? [...el.shadowRoot.children] : [];
+    const shadowChildren = sRoot ? [...sRoot.children] : [];
     const allChildren    = [...lightChildren, ...shadowChildren];
 
     allChildren.forEach((child, i) => {
