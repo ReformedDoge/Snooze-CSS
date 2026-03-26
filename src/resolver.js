@@ -75,7 +75,7 @@ export function resolveAssetUrls(css) {
       }
 
       if (absolute !== trimmed) {
-        console.debug("[Snooze-CSS] resolveAssetUrls", trimmed, "→", absolute);
+        // Uncomment to debug: console.debug("[Snooze-CSS] resolveAssetUrls", trimmed, "→", absolute);
       }
 
       return "url(" + quote + absolute + quote + ")";

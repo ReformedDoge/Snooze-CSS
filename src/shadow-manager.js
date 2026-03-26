@@ -23,6 +23,8 @@ export const _globalSheet = new CSSStyleSheet();
  * Initialize the shadow root manager.
  * Must be called once at plugin startup, before views load.
  * Hooks Element.prototype.attachShadow to track all shadow roots.
+ * Also does a one-time scan for shadow roots that already exist
+ * (elements mounted before the plugin loaded).
  */
 export function initShadowRootManager() {
   if (_isInitialized) {
@@ -49,17 +51,24 @@ export function initShadowRootManager() {
     if (this.id !== "snooze-css-host") {
       try {
         // Prevent UI frameworks from overwriting our sheet
-        const desc = Object.getOwnPropertyDescriptor(ShadowRoot.prototype, "adoptedStyleSheets");
+        const desc = Object.getOwnPropertyDescriptor(
+          ShadowRoot.prototype,
+          "adoptedStyleSheets",
+        );
         if (desc && desc.set) {
           Object.defineProperty(shadowRoot, "adoptedStyleSheets", {
-            set: function(val) {
-              if (val && !val.includes(_globalSheet)) val = [...val, _globalSheet];
+            set: function (val) {
+              if (val && !val.includes(_globalSheet))
+                val = [...val, _globalSheet];
               desc.set.call(this, val);
             },
-            get: desc.get
+            get: desc.get,
           });
         }
-        shadowRoot.adoptedStyleSheets = [...shadowRoot.adoptedStyleSheets, _globalSheet];
+        shadowRoot.adoptedStyleSheets = [
+          ...shadowRoot.adoptedStyleSheets,
+          _globalSheet,
+        ];
       } catch (err) {}
     }
 
@@ -67,7 +76,38 @@ export function initShadowRootManager() {
   };
 
   _isInitialized = true;
+
+  // One-time scan for shadow roots that existed before the hook was installed.
+  // This catches elements mounted at page load before the plugin ran.
+  _scanExistingShadowRoots(document.documentElement);
+
   console.log("[Snooze-CSS] Shadow root manager initialized");
+}
+
+/**
+ * Recursively walk the DOM and register any open shadow roots that
+ * already exist. Called once at init for roots created before the hook.
+ * @param {Element} root
+ */
+function _scanExistingShadowRoots(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  let node = walker.nextNode();
+  while (node) {
+    if (node.shadowRoot && node.id !== "snooze-css-host") {
+      if (!_shadowRegistry.has(node.shadowRoot)) {
+        _shadowRegistry.set(node.shadowRoot, { host: node });
+        try {
+          const sheets = node.shadowRoot.adoptedStyleSheets;
+          if (!sheets.includes(_globalSheet)) {
+            node.shadowRoot.adoptedStyleSheets = [...sheets, _globalSheet];
+          }
+        } catch (err) {}
+        // Recurse into the shadow root itself
+        _scanExistingShadowRoots(node.shadowRoot);
+      }
+    }
+    node = walker.nextNode();
+  }
 }
 
 /**
@@ -118,8 +158,16 @@ function injectCSSToShadowRoots() {
 
   _shadowRegistry.forEach((metadata, shadowRoot) => {
     try {
-      if (!shadowRoot.host || !shadowRoot.host.shadowRoot) {
+      // A shadow root is dead when its host is no longer in the document.
+      // NOTE: host.shadowRoot returns null for closed roots, so we cannot use
+      // that as a liveness check — use isConnected on the host element instead.
+      if (!shadowRoot.host || !shadowRoot.host.isConnected) {
         toDelete.push(shadowRoot);
+        return;
+      }
+
+      // Avoid injecting into the plugin's own modal shadow root.
+      if (shadowRoot.host.id === "snooze-css-host") {
         return;
       }
 
@@ -153,8 +201,9 @@ export function getShadowRoots() {
 
   _shadowRegistry.forEach((metadata, shadowRoot) => {
     try {
-      // Validate the shadow root is still alive
-      if (!shadowRoot.host || !shadowRoot.host.shadowRoot) {
+      // isConnected is the correct liveness check — host.shadowRoot is null
+      // for closed roots even when they are perfectly alive.
+      if (!shadowRoot.host || !shadowRoot.host.isConnected) {
         toDelete.push(shadowRoot);
         return;
       }
