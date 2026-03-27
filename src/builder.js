@@ -1,8 +1,14 @@
 import { CATALOG } from "./catalog.js";
-import { setCssProperty, setCssBatch, sendToRaw, replaceOrAppendBlock } from "./raw.js";
+import {
+  setCssProperty,
+  setCssBatch,
+  sendToRaw,
+  replaceOrAppendBlock,
+} from "./raw.js";
 import { setRefreshCallback } from "./settings.js";
 import { rgbToHex, flashMessage } from "./utils.js";
 import { getBackdrop } from "./modal.js";
+import { getShadowRoots } from "./shadow-manager.js";
 
 // SESSION STATE
 const _collapseState = new Map();
@@ -386,8 +392,10 @@ function buildQuickThemeRow() {
       return;
     }
 
-    const START_MARKER = '/* =========================================== */\n/* QUICK THEME GENERATOR — PREMIUM EDITION      */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF QUICK THEME                          */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* QUICK THEME GENERATOR — PREMIUM EDITION      */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF QUICK THEME                          */\n/* =========================================== */";
 
     const lines = [];
     lines.push(START_MARKER);
@@ -642,10 +650,84 @@ function buildOmniRow() {
 
   let _inspInputs = [];
 
+  // Query in main document, plus shadow roots and same-origin frames recursively.
+  function querySelectorInDocument(doc, selector, visitedDocs = new Set()) {
+    if (!doc || !selector) return null;
+    if (visitedDocs.has(doc)) return null;
+    visitedDocs.add(doc);
+
+    // 1) direct searched document
+    try {
+      const el = doc.querySelector(selector);
+      if (el) return el;
+    } catch {
+      // invalid selector or no access
+    }
+
+    // 2) shadow roots tracked by our manager (global hook in shadow-manager.js)
+    try {
+      const roots = getShadowRoots();
+      for (const { shadowRoot } of roots) {
+        if (!shadowRoot) continue;
+        try {
+          const inner = shadowRoot.querySelector(selector);
+          if (inner) return inner;
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 3) fallback: manual scan for open shadow roots in this doc
+    try {
+      const candidates = doc.querySelectorAll("*:not(script):not(style)");
+      for (const node of candidates) {
+        if (node.shadowRoot) {
+          try {
+            const inner = node.shadowRoot.querySelector(selector);
+            if (inner) return inner;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 4) traverse nested same-origin iframes recursively
+    try {
+      const iframes = doc.querySelectorAll("iframe");
+      for (const iframe of iframes) {
+        try {
+          if (!iframe.contentDocument) continue;
+          const fromFrame = querySelectorInDocument(
+            iframe.contentDocument,
+            selector,
+            visitedDocs,
+          );
+          if (fromFrame) return fromFrame;
+        } catch {
+          // cross-origin iframe, cannot access
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    return null;
+  }
+
+  function querySelectorDeep(selector) {
+    return querySelectorInDocument(document, selector);
+  }
+
   const runInspect = () => {
     const sel = selInput.value.trim();
     if (!sel) return;
-    const el = document.querySelector(sel);
+    const el = querySelectorDeep(sel);
     status.style.display = "block";
     if (!el) {
       status.style.color = "#c84b4b";
@@ -843,8 +925,10 @@ function buildHoverRevealRow() {
 
     if (!lines.length) return;
 
-    const START_MARKER = '/* =========================================== */\n/* HOVER-TO-REVEAL                             */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF HOVER-TO-REVEAL                      */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* HOVER-TO-REVEAL                             */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF HOVER-TO-REVEAL                      */\n/* =========================================== */";
     lines.unshift(START_MARKER);
     lines.push(``);
     lines.push(END_MARKER);
@@ -1035,8 +1119,10 @@ function buildMinimalModeRow() {
 
     if (!lines.length) return;
 
-    const START_MARKER = '/* =========================================== */\n/* MINIMAL SWEEP                               */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF MINIMAL SWEEP                        */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* MINIMAL SWEEP                               */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF MINIMAL SWEEP                        */\n/* =========================================== */";
     lines.unshift(START_MARKER);
     lines.push(``);
     lines.push(END_MARKER);
@@ -1142,12 +1228,14 @@ function buildCssVarsRow() {
 
     if (!lines.length) return;
 
-    const START_MARKER = '/* =========================================== */\n/* CSS VARIABLE PALETTE                        */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF CSS VARIABLE PALETTE                 */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* CSS VARIABLE PALETTE                        */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF CSS VARIABLE PALETTE                 */\n/* =========================================== */";
     const payload = [
       START_MARKER,
       `:root {\n${lines.join("\n")}\n}`,
-      END_MARKER
+      END_MARKER,
     ].join("\n");
 
     flashMessage(row.querySelector("#ci-flash-cssvar"));
@@ -1423,8 +1511,10 @@ function buildHueRotateRow() {
 
     if (!lines.length) return;
 
-    const START_MARKER = '/* =========================================== */\n/* GLOBAL HUE ROTATE                           */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF GLOBAL HUE ROTATE                    */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* GLOBAL HUE ROTATE                           */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF GLOBAL HUE ROTATE                    */\n/* =========================================== */";
     lines.unshift(START_MARKER);
     lines.push(``);
     lines.push(END_MARKER);
@@ -1715,8 +1805,10 @@ ${sel}::before {
 
     // If content inside needs to be above the ::before, generate z-index rules
 
-    const START_MARKER = '/* =========================================== */\n/* SCREEN TINT OVERLAY                         */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF SCREEN TINT OVERLAY                  */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* SCREEN TINT OVERLAY                         */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF SCREEN TINT OVERLAY                  */\n/* =========================================== */";
     lines.unshift(START_MARKER);
     lines.push(``);
     lines.push(END_MARKER);
@@ -1805,8 +1897,10 @@ function buildRootOverlayRow() {
       z +
       ";\n}";
 
-    const START_MARKER = '/* =========================================== */\n/* ROOT VIEWPORT OVERLAY                       */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF ROOT VIEWPORT OVERLAY                */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* ROOT VIEWPORT OVERLAY                       */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF ROOT VIEWPORT OVERLAY                */\n/* =========================================== */";
     const payload = [START_MARKER, css, END_MARKER].join("\n\n");
 
     flashMessage(row.querySelector("#ci-flash-rovl"));
@@ -1961,8 +2055,10 @@ function buildGlassPanelRow() {
       return sel + " {\n" + props + "\n}";
     });
 
-    const START_MARKER = '/* =========================================== */\n/* FROSTED GLASS PANELS                        */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF FROSTED GLASS PANELS                 */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* FROSTED GLASS PANELS                        */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF FROSTED GLASS PANELS                 */\n/* =========================================== */";
     lines.unshift(START_MARKER);
     lines.push(END_MARKER);
 
@@ -2105,8 +2201,10 @@ function buildMaskFadeRow() {
       return sel + " {\n" + props + "}";
     });
 
-    const START_MARKER = '/* =========================================== */\n/* MASK FADE EDGES                             */\n/* =========================================== */';
-    const END_MARKER = '/* =========================================== */\n/* END OF MASK FADE EDGES                      */\n/* =========================================== */';
+    const START_MARKER =
+      "/* =========================================== */\n/* MASK FADE EDGES                             */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF MASK FADE EDGES                      */\n/* =========================================== */";
     lines.unshift(START_MARKER);
     lines.push(END_MARKER);
 
@@ -3117,6 +3215,8 @@ function findCatalogMatch(sel) {
 }
 
 // ELEMENT PICKER (INSPECTOR WITH DOM TRAVERSAL & TOOLTIP)
+// Shadow-DOM aware: uses elementFromPoint on every tracked shadow root
+// to find elements inside shadows that document.elementFromPoint misses.
 export function startElementPicker(onPickCallback) {
   const backdrop = getBackdrop();
   if (backdrop) backdrop.style.display = "none";
@@ -3130,7 +3230,106 @@ export function startElementPicker(onPickCallback) {
   document.body.appendChild(overlay);
   document.body.appendChild(label);
   let currentTarget = null;
+  let isInShadow = false; // tracks whether currentTarget lives inside a shadow root
   let isLocked = false;
+
+  //  Shadow-piercing elementFromPoint
+  // document.elementFromPoint stops at shadow hosts. To find what's
+  // actually under the cursor inside a shadow root, we call
+  // shadowRoot.elementFromPoint() on every tracked root whose host
+  // rect contains the cursor. The deepest (smallest area) match wins.
+  function deepElementFromPoint(x, y) {
+    // Start with the document-level hit
+    let best = document.elementFromPoint(x, y);
+    let bestArea = best
+      ? best.getBoundingClientRect().width * best.getBoundingClientRect().height
+      : Infinity;
+    let bestInShadow = false;
+
+    // Import getShadowRoots from shadow-manager via the module scope.
+    // It's imported at the top of builder.js already.
+    const roots = getShadowRoots();
+    for (const { shadowRoot, host } of roots) {
+      // Skip our own modal shadow root
+      if (host.id === "snooze-css-host") continue;
+      try {
+        const hostRect = host.getBoundingClientRect();
+        // Quick bounds check before the more expensive elementFromPoint call
+        if (
+          x < hostRect.left ||
+          x > hostRect.right ||
+          y < hostRect.top ||
+          y > hostRect.bottom
+        )
+          continue;
+
+        const hit = shadowRoot.elementFromPoint(x, y);
+        if (!hit || hit === host) continue;
+
+        const hitRect = hit.getBoundingClientRect();
+        const area = hitRect.width * hitRect.height;
+        // Prefer the smallest element (deepest in the tree) under the cursor
+        if (area < bestArea && area > 0) {
+          best = hit;
+          bestArea = area;
+          bestInShadow = true;
+        }
+      } catch {
+        /* shadow root may be detached */
+      }
+    }
+
+    isInShadow = bestInShadow;
+    return best;
+  }
+
+  //  Selector builder
+  // Builds a plain CSS selector. For shadow-DOM elements, we note
+  // the shadow host in a comment so the user understands the context,
+  // but the selector itself is just the element's classes — it works
+  // because _globalSheet is adopted into all shadow roots.
+  function buildSelector(el) {
+    let selector = el.tagName.toLowerCase();
+    if (el.id && !/^ember\d+$/.test(el.id)) {
+      selector += "#" + el.id;
+    } else if (el.classList.length > 0) {
+      const validClasses = [...el.classList].filter(
+        (c) => !/^(ng-|ember|active|hover|focus)/i.test(c),
+      );
+      if (validClasses.length > 0) selector = "." + validClasses.join(".");
+    }
+    return selector;
+  }
+
+  //  Shadow host path — shown in label as context
+  function getShadowHostLabel(el) {
+    // Walk up until we find a shadow root, return its host selector
+    let node = el.parentNode;
+    while (node) {
+      if (node.nodeType === 11) {
+        // ShadowRoot
+        const host = node.host;
+        const tag = host.tagName.toLowerCase();
+        const cls = [...(host.classList || [])]
+          .filter((c) => !/^(ng-|ember)/i.test(c))
+          .slice(0, 2)
+          .join(".");
+        return tag + (cls ? "." + cls : "");
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  function isElementInShadow(el) {
+    let node = el;
+    while (node) {
+      if (node.parentNode && node.parentNode.nodeType === 11) return true;
+      node = node.parentNode;
+    }
+    return false;
+  }
+
   function renderOverlay() {
     if (!currentTarget) return;
     const rect = currentTarget.getBoundingClientRect();
@@ -3139,26 +3338,28 @@ export function startElementPicker(onPickCallback) {
     overlay.style.left = rect.left + "px";
     overlay.style.width = rect.width + "px";
     overlay.style.height = rect.height + "px";
-    let selector = currentTarget.tagName.toLowerCase();
-    if (currentTarget.id) selector += "#" + currentTarget.id;
-    else if (currentTarget.classList.length > 0) {
-      const validClasses = [...currentTarget.classList].filter(
-        (c) => !/^(ng-|ember|active|hover|focus)/i.test(c),
-      );
-      if (validClasses.length > 0) selector += "." + validClasses.join(".");
-    }
+    const selector = buildSelector(currentTarget);
+    const hostLabel = isInShadow ? getShadowHostLabel(currentTarget) : null;
+
+    // Shadow indicator in the label
+    const shadowBadge = hostLabel
+      ? `<div style="font-size:9px;color:#c84b4b;margin-bottom:2px;">◆ shadow of ${hostLabel}</div>`
+      : "";
+
     if (isLocked) {
       overlay.style.borderColor = "#4caf82";
       overlay.style.backgroundColor = "rgba(76, 175, 130, 0.2)";
       label.style.borderColor = "#4caf82";
       label.style.color = "#4caf82";
-      label.innerHTML = `<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Scroll / Arrows] Change Depth •[Click / Enter] Confirm • [Esc] Unlock</div>`;
+      label.innerHTML = `${shadowBadge}<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Scroll / Arrows] Change Depth •[Click / Enter] Confirm • [Esc] Unlock</div>`;
     } else {
-      overlay.style.borderColor = "#c8aa6e";
-      overlay.style.backgroundColor = "rgba(200, 170, 110, 0.2)";
-      label.style.borderColor = "#c8aa6e";
-      label.style.color = "#c8aa6e";
-      label.innerHTML = `<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Click] Lock element • [Esc] Cancel</div>`;
+      overlay.style.borderColor = hostLabel ? "#c84b4b" : "#c8aa6e";
+      overlay.style.backgroundColor = hostLabel
+        ? "rgba(200, 75, 75, 0.15)"
+        : "rgba(200, 170, 110, 0.2)";
+      label.style.borderColor = hostLabel ? "#c84b4b" : "#c8aa6e";
+      label.style.color = hostLabel ? "#c84b4b" : "#c8aa6e";
+      label.innerHTML = `${shadowBadge}<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Click] Lock element • [Esc] Cancel</div>`;
     }
     label.style.display = "block";
     const pad = 6;
@@ -3175,7 +3376,7 @@ export function startElementPicker(onPickCallback) {
   }
   function onMouseMove(e) {
     if (isLocked) return;
-    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const target = deepElementFromPoint(e.clientX, e.clientY);
     if (
       !target ||
       target.id === "css-injector-backdrop" ||
@@ -3198,14 +3399,7 @@ export function startElementPicker(onPickCallback) {
   function confirmSelection() {
     cleanup();
     if (!currentTarget) return;
-    let finalSelector = currentTarget.tagName.toLowerCase();
-    if (currentTarget.id) finalSelector += "#" + currentTarget.id;
-    else if (currentTarget.classList.length > 0) {
-      const validClasses = [...currentTarget.classList].filter(
-        (c) => !/^(ng-|ember|active|hover)/i.test(c),
-      );
-      if (validClasses.length > 0) finalSelector = "." + validClasses.join(".");
-    }
+    const finalSelector = buildSelector(currentTarget);
     onPickCallback(finalSelector);
   }
   function onClick(e) {
@@ -3224,14 +3418,24 @@ export function startElementPicker(onPickCallback) {
     e.preventDefault();
     e.stopPropagation();
     let nextTarget = null;
-    if (e.deltaY < 0) nextTarget = currentTarget.parentElement;
-    else if (e.deltaY > 0) nextTarget = currentTarget.firstElementChild;
+    if (e.deltaY < 0) {
+      // Scroll up = go to parent. If parent is a ShadowRoot, jump to its host.
+      const parent = currentTarget.parentNode;
+      if (parent && parent.nodeType === 11) {
+        nextTarget = parent.host;
+      } else {
+        nextTarget = currentTarget.parentElement;
+      }
+    } else if (e.deltaY > 0) {
+      nextTarget = currentTarget.firstElementChild;
+    }
     if (
       nextTarget &&
       nextTarget.tagName !== "HTML" &&
       nextTarget.tagName !== "BODY"
     ) {
       currentTarget = nextTarget;
+      isInShadow = isElementInShadow(currentTarget);
       renderOverlay();
     }
   }
@@ -3251,19 +3455,26 @@ export function startElementPicker(onPickCallback) {
       confirmSelection();
     } else if (isLocked) {
       let nextTarget = null;
-      if (e.key === "ArrowUp") nextTarget = currentTarget.parentElement;
-      else if (e.key === "ArrowDown")
+      if (e.key === "ArrowUp") {
+        const parent = currentTarget.parentNode;
+        nextTarget =
+          parent && parent.nodeType === 11
+            ? parent.host
+            : currentTarget.parentElement;
+      } else if (e.key === "ArrowDown") {
         nextTarget = currentTarget.firstElementChild;
-      else if (e.key === "ArrowLeft")
+      } else if (e.key === "ArrowLeft") {
         nextTarget = currentTarget.previousElementSibling;
-      else if (e.key === "ArrowRight")
+      } else if (e.key === "ArrowRight") {
         nextTarget = currentTarget.nextElementSibling;
+      }
       if (
         nextTarget &&
         nextTarget.tagName !== "HTML" &&
         nextTarget.tagName !== "BODY"
       ) {
         currentTarget = nextTarget;
+        isInShadow = isElementInShadow(currentTarget);
         renderOverlay();
       }
     }

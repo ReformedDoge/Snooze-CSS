@@ -36,9 +36,13 @@ export function createModal() {
   modalHost = document.createElement("div");
   modalHost.id = "snooze-css-host";
   modalHost.style.cssText =
-    "position: fixed; inset: 0; z-index: 999999; pointer-events: none;";
+    "position: fixed; inset: 0; z-index: 999999; pointer-events: none; -webkit-app-region: no-drag;";
   document.body.appendChild(modalHost);
-
+  // Ensure modal stacks above viewport overlay by inserting after it
+  const overlay = document.querySelector("section.rcp-fe-viewport-overlay");
+  if (overlay && overlay.parentNode === document.body) {
+    overlay.after(modalHost);
+  }
   // Attach a Shadow DOM
   shadowRoot = modalHost.attachShadow({ mode: "open" });
 
@@ -88,6 +92,9 @@ export function createModal() {
 
   backdrop.appendChild(modal);
   shadowRoot.appendChild(backdrop);
+
+  // Prevent OS drag conflicts by opting out of app region drag
+  backdrop.style.webkitAppRegion = "no-drag";
 
   // Safely inject styles INTO the shadow root
   injectStyles(shadowRoot);

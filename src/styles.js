@@ -21,6 +21,16 @@ export const STYLES = `
       font-family: 'LoL Display', 'Beaufort for LOL', serif;
       pointer-events: all;
     }
+
+    .ci-header {
+      display: flex;
+      align-items: center;
+      padding: 14px 18px 10px;
+      gap: 10px;
+      flex-shrink: 0;
+      cursor: move;
+      user-select: none;
+    }
       
     ::-webkit-scrollbar {
       width: 12px;

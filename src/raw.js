@@ -18,7 +18,10 @@ export function replaceOrAppendBlock(snippet, startMarker, endMarker) {
   if (startIdx !== -1) {
     const endIdx = val.indexOf(endMarker, startIdx);
     if (endIdx !== -1) {
-      textareaEl.value = val.substring(0, startIdx) + snippet + val.substring(endIdx + endMarker.length);
+      textareaEl.value =
+        val.substring(0, startIdx) +
+        snippet +
+        val.substring(endIdx + endMarker.length);
       updateLineCount();
       updateScrollBtns();
       switchTab("raw");
