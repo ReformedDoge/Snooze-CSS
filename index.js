@@ -9,11 +9,19 @@ import {
   initShadowRootManager,
   applyCSSToAllRoots,
 } from "./src/shadow-manager.js";
+import { loadSettings } from "./src/settings.js";
+import { getActiveProfileCSS } from "./src/storage.js";
 
 export function init() {
   console.log("[Snooze-CSS] init");
+  // Apply settings
+  loadSettings().then((settings) => {
+    if (settings.blurEnabled && window.Effect) {
+      window.Effect.apply("blurbehind", { color: settings.blurColor || "#ff000010" });
+    }
+  });
 
-  // Initialize shadow root tracking FIRST, before any views load
+  // Initialize shadow tracking
   initShadowRootManager();
 
   initResolver(import.meta.url);
@@ -27,15 +35,27 @@ export function init() {
   });
 }
 console.log("meta path:", import.meta.url);
+
 async function injectSavedCSS() {
   try {
-    const raw = await DataStore.get("Snooze-CSS-css");
-    if (raw) {
-      const resolved = resolveAssetUrls(raw);
+    // Load active profile
+  const css = await getActiveProfileCSS();
+    if (css) {
+      const resolved = resolveAssetUrls(css);
       applyCSSToAllRoots(resolved);
-      console.log("[Snooze-CSS] Restored saved CSS");
+      console.log("[Snooze-CSS] Restored saved CSS from active profile");
     }
   } catch (err) {
-    console.warn("[Snooze-CSS] Could not restore CSS:", err);
+    // Fallback
+    try {
+      const raw = await DataStore.get("Snooze-CSS-css");
+      if (raw) {
+        const resolved = resolveAssetUrls(raw);
+        applyCSSToAllRoots(resolved);
+        console.log("[Snooze-CSS] Restored saved CSS (legacy fallback)");
+      }
+    } catch (innerErr) {
+      console.warn("[Snooze-CSS] Could not restore CSS:", innerErr);
+    }
   }
 }

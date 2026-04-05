@@ -1,46 +1,147 @@
 import { CATALOG } from "./catalog.js";
-import {
-  setCssProperty,
-  setCssBatch,
-  sendToRaw,
-  replaceOrAppendBlock,
-} from "./raw.js";
-import { setRefreshCallback } from "./settings.js";
-import { rgbToHex, flashMessage } from "./utils.js";
+import { walkDOM } from "./analyzer.js";
+import { setCssProperty, setCssBatch, sendToRaw, replaceOrAppendBlock, appendToRaw } from "./raw.js";
+import { setRefreshCallback, getSettings, saveSettings } from "./settings.js";
+import { rgbToHex, escHtml, flashMessage, buildStrategicSelector } from "./utils.js";
 import { getBackdrop } from "./modal.js";
 import { getShadowRoots } from "./shadow-manager.js";
+import { extractAndNavigate, collectFromNode, buildCompactAssetRow } from "./assets.js";
 
 // SESSION STATE
 const _collapseState = new Map();
 let _scrollPos = 0;
 let _inputs = [];
+let _activeInputs = new Set(); // Currently visible on screen
 let _bodyEl = null;
+
+// Search & Optimization State
+let _activeTags = []; // { id, type, value, label }
+let _screenOnly = false;
+let _allUniqueProps = [];
+let _allUniqueScreens = [];
+let _allUniqueElements = [];
+let _deepScanCache = null;
+let _searchRenderToken = 0; // Cancels old renders if typing fast
+
+// Visible row observer
+const _rowObserver = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((entry) => {
+      const regs = entry.target._regs;
+      if (!regs || regs.length === 0) return;
+      if (entry.isIntersecting) {
+        regs.forEach((reg) => {
+          _activeInputs.add(reg);
+          try {
+            populateInput(reg);
+          } catch {}
+        });
+      } else {
+        regs.forEach((reg) => _activeInputs.delete(reg));
+      }
+    });
+  },
+  { threshold: 0.05 },
+);
 
 export function buildBuilderTab(container) {
   _inputs = [];
   container.innerHTML = "";
 
+  // Pre-calculate unique props and screens for suggestions
+  const propsSet = new Set();
+  const screenSet = new Set();
+  const elementSet = new Set();
+  CATALOG.forEach((g) => {
+    if (g.generic || !g.label) return;
+    screenSet.add(g.label);
+    g.elements.forEach((el) => {
+      if (el.label) elementSet.add(el.label);
+      (el.props || []).forEach((p) => {
+        const name = typeof p === "object" ? p.name : p;
+        if (name) propsSet.add(name);
+      });
+    });
+  });
+  _allUniqueProps = Array.from(propsSet).sort();
+  _allUniqueProps.push("child-img-replace");
+  _allUniqueScreens = Array.from(screenSet).sort();
+  _allUniqueElements = Array.from(elementSet).sort();
+
   const topBar = document.createElement("div");
   topBar.style.cssText =
-    "display:flex;gap:6px;align-items:center;margin-bottom:10px;";
+    "display:flex;gap:6px;align-items:center;margin-bottom:6px;";
+
+  const searchWrap = document.createElement("div");
+  searchWrap.className = "ci-search-wrap";
 
   const searchInput = document.createElement("input");
+  searchInput.className = "ci-search";
   searchInput.id = "ci-search";
   searchInput.type = "text";
-  searchInput.placeholder = "Search elements…";
+  searchInput.placeholder = "Search elements, props or screens…";
   searchInput.autocomplete = "off";
-  searchInput.style.cssText =
-    "flex:1;background:rgba(0,0,0,0.35);border:1px solid #1e2d3d;border-bottom-color:#785a28;color:#a0b4c8;font-family:Sora,Arial,sans-serif;font-size:11px;padding:7px 10px;outline:none;";
-  topBar.appendChild(searchInput);
+  searchWrap.appendChild(searchInput);
+
+  // Manual Search on Enter
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      updateSearch();
+      suggestionBox.style.display = "none";
+    }
+  });
+
+  // Live Suggestions
+  searchInput.addEventListener("input", () => {
+    showSuggestions(searchInput.value);
+  });
+
+  const filterBtn = document.createElement("button");
+  filterBtn.className = "ci-filter-btn";
+  filterBtn.innerHTML = "⚙️";
+  filterBtn.title = "Show filter suggestions";
+  filterBtn.addEventListener("click", () => {
+    showSuggestions(searchInput.value || "", true);
+  });
+  searchWrap.appendChild(filterBtn);
+
+  const suggestionBox = document.createElement("div");
+  suggestionBox.className = "ci-suggestion-box";
+  searchWrap.appendChild(suggestionBox);
+  topBar.appendChild(searchWrap);
+
+  const searchBtn = document.createElement("button");
+  searchBtn.className = "ci-search-btn";
+  searchBtn.innerHTML = "Search";
+  searchBtn.addEventListener("click", () => {
+    updateSearch();
+    suggestionBox.style.display = "none";
+  });
+  topBar.appendChild(searchBtn);
 
   const refreshBtn = makeIconBtn("↻", "Refresh live values from DOM", () =>
     refreshValues("manual"),
   );
+  refreshBtn.style.width = "36px";
+  refreshBtn.style.height = "36px";
   topBar.appendChild(refreshBtn);
 
   container.appendChild(topBar);
 
-  CATALOG.forEach((group) => container.appendChild(buildGroup(group)));
+  const tagContainer = document.createElement("div");
+  tagContainer.className = "ci-tag-container";
+  container.appendChild(tagContainer);
+
+  const groupContainer = document.createElement("div");
+  groupContainer.id = "ci-group-container";
+  container.appendChild(groupContainer);
+
+  function renderCatalog() {
+    groupContainer.innerHTML = "";
+    CATALOG.forEach((group) => groupContainer.appendChild(buildGroup(group)));
+  }
+
+  renderCatalog();
 
   requestAnimationFrame(() => {
     _bodyEl = container.closest(".ci-body");
@@ -50,72 +151,537 @@ export function buildBuilderTab(container) {
         _bodyEl.addEventListener(
           "scroll",
           () => {
-            _scrollPos = _bodyEl.scrollTop;
+            if (!container.classList.contains("ci-panel-hidden")) {
+              _scrollPos = _bodyEl.scrollTop;
+            }
+            updateBuilderScrollBtns();
           },
           { passive: true },
         );
         _bodyEl._scrollListenerAttached = true;
       }
 
-      const toTop = document.createElement("button");
-      toTop.title = "Scroll to top";
-      toTop.style.cssText =
-        "position:sticky;bottom:12px;float:right;margin-right:4px;width:28px;height:28px;background:#060e1a;border:1px solid #785a28;color:#785a28;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;transition:background 0.15s,color 0.15s;";
-      toTop.textContent = "↑";
-      toTop.addEventListener("mouseenter", () => {
-        toTop.style.background = "#785a28";
-        toTop.style.color = "#f0e6d3";
-      });
-      toTop.addEventListener("mouseleave", () => {
-        toTop.style.background = "#060e1a";
-        toTop.style.color = "#785a28";
-      });
-      toTop.addEventListener("click", () => {
+      // Scroll buttons
+      const scrollWrap = document.createElement("div");
+      scrollWrap.className = "ci-scroll-btns ci-scroll-btns--sticky";
+
+      const scrollTopBtn = document.createElement("button");
+      scrollTopBtn.className = "ci-scroll-btn";
+      scrollTopBtn.title = "Scroll to top";
+      scrollTopBtn.innerHTML = "&#x2191;";
+      scrollTopBtn.addEventListener("click", () => {
         _bodyEl.scrollTo({ top: 0, behavior: "smooth" });
+        setTimeout(updateBuilderScrollBtns, 300);
       });
-      container.appendChild(toTop);
+
+      const scrollBottomBtn = document.createElement("button");
+      scrollBottomBtn.className = "ci-scroll-btn";
+      scrollBottomBtn.title = "Scroll to bottom";
+      scrollBottomBtn.innerHTML = "&#x2193;";
+      scrollBottomBtn.addEventListener("click", () => {
+        _bodyEl.scrollTo({ top: _bodyEl.scrollHeight, behavior: "smooth" });
+        setTimeout(updateBuilderScrollBtns, 300);
+      });
+
+      scrollWrap.appendChild(scrollTopBtn);
+      scrollWrap.appendChild(scrollBottomBtn);
+      container.appendChild(scrollWrap);
+
+      function updateBuilderScrollBtns() {
+        const atTop = _bodyEl.scrollTop <= 2;
+        const atBottom =
+          _bodyEl.scrollTop + _bodyEl.clientHeight >= _bodyEl.scrollHeight - 2;
+        scrollTopBtn.style.display = atTop ? "none" : "flex";
+        scrollBottomBtn.style.display = atBottom ? "none" : "flex";
+      }
+
+      updateBuilderScrollBtns();
     }
   });
 
-  searchInput.addEventListener("input", function () {
-    const q = this.value.toLowerCase().trim();
-    container.querySelectorAll(".ci-group").forEach((g) => {
-      if (g.dataset.generic) return;
-      const body = g._bodyEl;
-      if (!body) return;
-      const rows = g.querySelectorAll(".ci-element-row");
-      let anyVisible = false;
-      rows.forEach((row) => {
-        const match = !q || row.dataset.search.includes(q);
-        row.style.display = match ? "" : "none";
-        if (match) anyVisible = true;
+  function renderTags() {
+    tagContainer.innerHTML = "";
+
+    const toggleField = document.createElement("label");
+    toggleField.className = "ci-switch-label";
+    toggleField.innerHTML = `
+      <div class="ci-switch${_screenOnly ? " active" : ""}"></div>
+      <span>Screen Only</span>
+    `;
+    toggleField.addEventListener("click", (e) => {
+      e.preventDefault();
+      _screenOnly = !_screenOnly;
+      _deepScanCache = null; // ALWAYS invalidate cache on toggle to catch fresh state
+      renderTags();
+      updateSearch();
+    });
+    tagContainer.appendChild(toggleField);
+
+    _activeTags.forEach((tag) => {
+      const el = document.createElement("div");
+      el.className = "ci-tag";
+      el.innerHTML = `
+        <span class="ci-tag-plus">+</span>
+        <span style="flex:1;">${tag.type === "prop" ? "" : tag.type === "screen" ? "" : ""} ${tag.label}</span>
+        <span class="ci-tag-remove" data-id="${tag.id}">×</span>
+      `;
+      el.querySelector(".ci-tag-remove").addEventListener("click", (e) => {
+        e.stopPropagation();
+        _activeTags = _activeTags.filter((t) => t.id !== tag.id);
+        renderTags();
+        updateSearch();
       });
-      g.style.display = anyVisible || !q ? "" : "none";
-      if (q && anyVisible) body.style.display = "block";
-      else if (!q) {
-        const savedOpen = _collapseState.has(g.dataset.groupLabel)
-          ? _collapseState.get(g.dataset.groupLabel)
-          : g.dataset.defaultOpen === "true";
-        body.style.display = savedOpen ? "block" : "none";
+      tagContainer.appendChild(el);
+    });
+  }
+
+  function updateSearch(query) {
+    const q = (query !== undefined ? query : searchInput.value)
+      .toLowerCase()
+      .trim();
+    if (!q && _activeTags.length === 0) {
+      renderCatalog();
+      return;
+    }
+
+    // Cancel stale renders
+    _searchRenderToken++;
+    const currentToken = _searchRenderToken;
+
+    groupContainer.innerHTML = "";
+
+    const resultsGroup = document.createElement("div");
+    resultsGroup.className = "ci-group";
+    resultsGroup.innerHTML = `
+      <div class="ci-group-header" style="background:#0a1628;border-left:2px solid #c8aa6e;cursor:default;">
+        <span style="font-size:11px;font-weight:600;color:#c8aa6e;flex:1;">Found Elements</span>
+        <span id="search-count" style="font-size:9px;color:#2a3a4a;background:rgba(0,0,0,0.3);border:1px solid #1a2535;padding:1px 6px;border-radius:8px;">0</span>
+      </div>
+      <div class="ci-group-body" style="display:block;background:#050c18;padding-bottom:12px;"></div>
+    `;
+    groupContainer.appendChild(resultsGroup);
+
+    const searchCount = resultsGroup.querySelector("#search-count");
+    const searchBody = resultsGroup.querySelector(".ci-group-body");
+    let totalMatch = 0;
+
+    const propTags = _activeTags
+      .filter((t) => t.type === "prop")
+      .map((t) => t.value.toLowerCase());
+    const elementTags = _activeTags
+      .filter((t) => t.type === "element")
+      .map((t) => t.value.toLowerCase());
+    const inclusiveTags = _activeTags
+      .filter((t) => t.type === "all")
+      .map((t) => t.value.toLowerCase());
+    const screenTags = _activeTags
+      .filter((t) => t.type === "screen")
+      .map((t) => t.value.toLowerCase());
+
+    if (q) inclusiveTags.push(q);
+
+    if (_screenOnly) {
+      // DEEP SCAN MODE
+
+      // Fetch/Rebuild Cache
+      if (!_deepScanCache) {
+        const viewportSelectors = [
+          "rcp-fe-viewport-main",
+          "rcp-fe-viewport-overlay",
+          "rcp-fe-viewport-sidebar",
+          "rcp-fe-viewport-persistent",
+          "rcp-fe-lol-event-hub-application",
+          "lol-uikit-layer-manager-wrapper",
+        ];
+        const contentRoots = [];
+        const sRoots = getShadowRoots();
+        viewportSelectors.forEach((sel) => {
+          let found =
+            document.querySelector(sel) ||
+            document.querySelector("#" + sel) ||
+            document.querySelector("." + sel);
+          if (found) {
+            contentRoots.push(found);
+            return;
+          }
+          sRoots.forEach((sr) => {
+            if (found) return;
+            try {
+              found =
+                sr.shadowRoot.querySelector(sel) ||
+                sr.shadowRoot.querySelector("#" + sel) ||
+                sr.shadowRoot.querySelector("." + sel);
+              if (found) contentRoots.push(found);
+            } catch {}
+          });
+        });
+        const roots = contentRoots.length > 0 ? contentRoots : [document.body];
+        // Only manually add shadow roots that aren't already descendants of our existing roots
+        const extraShroots = sRoots
+          .map((r) => r.shadowRoot)
+          .filter((sr) => {
+            if (!sr) return false;
+            return !roots.some((r) => r.contains(sr.host));
+          });
+        roots.push(...extraShroots);
+
+        const { elements } = walkDOM(roots, 40, true, true);
+        // Deduplicate elements by actual DOM node to prevent repetitive results
+        const unique = [];
+        const seen = new Set();
+        elements.forEach((e) => {
+          const node = e.domNode || e.node;
+          if (node && !seen.has(node)) {
+            seen.add(node);
+            unique.push(e);
+          }
+        });
+        _deepScanCache = unique;
+      }
+
+      const pseudoPropTags = propTags.filter(
+        (pt) => pt === "child-img-replace",
+      );
+      const realPropTags = propTags.filter((pt) => pt !== "child-img-replace");
+
+      // Strict Filter
+      const matchedEls = _deepScanCache.filter((e) => {
+        const selector = (e.selector || "").toLowerCase();
+        const styles = e.styles || {};
+        const elProps = Object.keys(styles).map((p) => p.toLowerCase());
+        const domNode = e.domNode || e.node;
+
+        if (
+          elementTags.length > 0 &&
+          !elementTags.every((t) => selector.includes(t))
+        )
+          return false;
+
+        // For real prop tags: first check cached styles, then fall back to live computed styles
+        // (cache may have been built before a filter/transform was applied, or element was in a
+        // shadow root not fully walked — live check is the source of truth)
+        if (realPropTags.length > 0) {
+          const missingFromCache = realPropTags.filter(
+            (pt) => !elProps.some((p) => p.includes(pt)),
+          );
+          if (missingFromCache.length > 0) {
+            // Live-check only the missing ones
+            if (!domNode) return false;
+            try {
+              const cs = window.getComputedStyle(domNode);
+              const allMissed = missingFromCache.some((pt) => {
+                const live = cs.getPropertyValue(pt)?.trim();
+                return !live || live === "none" || live === "0" || live === "";
+              });
+              if (allMissed) return false;
+            } catch {
+              return false;
+            }
+          }
+        }
+
+        if (pseudoPropTags.length > 0 && !e.hasImgChild) return false;
+        if (
+          inclusiveTags.length > 0 &&
+          !inclusiveTags.every(
+            (t) => selector.includes(t) || elProps.some((p) => p.includes(t)),
+          )
+        )
+          return false;
+
+        return true;
+      });
+
+      // 3. Selector-Based Grouping (Instance Badging)
+      const grouped = new Map();
+      matchedEls.forEach((e) => {
+        const sel = e.selector || "unknown";
+        if (grouped.has(sel)) {
+          grouped.get(sel).count++;
+        } else {
+          grouped.set(sel, { ...e, count: 1 });
+        }
+      });
+
+      const uniqueMatched = Array.from(grouped.values());
+      totalMatch = uniqueMatched.length;
+      searchCount.textContent = totalMatch;
+
+      // 4. Asynchronous Rendering
+      searchBody.innerHTML = "";
+      const renderList = uniqueMatched.slice(0, 150); // Cap at 150 to prevent freezing
+      let i = 0;
+      const chunk = () => {
+        if (currentToken !== _searchRenderToken) return; // Cancel if user typed another letter
+        const limit = Math.min(i + 20, renderList.length);
+        for (; i < limit; i++) {
+          const e = renderList[i];
+          const intent = [...propTags, ...inclusiveTags, ...elementTags];
+          const resolvedNode = e.domNode || e.node;
+          const mockEl = {
+            label: e.selector,
+            cls: e.selector,
+            props: getSmartProperties(resolvedNode, intent),
+            _discovered: true,
+            _domNode: resolvedNode,
+            _count: e.count,
+          };
+          searchBody.appendChild(buildElementRow(mockEl));
+        }
+        if (i < renderList.length) requestAnimationFrame(chunk);
+      };
+      chunk();
+    } else {
+      // CATALOG SEARCH
+      let renderQueue = [];
+
+      CATALOG.forEach((group) => {
+        if (group.generic) return;
+        if (
+          screenTags.length > 0 &&
+          !screenTags.some((t) => (group.label || "").toLowerCase().includes(t))
+        )
+          return;
+
+        const gMatch = group.elements.filter((el) => {
+          const label = (el.label || "").toLowerCase();
+          const cls = (el.cls || "").toLowerCase();
+          const props = (el.props || []).map((p) =>
+            (typeof p === "object"
+              ? p.name || p.type || ""
+              : p || ""
+            ).toLowerCase(),
+          );
+
+          if (
+            elementTags.length > 0 &&
+            !elementTags.every((t) => label.includes(t) || cls.includes(t))
+          )
+            return false;
+
+          if (propTags.length > 0) {
+            const matchesAllProps = propTags.every((t) => {
+              if (t === "child-img-replace")
+                return props.some(
+                  (p) => p.includes("img-replace") || p.includes("child-img"),
+                );
+              return props.some((p) => p.includes(t));
+            });
+            if (!matchesAllProps) return false;
+          }
+
+          if (
+            inclusiveTags.length > 0 &&
+            !inclusiveTags.every(
+              (t) =>
+                label.includes(t) ||
+                cls.includes(t) ||
+                props.some((p) => p.includes(t)),
+            )
+          )
+            return false;
+
+          return true;
+        });
+
+        if (gMatch.length > 0) {
+          totalMatch += gMatch.length;
+          renderQueue.push(...gMatch);
+        }
+      });
+
+      searchCount.textContent = totalMatch;
+
+      // 3. Asynchronous Rendering
+      let i = 0;
+      const chunk = () => {
+        if (currentToken !== _searchRenderToken) return;
+        const limit = Math.min(i + 20, renderQueue.length);
+        for (; i < limit; i++) {
+          searchBody.appendChild(buildElementRow(renderQueue[i]));
+        }
+        if (i < renderQueue.length) requestAnimationFrame(chunk);
+      };
+      chunk();
+    }
+  }
+
+  function showSuggestions(q, isManual = false) {
+    suggestionBox.innerHTML = "";
+    const lowerQ = q.toLowerCase();
+
+    const addHeader = (text) => {
+      const h = document.createElement("div");
+      h.className = "ci-suggestion-header";
+      h.textContent = text;
+      suggestionBox.appendChild(h);
+    };
+
+    const matches = [];
+
+    // General Filters
+    const addPowerChip = (label, type, value, id) => {
+      matches.push({ type, value, label, id, cat: "️ General Filters" });
+    };
+
+    if (!isManual) {
+      addPowerChip(`Inclusive Match: "${q}"`, "all", q, "all-" + q);
+      addPowerChip(
+        `Any Property matching: "${q}"`,
+        "prop",
+        q,
+        "all-props-" + q,
+      );
+    }
+
+    // Screens
+    _allUniqueScreens.forEach((s) => {
+      if (s && (isManual || s.toLowerCase().includes(lowerQ))) {
+        matches.push({
+          type: "screen",
+          value: s,
+          label: s,
+          id: "screen-" + s,
+          cat: "Screens",
+        });
       }
     });
+
+    // Elements
+    _allUniqueElements.forEach((e) => {
+      if (e && (isManual || e.toLowerCase().includes(lowerQ))) {
+        matches.push({
+          type: "element",
+          value: e,
+          label: e,
+          id: "el-" + e,
+          cat: "Elements",
+        });
+      }
+    });
+
+    // Properties
+    let propCount = 0;
+    _allUniqueProps.forEach((p) => {
+      if (propCount >= 40) return;
+      if (p && (isManual || p.toLowerCase().includes(lowerQ))) {
+        matches.push({
+          type: "prop",
+          value: p,
+          label: p,
+          id: "prop-" + p,
+          cat: "Properties",
+        });
+        propCount++;
+      }
+    });
+
+    if (matches.length > 0) {
+      let curCat = "";
+      matches.forEach((m) => {
+        if (m.cat !== curCat) {
+          curCat = m.cat;
+          addHeader(curCat);
+        }
+        const item = document.createElement("div");
+        item.className = "ci-suggestion-item";
+        item.innerHTML = `
+          <div class="ci-tag" style="border-style:dashed;flex:1;margin-right:10px;pointer-events:none;">
+            <span class="ci-tag-plus">+</span>
+            <span>${m.label}</span>
+          </div>
+          <span class="ci-suggestion-type" style="pointer-events:none;">${m.type.toUpperCase()}</span>
+        `;
+        item.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!_activeTags.some((t) => t.id === m.id)) {
+            _activeTags.push(m);
+            renderTags();
+            requestAnimationFrame(() => {
+              updateSearch();
+            });
+          }
+          searchInput.value = "";
+          suggestionBox.style.display = "none";
+        });
+        suggestionBox.appendChild(item);
+      });
+      suggestionBox.style.display = "block";
+    } else {
+      suggestionBox.style.display = "none";
+    }
+  }
+
+  // UI event listeners
+  container.addEventListener("mousedown", (e) => {
+    if (!searchWrap.contains(e.target)) {
+      suggestionBox.style.display = "none";
+    }
   });
+
+  renderTags();
+  if (_activeTags.length > 0 || searchInput.value) {
+    updateSearch();
+  }
 
   setRefreshCallback(refreshValues);
   refreshValues("init");
+
+  // Initial group sorting
+  container.querySelectorAll(".ci-group-body").forEach((body) => {
+    if (body.parentElement.dataset.generic !== "true") {
+      sortGroupRows(body);
+    }
+  });
 }
 
 export function refreshValues(source) {
-  // Only refresh inputs that are currently VISIBLE to prevent lag
-  _inputs.forEach((reg) => {
-    if (!reg.inputEl) return;
-    const groupBody = reg.inputEl.closest(".ci-group-body");
-    if (!groupBody || groupBody.style.display !== "none") {
-      try {
-        populateInput(reg);
-      } catch {}
-    }
+  // Invalidate cache if user manually clicks refresh button
+  if (source === "manual") {
+    _deepScanCache = null;
+  }
+
+  _activeInputs.forEach((reg) => {
+    try {
+      populateInput(reg);
+    } catch {}
   });
+
+  if (_bodyEl) {
+    const bodies = _bodyEl.querySelectorAll(".ci-group-body");
+    bodies.forEach((body) => {
+      if (
+        body.parentElement.dataset.generic !== "true" &&
+        body.style.display !== "none"
+      ) {
+        sortGroupRows(body);
+      }
+    });
+  }
+}
+
+export function restoreScrollPos() {
+  if (_bodyEl) {
+    _bodyEl.scrollTop = _scrollPos;
+  }
+}
+
+// Sort elements by DOM presence (active elements first)
+function sortGroupRows(body) {
+  const rows = [...body.querySelectorAll(".ci-element-row")];
+  if (rows.length === 0) return;
+
+  rows.sort((a, b) => {
+    const aMissing =
+      a.querySelector(".ci-not-in-dom")?.style.display !== "none";
+    const bMissing =
+      b.querySelector(".ci-not-in-dom")?.style.display !== "none";
+    return (aMissing ? 1 : 0) - (bMissing ? 1 : 0);
+  });
+
+  // Re-append nodes in new order
+  rows.forEach((row) => body.appendChild(row));
 }
 
 function register(reg) {
@@ -124,8 +690,80 @@ function register(reg) {
 
 // VALUE READING
 
+// Piercing selector travels through Shadow DOM and Iframes
+function piercingQuerySelector(selector) {
+  // Guard against non-string or numeric-like selectors (e.g. "0") which would crash document.querySelector
+  if (typeof selector !== "string" || !selector || /^\d+$/.test(selector))
+    return null;
+  return _querySelectorInDocument(document, selector);
+}
+
+function _querySelectorInDocument(doc, selector, visitedDocs = new Set()) {
+  if (!doc || !selector) return null;
+  if (visitedDocs.has(doc)) return null;
+  visitedDocs.add(doc);
+
+  // Document search
+  try {
+    const el = doc.querySelector(selector);
+    if (el) return el;
+  } catch {
+    // invalid selector or no access
+  }
+
+  // Shadow Roots (tracked)
+  try {
+    const roots = getShadowRoots();
+    for (const { shadowRoot, host } of roots) {
+      if (!shadowRoot || host.id === "snooze-css-host") continue;
+      try {
+        const inner = shadowRoot.querySelector(selector);
+        if (inner) return inner;
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+
+  // Shadow Roots (manual)
+  try {
+    const candidates = doc.querySelectorAll("*:not(script):not(style)");
+    for (const node of candidates) {
+      if (node.shadowRoot) {
+        try {
+          const inner = node.shadowRoot.querySelector(selector);
+          if (inner) return inner;
+        } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Nested iframes
+  try {
+    const iframes = doc.querySelectorAll("iframe");
+    for (const iframe of iframes) {
+      try {
+        if (!iframe.contentDocument) continue;
+        const fromFrame = _querySelectorInDocument(
+          iframe.contentDocument,
+          selector,
+          visitedDocs,
+        );
+        if (fromFrame) return fromFrame;
+      } catch {
+        // cross-origin iframe, cannot access
+      }
+    }
+  } catch { /* ignore */ }
+
+  return null;
+}
+
 function getLiveValue(cls, prop) {
-  const el = document.querySelector(cls);
+  const el = piercingQuerySelector(cls);
+  return el ? getLiveValueFromNode(el, prop) : null;
+}
+
+// Live value readers
+function getLiveValueFromNode(el, prop) {
   if (!el) return null;
   const cs = getComputedStyle(el);
   switch (prop) {
@@ -177,21 +815,33 @@ function getLiveValue(cls, prop) {
       return cs.top;
     case "transition":
       return cs.transition !== "all 0s ease 0s" ? cs.transition : "";
-    default:
-      return "";
+    default: {
+      // For any prop not explicitly handled, read it directly
+      const raw = cs.getPropertyValue(prop)?.trim();
+      return raw &&
+        raw !== "none" &&
+        raw !== "normal" &&
+        raw !== "auto" &&
+        raw !== "0px" &&
+        raw !== ""
+        ? raw
+        : "";
+    }
   }
 }
 
 function isInDOM(cls) {
-  return !!document.querySelector(cls);
+  return !!piercingQuerySelector(cls);
 }
 
 function populateInput(reg) {
-  const { cls, prop, inputEl, notBadge } = reg;
-  const inDOM = isInDOM(cls);
+  const { cls, prop, inputEl, notBadge, domNode } = reg;
+  // Resolve element
+  const el = domNode || piercingQuerySelector(cls);
+  const inDOM = !!el;
   if (notBadge) notBadge.style.display = inDOM ? "none" : "inline";
   if (!inDOM || !inputEl) return;
-  const val = getLiveValue(cls, prop);
+  const val = getLiveValueFromNode(el, prop);
   if (val === null || val === undefined || val === "") return;
 
   if (inputEl.tagName === "SELECT") {
@@ -249,10 +899,14 @@ function buildGroup(group) {
     (savedOpen ? "block" : "none");
   wrap._bodyEl = body;
 
-  if (group.generic) buildGenericTools(body);
-  else group.elements.forEach((el) => body.appendChild(buildElementRow(el)));
-
   wrap.appendChild(body);
+
+  if (group.generic) {
+    buildGenericTools(body);
+  } else if (savedOpen) {
+    // Instant build
+    buildGroupElements(group, body);
+  }
 
   header.addEventListener("click", () => {
     const open = body.style.display === "none";
@@ -265,283 +919,917 @@ function buildGroup(group) {
         : "#7a8a9a";
     _collapseState.set(group.label, open);
 
-    // Load live DOM values *only* when the group is opened!
+    // Lazy building
+    if (open && !group.generic && body.children.length === 0) {
+      buildGroupElements(group, body);
+    }
+
+    // Refresh active values in this group
     if (open) {
-      _inputs
-        .filter((reg) => body.contains(reg.inputEl))
-        .forEach((reg) => {
-          try {
-            populateInput(reg);
-          } catch {}
-        });
+      // Observer sync
+      setTimeout(() => refreshValues("expand"), 50);
     }
   });
 
   return wrap;
 }
 
-// GENERIC TOOLS
+function buildGroupElements(group, body) {
+  const elements = [...group.elements];
+  const total = elements.length;
 
-function buildGenericTools(body) {
-  // --- Quick Theme (Level 1 User Hero Block) ---
-  body.appendChild(buildQuickThemeRow());
+  const processChunk = () => {
+    // Batch processing
+    const chunk = elements.splice(0, 30);
+    chunk.forEach((el) => body.appendChild(buildElementRow(el)));
 
-  // Inspectors
-  body.appendChild(buildOmniRow());
+    if (elements.length > 0) {
+      requestAnimationFrame(processChunk);
+    } else {
+      // Post-batch cleanup
+      if (body.parentElement.dataset.generic !== "true") {
+        sortGroupRows(body);
+      }
 
-  // High-value one-click tools
-  body.appendChild(buildHoverRevealRow());
-  body.appendChild(buildMinimalModeRow());
-  body.appendChild(buildClientFrameRow());
-  body.appendChild(buildHueRotateRow());
-  body.appendChild(buildFontRow());
-  body.appendChild(buildCssVarsRow());
-  body.appendChild(buildGradientBgRow());
-  body.appendChild(buildScreenTintRow());
-  body.appendChild(buildRootOverlayRow());
-  body.appendChild(buildGlassPanelRow());
-  body.appendChild(buildMaskFadeRow());
+      // Scroll restoration
+      restoreScrollPos();
+    }
+  };
 
-  // Asset / background tools
-  body.appendChild(buildLocalAssetRow());
-  body.appendChild(buildBgRow());
-  body.appendChild(buildImgReplaceRow());
-
-  // Element tools
-  body.appendChild(buildHideRow());
-  body.appendChild(buildColorRow());
-  body.appendChild(buildScrollbarRow());
-  body.appendChild(buildCustomRow());
+  processChunk();
 }
 
-// QUICK THEME (Easy Mode for Level 1 Users)
-function buildQuickThemeRow() {
+// GENERIC TOOLS
+
+// File picker helper
+function attachFilePickerToInput(inputElement) {
+  if (!inputElement) return;
+
+  // Hidden file input
+  const hiddenFileInput = document.createElement("input");
+  hiddenFileInput.type = "file";
+  hiddenFileInput.accept =
+    "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm";
+  hiddenFileInput.style.display = "none";
+  document.body.appendChild(hiddenFileInput);
+
+  hiddenFileInput.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      document.body.removeChild(hiddenFileInput);
+      return;
+    }
+
+    const filename = file.name;
+
+    // Set relative path
+    const relPath = `./assets/${filename}`;
+    inputElement.value = relPath;
+
+    // Resource validation
+    try {
+      const testUrl = new URL(relPath, import.meta.url).href;
+      const testFetch = await fetch(testUrl, { method: "HEAD" });
+      if (testFetch.ok) {
+        console.log(`Asset resolved: ${relPath}`);
+      } else if (testFetch.status === 404) {
+        alert(`⚠ Not found: ${relPath}\nMake sure file is in assets/!`);
+      }
+    } catch (err) {
+      console.warn("[Snooze-CSS] Asset validation:", err);
+    }
+
+    document.body.removeChild(hiddenFileInput);
+  });
+
+  hiddenFileInput.click();
+}
+
+function buildSubGroup(title, contentBuilders) {
+  const wrap = document.createElement("div");
+  wrap.className = "ci-group ci-sub-group";
+  wrap.style.margin = "4px";
+  wrap.style.border = "1px solid #1a2535";
+
+  const header = document.createElement("div");
+  header.style.cssText =
+    "display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;user-select:none;background:#060e1a;";
+
+  const icon = document.createElement("span");
+  icon.style.cssText = `font-size:9px;color:#785a28;flex-shrink:0;display:inline-block;transition:transform 0.2s;transform:rotate(0deg)`;
+  icon.textContent = "▸";
+
+  const labelEl = document.createElement("span");
+  labelEl.style.cssText = `font-size:11px;font-weight:600;color:#7a8a9a`;
+  labelEl.textContent = title;
+
+  header.appendChild(icon);
+  header.appendChild(labelEl);
+  wrap.appendChild(header);
+
+  const subBody = document.createElement("div");
+  subBody.style.cssText =
+    "display:none;background:#050c18;border-top:1px solid #1a2535;";
+  contentBuilders.forEach((builder) => {
+    if (builder) subBody.appendChild(builder());
+  });
+  wrap.appendChild(subBody);
+
+  header.addEventListener("click", () => {
+    const open = subBody.style.display === "none";
+    subBody.style.display = open ? "block" : "none";
+    icon.style.transform = open ? "rotate(90deg)" : "rotate(0deg)";
+    labelEl.style.color = open ? "#c8aa6e" : "#7a8a9a";
+  });
+
+  return wrap;
+}
+
+function buildGenericTools(body) {
+  body.appendChild(buildSubGroup("Omni Inspector", [buildOmniRow]));
+  body.appendChild(buildSubGroup("Hide Any Element", [buildHideRow]));
+  body.appendChild(
+    buildSubGroup("Background Customization", [
+      buildBackgroundCustomizationRow,
+    ]),
+  );
+  body.appendChild(
+    buildSubGroup("Home / Activity Center", [buildActivityCenterRow]),
+  );
+  body.appendChild(buildSubGroup("Friends List / Social", [buildSocialRow]));
+  body.appendChild(buildSubGroup("Navbar", [buildCleanNavbarRow]));
+  body.appendChild(buildSubGroup("Player Identity", [buildPlayerIdentityRow]));
+  body.appendChild(buildSubGroup("Champion Select", [buildChampSelectRow]));
+  body.appendChild(
+    buildSubGroup("Player Hover Card", [buildPlayerHoverCardRow]),
+  );
+  body.appendChild(buildSubGroup("Font Override", [buildFontRow]));
+  body.appendChild(buildSubGroup("Scrollbar Style", [buildScrollbarRow]));
+  body.appendChild(buildSubGroup("Others", [buildOthersRow]));
+}
+
+function buildOthersRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
-  row.style.borderBottom = "2px solid #c8aa6e";
-  row.style.background = "rgba(200, 170, 110, 0.05)";
   row.style.padding = "16px 14px";
 
   row.innerHTML = `
-    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">✨ Quick Theme Builder</div>
-    <div class="ci-generic-desc" style="margin-bottom: 12px;">Instantly build a custom theme! Choose a background image, and we'll automatically make the client transparent and apply frosted glass effects. Shows splash art elegantly in a glass card.</div>
-
-    <div class="ci-inline-row" style="margin-bottom: 10px;">
-      <div class="ci-field" style="grid-column: span 2;"><div class="ci-label">1. Background Image URL</div>
-        <input class="ci-input" id="qt-bg-url" type="text" placeholder="https://... or ./assets/theme/bg.jpg" style="font-size:12px; padding:8px 10px;">
-      </div>
-    </div>
-
-    <div class="ci-inline-row" style="margin-bottom: 10px;">
-      <div class="ci-field"><div class="ci-label">2. Darken Background</div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <input type="range" id="qt-dim-slider" class="ci-slider" min="0" max="0.9" step="0.05" value="0.3" style="flex:1;">
-          <input class="ci-input" id="qt-dim-text" type="text" value="0.3" style="width:40px;" readonly>
-        </div>
-      </div>
-      <div class="ci-field"><div class="ci-label">3. Glass Card Blur</div>
-        <select class="ci-select" id="qt-glass-blur">
-          <option value="none">None</option>
-          <option value="4px">Light (4px)</option>
-          <option value="12px" selected>Medium (12px)</option>
-          <option value="20px">Heavy (20px)</option>
-        </select>
-      </div>
-    </div>
-
-    <div style="display:flex;flex-direction:column;gap:6px;margin:12px 0;">
-      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="qt-transparent" checked style="accent-color:#785a28;cursor:pointer;margin-top:2px;">
-        <div style="display:flex;flex-direction:column;">
-            <span style="font-size:11px;color:#a0b4c8;font-weight:600;">Make all screens transparent</span>
-            <span style="font-size:9px;color:#4a6070;">Removes dark backgrounds from Home, Profile, Loot, Store, etc.</span>
-        </div>
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Other Enhancements</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Customize Loot, Settings, Dropdowns, and Startup Screens.</div>
+    
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="oth-settings" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Modernize Settings Dialog (Glass effect & clean borders)</span>
       </label>
-      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="qt-hide-riot" checked style="accent-color:#785a28;cursor:pointer;margin-top:2px;">
-        <div style="display:flex;flex-direction:column;">
-            <span style="font-size:11px;color:#a0b4c8;font-weight:600;">Hide other UI backgrounds</span>
-            <span style="font-size:9px;color:#4a6070;">Hides map backgrounds, overlays, and default graphics (keeps splash art visible).</span>
-        </div>
+      
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="oth-dropdowns" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Modernize Dropdowns & Inputs (Clean borders)</span>
       </label>
-    </div>
+      
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="oth-loot" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Clean Loot & Inventory (Remove borders, add hover pop)</span>
+      </label>
 
-    <button class="ci-btn-primary" id="qt-apply-btn" style="width:100%; text-align:center; padding: 10px; font-size:12px;">🚀 Apply Quick Theme</button>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="oth-eventpass" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Clean Event Pass Page (Remove shroud & float background)</span>
+      </label>
+
+      <div style="margin-top: 8px; font-size:11px; font-weight:bold; color:#c8aa6e; margin-bottom: 4px;">Startup Screen / Loading</div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="oth-startup-hide-bg" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hide Default Startup Background</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="oth-startup-hide-icon" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hide Default League Startup Icon</span>
+      </label>
+      
+      <div class="ci-inline-row" style="margin-top: 6px; margin-bottom: 10px;">
+        <div class="ci-field" style="grid-column: span 2;">
+          <div class="ci-label">Custom Startup Background Image</div>
+          <div style="display:flex;gap:4px;">
+            <input class="ci-input" id="oth-startup-bg-url" type="text" placeholder="./assets/startup.jpg" style="font-size:12px; padding:8px 10px;flex:1;">
+            <button class="ci-btn-prop" id="oth-startup-bg-browse" title="Browse files">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field" style="grid-column: span 2;">
+          <div class="ci-label">Custom Startup Icon</div>
+          <div style="display:flex;gap:4px;">
+            <input class="ci-input" id="oth-startup-icon-url" type="text" placeholder="./assets/icon.png" style="font-size:12px; padding:8px 10px;flex:1;">
+            <button class="ci-btn-prop" id="oth-startup-icon-browse" title="Browse files">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <button class="ci-btn-primary" id="oth-apply-btn" style="width:100%;font-size:11px;margin-top:12px;">Update Enhancements CSS</button>
     <div style="text-align:center; margin-top:6px;">
-        <span class="ci-flash" id="qt-flash"></span>
+        <span class="ci-flash" id="oth-flash"></span>
     </div>
   `;
 
-  const dimSlider = row.querySelector("#qt-dim-slider");
-  const dimText = row.querySelector("#qt-dim-text");
+  row.querySelector("#oth-startup-bg-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#oth-startup-bg-url"));
+  });
+  row
+    .querySelector("#oth-startup-icon-browse")
+    .addEventListener("click", () => {
+      attachFilePickerToInput(row.querySelector("#oth-startup-icon-url"));
+    });
+
+  row.querySelector("#oth-apply-btn").addEventListener("click", () => {
+    const doSettings = row.querySelector("#oth-settings").checked;
+    const doDropdowns = row.querySelector("#oth-dropdowns").checked;
+    const doLoot = row.querySelector("#oth-loot").checked;
+    const doEventPass = row.querySelector("#oth-eventpass").checked;
+    const doHideBg = row.querySelector("#oth-startup-hide-bg").checked;
+    const doHideIcon = row.querySelector("#oth-startup-hide-icon").checked;
+    const bgUrl = row.querySelector("#oth-startup-bg-url").value.trim();
+    const iconUrl = row.querySelector("#oth-startup-icon-url").value.trim();
+
+    const START_MARKER = "/* === OTHER ENHANCEMENTS === */";
+    const END_MARKER = "/* === END OTHER ENHANCEMENTS === */";
+    const lines = [START_MARKER];
+
+    if (doSettings) {
+      lines.push(
+        `
+/* Target the main settings dialog */
+lol-uikit-dialog-frame.lol-settings-container,
+.lol-uikit-dialog-frame.default.bottom.bordered {
+    background-color: rgba(10, 15, 20, 0.5) !important;
+    backdrop-filter: blur(16px) !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-image: none !important; /* Removes gold borders */
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Clean up the settings header/footer bars */
+.lol-settings-title-bar,
+.lol-settings-footer {
+    border-bottom: none !important;
+    border-top: none !important;
+    background: transparent !important;
+}
+      `.trim(),
+      );
+    }
+
+    if (doDropdowns) {
+      lines.push(
+        `
+/* Modernize text inputs (Search boxes) */
+.ember-text-field, 
+lol-uikit-flat-input input {
+    background-color: rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    color: #fff !important;
+}
+
+/* Modernize Dropdown Menus */
+lol-uikit-framed-dropdown dt.ui-dropdown-current,
+.ui-dropdown dt.ui-dropdown-current, .ui-dropdown-option {
+    background-color: rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-image: none !important; /* Kills the hextech gradient */
+    border-radius: 6px !important;
+}
+
+/* Dropdown hover state */
+lol-uikit-framed-dropdown dt.ui-dropdown-current:hover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+/* Hide default gold borders and breaks */
+.vertical-separator {
+    display: none !important;
+    background-image: none !important;
+}
+
+/* Pop out effect on hover */
+.parties-game-type-upper-half:hover {
+    transform: translateY(-1px) !important;
+}
+      `.trim(),
+      );
+    }
+
+    if (doLoot) {
+      lines.push(
+        `
+/* LOOT TAB: Remove borders from Loot and Skins */
+.inventory-card-bg, 
+img.border.border-normal, 
+img.border.border-hover {
+    display: none !important;
+}
+
+/* Make the item images clean */
+.loot-item-visual-container, 
+.inventory-item-thumbnail {
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5) !important;
+    transition: transform 0.2s ease !important;
+}
+
+/* Hover pop effect */
+.loot-item:hover,
+.inventory-card-wrapper:hover .inventory-item-thumbnail {
+    transform: scale(1.05) !important;
+}
+
+/* Clean up Loot Quantities text */
+.quantity-text-container {
+    background: rgba(0, 0, 0, 0.8) !important;
+    border: none !important;
+    border-radius: 4px !important;
+    color: white !important;
+}
+.quantity-background { display: none !important; }
+      `.trim(),
+      );
+    }
+
+    if (doEventPass) {
+      lines.push(
+        `
+/* Clean Event Pass Page */
+.season-pass-background-shroud {
+	display: none !important;
+}
+
+.season-pass-background-extended {
+	position: absolute !important;
+	top: 45% !important;
+	left: 50% !important;
+	transform: translate(-50%, -50%) !important;
+	max-width: 50vw !important;
+	max-height: 60vh !important;
+	border-radius: 20px !important;
+	box-shadow: 0 40px 120px rgba(0, 0, 0, 0.7),
+    0 0 60px rgba(0, 0, 0, 0.4) !important;
+	-webkit-mask-image: radial-gradient(circle at center,
+    rgba(0,0,0,1) 75%,
+    rgba(0,0,0,0.85) 85%,
+    rgba(0,0,0,0) 100%) !important;
+	filter: contrast(1.05) saturate(1.05) !important;
+}
+
+.season-pass-background-extended::after {
+	content: "" !important;
+	position: absolute !important;
+	inset: -2px !important;
+	border-radius: 22px !important;
+	background: radial-gradient(circle at center,
+    rgba(255,255,255,0.08),
+    transparent 70%) !important;
+	pointer-events: none !important;
+}
+
+.season-pass-header-background {
+	display: none !important;
+}
+      `.trim(),
+      );
+    }
+
+    if (doHideBg) {
+      lines.push(
+        `
+.lol-loading-screen-container.lol-loading-screen-default-state.lol-loading-screen-gameflow-state {
+    background-image: none !important;
+}
+      `.trim(),
+      );
+    } else if (bgUrl) {
+      lines.push(
+        `
+.lol-loading-screen-container.lol-loading-screen-default-state.lol-loading-screen-gameflow-state {
+    background-image: url('${bgUrl}') !important;
+    background-size: cover !important;
+    background-position: center !important;
+}
+      `.trim(),
+      );
+    }
+
+    if (doHideIcon) {
+      lines.push(
+        `
+.lol-loading-screen-container .lol-loading-screen-lol-icon {
+    display: none !important;
+}
+      `.trim(),
+      );
+    } else if (iconUrl) {
+      lines.push(
+        `
+.lol-loading-screen-container .lol-loading-screen-lol-icon {
+    background-image: url('${iconUrl}') !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+}
+      `.trim(),
+      );
+    }
+
+    if (lines.length === 1) {
+      lines.push("/* No options selected */");
+    }
+
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(
+      row.querySelector("#oth-flash"),
+      "Enhancements Updated!",
+      "#4caf82",
+    );
+  });
+
+  return row;
+}
+function buildCleanNavbarRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Clean Navbar</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Removes borders, blur, dividers, and background from the top navigation bar.</div>
+    <button class="ci-btn-primary" id="cn-apply-btn" style="width:100%;font-size:11px;margin-top:12px;">Update Navbar CSS</button>
+    <div style="text-align:center; margin-top:6px;">
+        <span class="ci-flash" id="cn-flash"></span>
+    </div>
+  `;
+
+  row.querySelector("#cn-apply-btn").addEventListener("click", () => {
+    const START_MARKER =
+      "/* =========================================== */\n/* MINIMAL SWEEP                               */\n/* =========================================== */";
+    const END_MARKER =
+      "/* =========================================== */\n/* END OF MINIMAL SWEEP                        */\n/* =========================================== */";
+    const lines = [
+      START_MARKER,
+      `.navbar-blur,`,
+      `.play-button-frame,`,
+      `.navigation-root-component,`,
+      `.lobby-header-overlay {`,
+      `background: transparent !important;`,
+      `border: none !important;`,
+      `backdrop-filter: none !important;`,
+      `}`,
+      `.right-nav-vertical-rule,`,
+      `.lobby-header-overlay,`,
+      `#background-ambient {`,
+      `  display: none !important;`,
+      `}`,
+      END_MARKER,
+    ];
+
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(
+      row.querySelector("#cn-flash"),
+      "Navbar CSS Updated!",
+      "#4caf82",
+    );
+  });
+
+  return row;
+}
+
+function buildBackgroundCustomizationRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.background = "rgba(200, 170, 110, 0.05)";
+  row.style.padding = "16px 14px";
+
+  // Settings state
+  const currentSettings = getSettings();
+  const initBlur = currentSettings.blurEnabled;
+  const initColor = currentSettings.blurColor || "#ff000010";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Background Editor</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Replace backgrounds with custom images or strip them away entirely. Options apply dynamically to chosen screens.</div>
+
+    <!-- REPLACE SECTION -->
+    <div style="margin-bottom: 16px; border: 1px solid rgba(200,170,110,0.3); padding: 10px; background: rgba(0,0,0,0.2);">
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-bottom: 8px;">1. Replace Backgrounds</div>
+      
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field" style="grid-column: span 2;">
+          <div class="ci-label">Background Image URL</div>
+          <div style="display:flex;gap:4px;">
+            <input class="ci-input" id="bc-bg-url" type="text" placeholder="./assets/maki.jpg" style="font-size:12px; padding:8px 10px;flex:1;">
+            <button class="ci-btn-prop" id="bc-bg-browse" title="Browse files">+</button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Darken Overlay</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="bc-dim-slider" class="ci-slider" min="0" max="0.9" step="0.05" value="0.3" style="flex:1;">
+            <input class="ci-input" id="bc-dim-text" type="text" value="0.3" style="width:40px;" readonly>
+          </div>
+        </div>
+      </div>
+
+      <div class="ci-label" style="margin-bottom:4px;">Screens to Replace:</div>
+      <div id="bc-replace-screens" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
+      
+      <button class="ci-btn-primary" id="bc-replace-btn" style="width:100%;font-size:11px;">Apply Custom Background</button>
+    </div>
+
+    <!-- REMOVE SECTION -->
+    <div style="margin-bottom: 16px; border: 1px solid rgba(100,150,200,0.3); padding: 10px; background: rgba(0,0,0,0.2);">
+      <div style="font-size:11px; font-weight:bold; color:#a0b4c8; margin-bottom: 8px;">2. Remove / Transparent Backgrounds</div>
+      
+      <div class="ci-label" style="margin-bottom:4px;">Screens to Make Transparent:</div>
+      <div id="bc-remove-screens" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
+
+      <button class="ci-btn-secondary" id="bc-remove-btn" style="width:100%;font-size:11px;">Apply Transparency</button>
+    </div>
+
+    <!-- FROSTED GLASS SECTION -->
+    <div style="margin-bottom: 16px; border: 1px solid rgba(100,200,150,0.3); padding: 10px; background: rgba(0,0,0,0.2);">
+      <div style="font-size:11px; font-weight:bold; color:#80c8a0; margin-bottom: 4px;">3. Frosted Glass Effect (UI Panels)</div>
+      <div style="font-size:9px;color:#3a5060;margin-bottom:10px;">Applies backdrop-blur to lobby panels, ready-check, social sidebar and more. Works standalone or combined with section 2.</div>
+
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Blur Intensity</div>
+          <select class="ci-select" id="bc-glass-blur">
+            <option value="none">None</option>
+            <option value="4px">Light (4px)</option>
+            <option value="12px" selected>Medium (12px)</option>
+            <option value="20px">Heavy (20px)</option>
+          </select>
+        </div>
+        
+        <div class="ci-field" style="display:flex;flex-direction:column;justify-content:center;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="bc-effect-blur" ${initBlur ? "checked" : ""} style="accent-color:#c8aa6e;cursor:pointer;">
+            <span style="font-size:11px;color:#a0b4c8;">Live Window Blur</span>
+          </label>
+          <div style="display:flex;gap:4px;margin-top:4px;">
+             <input type="text" id="bc-effect-color" class="ci-input" value="${initColor}" style="width:60px;font-size:10px;">
+          </div>
+        </div>
+      </div>
+
+      <button class="ci-btn-secondary" id="bc-glass-btn" style="width:100%;font-size:11px;border-color:rgba(100,200,150,0.5);color:#80c8a0;">Apply Frosted Glass</button>
+    </div>
+
+    <div style="text-align:center; margin-top:6px;">
+        <span class="ci-flash" id="bc-flash"></span>
+    </div>
+  `;
+
+  // UI event listeners
+  const dimSlider = row.querySelector("#bc-dim-slider");
+  const dimText = row.querySelector("#bc-dim-text");
   dimSlider.addEventListener("input", () => (dimText.value = dimSlider.value));
 
-  row.querySelector("#qt-apply-btn").addEventListener("click", () => {
-    const bgUrl = row.querySelector("#qt-bg-url").value.trim();
-    const dim = dimSlider.value;
-    const blur = row.querySelector("#qt-glass-blur").value;
-    const doTrans = row.querySelector("#qt-transparent").checked;
-    const doHide = row.querySelector("#qt-hide-riot").checked;
+  row.querySelector("#bc-bg-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#bc-bg-url"));
+  });
 
+  const screens = [
+    { id: "all", label: "ALL (Global)", excl: true },
+    { id: "lobby", label: "Lobby" },
+    { id: "profile", label: "Profile" },
+    { id: "collection", label: "Collection" },
+    { id: "loot", label: "Loot" },
+    { id: "store", label: "Store" },
+    { id: "matchhistory", label: "Match History" },
+    { id: "champselect", label: "Champ Select" },
+  ];
+
+  // Selector map
+  const scopeMap = {
+    lobby: ".lobby-header-overlay", // Or #rcp-fe-viewport-main when lobby is active
+    profile: ".style-profile-background-image",
+    collection: ".collections-application",
+    loot: ".loot-backdrop",
+    store: ".__rcp-fe-lol-store",
+    matchhistory: ".match-details-root",
+    champselect: ".champion-select",
+  };
+
+  // Checkbox builder
+  function buildChecks(containerId, prefix) {
+    const container = row.querySelector("#" + containerId);
+    screens.forEach((sc, i) => {
+      const lbl = document.createElement("label");
+      lbl.style.cssText =
+        "display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer;color:#a0b4c8;";
+      const chk = document.createElement("input");
+      chk.type = "checkbox";
+      chk.id = prefix + sc.id;
+      chk.style.accentColor = prefix === "rep-" ? "#c8aa6e" : "#80a0c0";
+      if (sc.excl) chk.checked = true;
+
+      chk.addEventListener("change", (e) => {
+        if (sc.excl && chk.checked) {
+          screens
+            .slice(1)
+            .forEach(
+              (s) =>
+                (container.querySelector("#" + prefix + s.id).checked = false),
+            );
+        } else if (!sc.excl && chk.checked) {
+          container.querySelector("#" + prefix + "all").checked = false;
+        }
+      });
+      lbl.appendChild(chk);
+      lbl.appendChild(document.createTextNode(sc.label));
+      container.appendChild(lbl);
+    });
+  }
+
+  buildChecks("bc-replace-screens", "rep-");
+  buildChecks("bc-remove-screens", "rem-");
+
+  // Window.Effect toggle
+  const effChk = row.querySelector("#bc-effect-blur");
+  const effCol = row.querySelector("#bc-effect-color");
+  effChk.addEventListener("change", async () => {
+    const s = getSettings();
+    s.blurEnabled = effChk.checked;
+    s.blurColor = effCol.value;
+    await saveSettings();
+    if (s.blurEnabled && window.Effect) {
+      window.Effect.apply("blurbehind", { color: s.blurColor });
+    } else if (!s.blurEnabled && window.Effect) {
+      window.Effect.clear();
+    }
+  });
+
+  effCol.addEventListener("change", async () => {
+    const s = getSettings();
+    s.blurColor = effCol.value;
+    await saveSettings();
+    if (effChk.checked && window.Effect) {
+      window.Effect.apply("blurbehind", { color: s.blurColor });
+    }
+  });
+
+  // Action: Replace
+  row.querySelector("#bc-replace-btn").addEventListener("click", () => {
+    const bgUrl = row.querySelector("#bc-bg-url").value.trim();
     if (!bgUrl) {
       flashMessage(
-        row.querySelector("#qt-flash"),
-        "Please enter an image URL!",
+        row.querySelector("#bc-flash"),
+        "Enter Image URL",
         "#c84b4b",
       );
       return;
     }
 
-    const START_MARKER =
-      "/* =========================================== */\n/* QUICK THEME GENERATOR — PREMIUM EDITION      */\n/* =========================================== */";
-    const END_MARKER =
-      "/* =========================================== */\n/* END OF QUICK THEME                          */\n/* =========================================== */";
+    const isAll = row.querySelector("#rep-all").checked;
+    const targets = [];
+    if (isAll) {
+      targets.push(
+        "#rcp-fe-viewport-root, .rcp-fe-lol-game-in-progress, .rcp-fe-lol-pre-end-of-game, .rcp-fe-lol-reconnect, .rcp-fe-lol-waiting-for-stats, .champion-select, .lol-loading-screen-container.lol-loading-screen-default-state, .reconnect-container",
+      );
+    } else {
+      screens.slice(1).forEach((s) => {
+        if (row.querySelector("#rep-" + s.id).checked && scopeMap[s.id]) {
+          targets.push(scopeMap[s.id]);
+        }
+      });
+    }
 
-    const lines = [];
-    lines.push(START_MARKER);
-    lines.push(`:root { --qt-bg: url('${bgUrl}'); }`);
-    lines.push(``);
+    if (targets.length === 0) {
+      flashMessage(
+        row.querySelector("#bc-flash"),
+        "Select a screen",
+        "#c84b4b",
+      );
+      return;
+    }
 
-    lines.push(`/* === BACKGROUND LAYER === */`);
-    lines.push(`/* Apply background to all viewports */`);
-    lines.push(
-      `#rcp-fe-viewport-root, .rcp-fe-lol-game-in-progress, .rcp-fe-lol-pre-end-of-game, .rcp-fe-lol-reconnect, .rcp-fe-lol-waiting-for-stats, .champion-select, .lol-loading-screen-container.lol-loading-screen-default-state, .reconnect-container {`,
-    );
-    lines.push(`  background-image: var(--qt-bg) !important;`);
-    lines.push(`  background-size: cover !important;`);
-    lines.push(`  background-position: center center !important;`);
-    lines.push(`  background-repeat: no-repeat !important;`);
-    lines.push(`  isolation: isolate;`);
-    lines.push(`}`);
+    const START_MARKER = "/* === BC: BACKGROUND REPLACEMENT === */";
+    const END_MARKER = "/* === END BC: BACKGROUND REPLACEMENT === */";
+    const lines = [START_MARKER];
+    lines.push(`:root { --bc-custom-bg: url('${bgUrl}'); }`);
 
-    if (parseFloat(dim) > 0) {
-      lines.push(``);
-      lines.push(`/* === BACKGROUND DIM OVERLAY === */`);
-      lines.push(`#rcp-fe-viewport-root::before {`);
-      lines.push(`  content: ''; position: absolute; inset: 0;`);
-      lines.push(`  background: rgba(0, 0, 0, ${dim});`);
-      lines.push(`  pointer-events: none; z-index: 0;`);
+    // Core injection
+    const selectors = targets.join(", ");
+    if (isAll) {
+      lines.push(`${selectors} {`);
+      lines.push(`  background-image: var(--bc-custom-bg) !important;`);
+      lines.push(`  background-size: cover !important;`);
+      lines.push(`  background-position: center center !important;`);
+      lines.push(`  background-repeat: no-repeat !important;`);
+      lines.push(`  isolation: isolate;`);
       lines.push(`}`);
-    }
 
-    lines.push(``);
-    lines.push(`/* === SPLASH ART GLASS CARD (Champion Select) === */`);
-    lines.push(`/* Show splash images */`);
-    lines.push(`img.lol-uikit-background-switcher-image,`);
-    lines.push(`img.champion-background-image,`);
-    lines.push(`div.skin-selection-thumbnail img,`);
-    lines.push(`div.portrait-icon img {`);
-    lines.push(`  opacity: 1 !important;`);
-    lines.push(`  display: block !important;`);
-    lines.push(`  visibility: visible !important;`);
-    lines.push(`}`);
-
-    lines.push(``);
-    lines.push(`/* Frame the splash art in a minimalist glossy glass card */`);
-    lines.push(`.champion-select .champion-splash-background {`);
-    lines.push(`  position: absolute !important;`);
-    lines.push(`  display: block !important;`);
-    lines.push(`  width: 60% !important;`);
-    lines.push(`  height: 75% !important;`);
-    lines.push(`  top: 10% !important;`);
-    lines.push(`  left: 50% !important;`);
-    lines.push(`  transform: translateX(-50%) !important;`);
-    lines.push(
-      `  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(5,5,10,0.4) 100%) !important;`,
-    );
-    if (blur !== "none") {
-      lines.push(`  backdrop-filter: blur(${blur}) saturate(110%) !important;`);
-    }
-    lines.push(`  border: 1px solid rgba(255,255,255,0.1) !important;`);
-    lines.push(`  border-top: 1px solid rgba(255,255,255,0.2) !important;`);
-    lines.push(`  border-radius: 12px !important;`);
-    lines.push(
-      `  box-shadow: 0 24px 48px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.05) !important;`,
-    );
-    lines.push(`  z-index: 0 !important;`);
-    lines.push(`  overflow: hidden !important;`);
-    lines.push(`  -webkit-mask-image: none !important;`);
-    lines.push(`}`);
-
-    lines.push(``);
-    lines.push(`/* Champion splash positioning inside the card */`);
-    lines.push(`.champion-select .background-vignette-container,`);
-    lines.push(`.champion-select .champ-select-bg {`);
-    lines.push(`  position: absolute !important;`);
-    lines.push(`  width: 100% !important;`);
-    lines.push(`  height: 100% !important;`);
-    lines.push(`  inset: 0 !important;`);
-    lines.push(`  background: transparent !important;`);
-    lines.push(`}`);
-
-    lines.push(``);
-    lines.push(`.champion-select .champ-select-bg img {`);
-    lines.push(`  width: 100% !important;`);
-    lines.push(`  height: 100% !important;`);
-    lines.push(`  object-fit: cover !important;`);
-    lines.push(`  object-position: top center !important;`);
-    lines.push(
-      `  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%) !important;`,
-    );
-    lines.push(`}`);
-
-    if (doTrans) {
-      const transScreens = [
-        "body",
-        "html",
-        ".parties-view",
-        ".parties-background",
+      const hideList = [
+        ".store-loading",
+        ".loot-to-store-button",
+        ".clash-root-action-timeline-background-gradient",
+        ".clash-aram-intro-modal",
+        ".event-shop-xp-vertical-divider",
+        ".event-shop-page-header-vertical-divider",
+        ".tft-home-footer-bg",
+        ".tft-hub-footer-bg",
+        ".lol-loading-screen-spinner",
+        ".lol-loading-screen-status-container",
+        ".summoner-level-ring",
+        ".rcp-fe-lol-home-loading-spinner",
+        ".style-profile-loading-spinner",
+        ".spinner",
+        //".bg-current img",
+        ".parties-background img",
+        ".postgame-background-image img",
+        ".style-profile-background-image img",
+        ".style-profile-masked-image img",
+        ".background-edge-backlight",
+        "#background-ambient",
+        ".lobby-intro-animation-container",
+        ".activity-center__background-component__blend",
+        ".challenges-collection-component .background",
+        ".leagues-root-component .ranked-intro-background",
+        'img[src*="map-south.png"]',
+        'img[src*="map-north.png"]',
+        'img[src*="champ-select-planning-intro.jpg"]',
+        'img[src*="gameflow-background.jpg"]',
+        'img[src*="ready-check-background.png"]',
         ".parties-background-mask",
-        ".parties-content",
-        ".parties-lower-section",
-        ".lol-social-sidebar",
-        ".rcp-fe-viewport-sidebar",
-        ".store-backdrop",
-        ".__rcp-fe-lol-store",
-        ".loot-backdrop",
         ".loot-backdrop.background-static",
-        ".loot-loading-screen",
-        ".collections-application",
-        ".collections-routes",
-        ".yourshop-root",
-        ".clash-root-background",
         ".clash-root-background-landing",
-        ".personalized-offers-root",
-        ".champ-select-bg-darken",
-        ".stats-backdrop",
-        ".match-details-root",
-        ".cdp-backdrop-component",
-        ".cdp-backdrop:after",
-        ".cdp-backdrop.progression:after",
-        ".rcp-fe-lol-event-shop-application",
-        ".event-shop-index",
-        ".event-shop-page-header",
-        ".event-shop-progression",
-        ".event-shop-progression-info",
-        ".postgame-header-section",
-        ".postgame-champion-background-wrapper",
-        ".ranked-rewards-component",
-        ".style-profile-emblem-wrapper",
-        ".mission-tray-header",
-        ".chat-box",
-        ".clash-social-persistent",
-        ".mythic-shop-backdrop",
-        ".moon-skin-backdrop",
-        ".ranked-intro-background",
-        ".rcp-fe-lol-tft-application-background",
+        ".activity-center__tabs_footer_divider",
+        ".loading-tab:after",
       ];
       lines.push(``);
-      lines.push(`/* === DEEP TRANSPARENCY SWEEP === */`);
-      lines.push(`${transScreens.join(",\n")} {`);
-      lines.push(`  background: transparent !important;`);
-      lines.push(`  background-image: none !important;`);
-      lines.push(`  backdrop-filter: none !important;`);
-      lines.push(`  filter: none !important;`);
+      lines.push(
+        `.bg-current .lol-uikit-background-switcher-image {display:none !important;}`,
+      );
+      lines.push(``);
+      lines.push(`.store-backdrop { background-image: none; }`);
+      lines.push(``);
+      lines.push(
+        `.lol-uikit-background-switcher-image.fade {display:none !important;}`,
+      );
+      lines.push(``);
+      lines.push(
+        `/* Hide generic loading spinners and explicit background graphics */`,
+      );
+      lines.push(`${hideList.join(",\n")} {`);
+      lines.push(`  display: none !important;`);
+      lines.push(`}`);
+      lines.push(``);
+      lines.push(`.clash-arurf-intro-modal {`);
+      lines.push(
+        `  display: none !important; opacity: 1 !important; transform: scale(1) !important; border-radius: 0px !important;`,
+      );
+      lines.push(`  background-color: #15171e !important;`);
+      lines.push(
+        `  background-image: url("https://127.0.0.1:58895/fe/lol-clash/assets/images/arurf-modal/clash-arurf-modal-bg.png") !important;`,
+      );
+      lines.push(
+        `  background-size: cover !important; background-position: center !important; background-repeat: repeat !important;`,
+      );
+      lines.push(
+        `  font-family: Times New Roman !important; width: 828px !important; height: 508px !important;`,
+      );
+      lines.push(`}`);
+    } else {
+      // Fixed background mode
+      lines.push(`${selectors}::before, ${selectors} img {`);
+      lines.push(`  content: '' !important;`);
+      lines.push(
+        `  background: var(--bc-custom-bg) center/cover no-repeat !important;`,
+      );
+      lines.push(`  position: fixed !important;`);
+      lines.push(`  top: 0 !important; left: 0 !important;`);
+      lines.push(`  width: 100vw !important; height: 100vh !important;`);
+      lines.push(`  z-index: -1 !important;`);
+      lines.push(`  opacity: 1 !important; visibility: visible !important;`);
+      lines.push(`  pointer-events: none !important;`);
+      lines.push(
+      );
       lines.push(`}`);
     }
 
-    if (doHide) {
-      const hiddenElements = [
+    const dim = parseFloat(dimSlider.value);
+    if (dim > 0) {
+      lines.push(
+        `${isAll ? "#rcp-fe-viewport-root::before" : selectors + "::after"} {`,
+      );
+      lines.push(`  content: ''; position: fixed; inset: 0;`);
+      lines.push(`  background: rgba(0, 0, 0, ${dim}) !important;`);
+      lines.push(`  pointer-events: none; z-index: -1;`);
+      lines.push(`}`);
+    }
+
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(row.querySelector("#bc-flash"), "Background set!", "#4caf82");
+  });
+
+  // Action: Remove
+  row.querySelector("#bc-remove-btn").addEventListener("click", () => {
+    const isAll = row.querySelector("#rem-all").checked;
+
+    const transScreens = isAll
+      ? [
+          "body",
+          "html",
+          ".parties-view",
+          ".activity-center__tabs_section-divider",
+          ".lol-loading-screen-container",
+          ".parties-background",
+          ".parties-background-mask",
+          ".parties-content",
+          ".parties-lower-section",
+          ".lol-social-sidebar",
+          ".rcp-fe-viewport-sidebar",
+          ".store-backdrop",
+          ".__rcp-fe-lol-store",
+          ".loot-backdrop",
+          ".loot-backdrop.background-static",
+          ".loot-loading-screen",
+          ".collections-application",
+          ".collections-routes",
+          ".yourshop-root",
+          ".clash-root-background",
+          ".clash-root-background-landing",
+          ".personalized-offers-root",
+          ".champ-select-bg-darken",
+          ".stats-backdrop",
+          ".match-details-root",
+          ".cdp-backdrop-component",
+          ".cdp-backdrop:after",
+          ".cdp-backdrop.progression:after",
+          ".rcp-fe-lol-event-shop-application",
+          ".event-shop-index",
+          ".event-shop-page-header",
+          ".event-shop-progression",
+          ".event-shop-progression-info",
+          ".postgame-header-section",
+          ".postgame-champion-background-wrapper",
+          ".ranked-rewards-component",
+          ".style-profile-emblem-wrapper",
+          ".mission-tray-header",
+          ".chat-box",
+          ".clash-social-persistent",
+          ".mythic-shop-backdrop",
+          ".moon-skin-backdrop",
+          ".ranked-intro-background",
+          ".rcp-fe-lol-tft-application-background",
+          ".lobby-header-overlay",
+          ".navbar-blur",
+          ".loading-content",
+          ".bottom-gradient",
+          ".smoke-background-container",
+        ]
+      : screens
+          .slice(1)
+          .filter((s) => row.querySelector("#rem-" + s.id).checked)
+          .map((s) => scopeMap[s.id] || "." + s.id);
+
+    if (transScreens.length === 0) return;
+
+    const START_MARKER = "/* === BC: REMOVE BACKGROUNDS === */";
+    const END_MARKER = "/* === END BC: REMOVE BACKGROUNDS === */";
+    const lines = [START_MARKER];
+
+    lines.push(`${transScreens.join(",\n")} {`);
+    lines.push(`  background: rgba(0, 0, 0, 0.10) !important;`);
+    lines.push(`  background-image: none !important;`);
+    lines.push(`  filter: none !important;`);
+    lines.push(`}`);
+
+    if (isAll) {
+      const hideList = [
+        ".store-loading",
+        ".activity-center__tabs_section-divider",
+        ".loot-to-store-button",
+        ".clash-root-action-timeline-background-gradient",
+        ".clash-aram-intro-modal",
+        ".event-shop-xp-vertical-divider",
+        ".event-shop-page-header-vertical-divider",
+        ".tft-home-footer-bg",
+        ".tft-hub-footer-bg",
+        ".lol-loading-screen-spinner",
+        ".lol-loading-screen-status-container",
+        ".summoner-level-ring",
+        ".rcp-fe-lol-home-loading-spinner",
+        ".style-profile-loading-spinner",
+        ".spinner",
         ".bg-current img",
         ".parties-background img",
         ".postgame-background-image img",
@@ -549,57 +1837,787 @@ function buildQuickThemeRow() {
         ".style-profile-masked-image img",
         ".background-edge-backlight",
         "#background-ambient",
-        ".lobby-header-overlay",
-        ".navbar-blur",
         ".lobby-intro-animation-container",
-        ".loading-content",
-        ".bottom-gradient",
-        ".smoke-background-container",
         ".activity-center__background-component__blend",
+        ".challenges-collection-component .background",
+        ".leagues-root-component .ranked-intro-background",
         'img[src*="map-south.png"]',
         'img[src*="map-north.png"]',
         'img[src*="champ-select-planning-intro.jpg"]',
         'img[src*="gameflow-background.jpg"]',
-        'img[src*="parties-background.jpg"]',
         'img[src*="ready-check-background.png"]',
+        ".parties-background-mask",
+        ".loot-backdrop.background-static",
+        ".clash-root-background-landing",
+        ".activity-center__tabs_footer_divider",
+        ".loading-tab:after",
       ];
       lines.push(``);
-      lines.push(`/* === HIDE OTHER UI GRAPHICS === */`);
-      lines.push(`/* NOTE: Splash art is kept visible above */`);
-      lines.push(`${hiddenElements.join(",\n")} {`);
+      lines.push(
+        `/* Hide generic loading spinners and explicit background graphics */`,
+      );
+      lines.push(`${hideList.join(",\n")} {`);
       lines.push(`  display: none !important;`);
-      lines.push(`  opacity: 0 !important;`);
-      lines.push(`  visibility: hidden !important;`);
-      lines.push(`  pointer-events: none !important;`);
       lines.push(`}`);
-    }
-
-    if (blur !== "none") {
-      const glassPanels = [
-        ".parties-game-info-panel-content",
-        ".v2-parties-invite-info-panel",
-        ".parties-invite-info-panel",
-        ".ready-check-root-element",
-        ".lol-social-sidebar",
-        "#activity-center .activity-center__tabs_scrollable",
-        ".selection-button-image",
-      ];
       lines.push(``);
-      lines.push(`/* === SUPPLEMENTAL: FROSTED GLASS PANELS === */`);
-      lines.push(`${glassPanels.join(",\n")} {`);
-      lines.push(`  backdrop-filter: blur(${blur}) !important;`);
-      lines.push(`  background: rgba(0, 0, 0, 0.25) !important;`);
-      lines.push(`  border-radius: 6px !important;`);
+      lines.push(
+        `.bg-current .lol-uikit-background-switcher-image {display:none !important;}`,
+      );
+      lines.push(``);
+      lines.push(`.store-backdrop { background-image: none; }`);
+      lines.push(``);
+      lines.push(
+        `.lol-uikit-background-switcher-image.fade {display:none !important;}`,
+      );
+      lines.push(``);
+      lines.push(`.clash-arurf-intro-modal {`);
+      lines.push(
+        `  display: none !important; opacity: 1 !important; transform: scale(1) !important; border-radius: 0px !important;`,
+      );
+      lines.push(`  background-color: #15171e !important;`);
+      lines.push(
+        `  background-image: url("https://127.0.0.1:58895/fe/lol-clash/assets/images/arurf-modal/clash-arurf-modal-bg.png") !important;`,
+      );
+      lines.push(
+        `  background-size: cover !important; background-position: center !important; background-repeat: repeat !important;`,
+      );
+      lines.push(
+        `  font-family: Times New Roman !important; width: 828px !important; height: 508px !important;`,
+      );
       lines.push(`}`);
     }
 
-    lines.push(``);
     lines.push(END_MARKER);
     replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
     flashMessage(
-      row.querySelector("#qt-flash"),
-      "✨ Premium Theme Applied! ✓",
-      3000,
+      row.querySelector("#bc-flash"),
+      "Transparency applied!",
+      "#4caf82",
+    );
+  });
+
+  // Glass effect handler
+  row.querySelector("#bc-glass-btn").addEventListener("click", () => {
+    const blur = row.querySelector("#bc-glass-blur").value;
+    if (blur === "none") {
+      flashMessage(
+        row.querySelector("#bc-flash"),
+        "Select a blur intensity first",
+        "#c84b4b",
+      );
+      return;
+    }
+
+    const glassPanels = [
+      ".parties-game-info-panel-content",
+      ".v2-parties-invite-info-panel",
+      ".parties-invite-info-panel",
+      ".ready-check-root-element",
+      ".lol-social-sidebar",
+      "#activity-center .activity-center__tabs_scrollable",
+      ".selection-button-image",
+      ".rcp-fe-viewport-sidebar",
+      ".loot-application-container",
+      ".collections-application",
+      ".clash-tab-hub-content",
+      ".clash-tab-winners",
+      ".clash-tab-awards",
+      ".__rcp-fe-lol-store",
+    ];
+
+    const START_MARKER = "/* === BC: FROSTED GLASS === */";
+    const END_MARKER = "/* === END BC: FROSTED GLASS === */";
+    const lines = [START_MARKER];
+    lines.push(`${glassPanels.join(",\n")} {`);
+    lines.push(`  backdrop-filter: blur(${blur}) !important;`);
+    lines.push(`  background: rgba(0, 0, 0, 0.25) !important;`);
+    lines.push(`  border-radius: 6px !important;`);
+    lines.push(`}`);
+    lines.push(END_MARKER);
+
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(
+      row.querySelector("#bc-flash"),
+      "Frosted glass applied!",
+      "#4caf82",
+    );
+  });
+
+  return row;
+}
+
+function buildActivityCenterRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Home / Activity Center</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Controls for the main landing page and activity hub.</div>
+    
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="ac-nuke-all" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Completely Hide Activity Center</span>
+      </label>
+      
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="ac-nuke-bg" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Remove Background Images Only</span>
+      </label>
+      
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="ac-nuke-inner" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Remove Inner Content (Keep Left Panel)</span>
+      </label>
+
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="ac-hover-left" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hover-to-Reveal Left Panel</span>
+      </label>
+    </div>
+    
+    <button class="ci-btn-primary" id="ac-apply-btn" style="width:100%;font-size:11px;margin-top:12px;">Update Activity Center CSS</button>
+    <div style="text-align:center; margin-top:6px;">
+        <span class="ci-flash" id="ac-flash"></span>
+    </div>
+  `;
+
+  row.querySelector("#ac-apply-btn").addEventListener("click", () => {
+    const doAll = row.querySelector("#ac-nuke-all").checked;
+    const doBg = row.querySelector("#ac-nuke-bg").checked;
+    const doInner = row.querySelector("#ac-nuke-inner").checked;
+    const doHover = row.querySelector("#ac-hover-left").checked;
+
+    const START_MARKER = "/* === HOME / ACTIVITY CENTER MODS === */";
+    const END_MARKER = "/* === END HOME MODS === */";
+    const lines = [START_MARKER];
+
+    if (doAll) {
+      lines.push(
+        `.activity-center-application, .activity-center { display: none !important; }`,
+      );
+    } else {
+      if (doBg) {
+        lines.push(
+          `.activity-center-skin-activity__background-image, .activity-center__background-component { display: none !important; }`,
+        );
+      }
+      if (doInner) {
+        lines.push(`.activity-center__contents { display: none !important; }`);
+      }
+      if (doBg || doInner) {
+        lines.push(
+          `.activity-center-application, #activity-center, #activity-center .activity-center__template, .activity-center-skin-activity__background-shroud { background: transparent !important; }`,
+        );
+      }
+      if (doHover) {
+        lines.push(
+          `.activity-center__tabs_container { opacity: 0 !important; transition: opacity 0.3s ease !important; }`,
+        );
+        lines.push(
+          `.activity-center__tabs_container:hover { opacity: 1 !important; }`,
+        );
+      }
+    }
+
+    if (lines.length === 1) {
+      lines.push(`/* No options selected */`);
+    }
+
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(
+      row.querySelector("#ac-flash"),
+      "Activity Center CSS Updated!",
+      "#4caf82",
+    );
+  });
+
+  return row;
+}
+
+function buildSocialRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Friends List / Social</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Controls for the right-side social panel.</div>
+    
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="soc-trans" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Make Sidebar Transparent</span>
+      </label>
+
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="soc-hover-roster" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hover-to-Reveal Friends List</span>
+      </label>
+
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="soc-hover-bottom" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hover-to-Reveal Bottom Panel (Missions/Bug Report/etc)</span>
+      </label>
+    </div>
+
+    <div style="font-size:11px; font-weight:bold; color:#a0b4c8; margin-top: 12px; margin-bottom: 8px;">Hide Specific Elements:</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="soc-hide-bug" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:10px;color:#a0b4c8;">Bug Report Button</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="soc-hide-ver" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:10px;color:#a0b4c8;">Version Number</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="soc-hide-voice" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:10px;color:#a0b4c8;">Voice Button</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="soc-hide-mission" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:10px;color:#a0b4c8;">Mission Button</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="soc-hide-chat" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:10px;color:#a0b4c8;">Chat Button</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="soc-hide-arrows" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:10px;color:#a0b4c8;">Social Arrows</span>
+      </label>
+    </div>
+
+    <div style="font-size:11px; font-weight:bold; color:#a0b4c8; margin-top: 12px; margin-bottom: 8px;">Chat Window Styling:</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="soc-chat-glass" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Apply Frosted Glass Overlay (Backdrop Blur)</span>
+      </label>
+    </div>
+    
+    <button class="ci-btn-primary" id="soc-apply-btn" style="width:100%;font-size:11px;">Update Social CSS</button>
+    <div style="text-align:center; margin-top:6px;">
+        <span class="ci-flash" id="soc-flash"></span>
+    </div>
+  `;
+
+  row.querySelector("#soc-apply-btn").addEventListener("click", () => {
+    const doTrans = row.querySelector("#soc-trans").checked;
+    const doHoverRoster = row.querySelector("#soc-hover-roster").checked;
+    const doHoverBottom = row.querySelector("#soc-hover-bottom").checked;
+
+    const hideBug = row.querySelector("#soc-hide-bug").checked;
+    const hideVer = row.querySelector("#soc-hide-ver").checked;
+    const hideVoice = row.querySelector("#soc-hide-voice").checked;
+    const hideMission = row.querySelector("#soc-hide-mission").checked;
+    const hideChat = row.querySelector("#soc-hide-chat").checked;
+    const hideArrows = row.querySelector("#soc-hide-arrows").checked;
+
+    const doChatGlass = row.querySelector("#soc-chat-glass").checked;
+
+    const START_MARKER = "/* === SOCIAL PANEL MODS === */";
+    const END_MARKER = "/* === END SOCIAL MODS === */";
+    const lines = [START_MARKER];
+
+    if (doTrans) {
+      lines.push(
+        `.rcp-fe-viewport-sidebar { background: transparent !important; }`,
+      );
+      lines.push(`.lol-social-sidebar { background: transparent !important; }`);
+    }
+    if (doHoverRoster) {
+      lines.push(
+        `.lol-social-lower-pane-container { opacity: 0 !important; transition: opacity 0.2s ease !important; }`,
+      );
+      lines.push(
+        `.lol-social-lower-pane-container:hover, .lol-social-sidebar:hover .lol-social-lower-pane-container { opacity: 1 !important; transition: opacity 0.2s ease !important; }`,
+      );
+    }
+    if (doHoverBottom) {
+      lines.push(
+        `.alpha-version-panel { opacity: 0 !important; transition: opacity 0.2s ease !important; pointer-events: none; }`,
+      );
+      lines.push(
+        `.alpha-version-panel:hover, .lol-social-sidebar:hover .alpha-version-panel { opacity: 1 !important; pointer-events: auto; }`,
+      );
+    }
+    if (doChatGlass) {
+      lines.push(`lol-social-chat-window { margin-right: 5px !important; }`);
+      lines.push(`lol-social-chat-window #chat-window-wrapper {`);
+      lines.push(`  background-color: rgba(10, 10, 15, 0.45) !important;`);
+      lines.push(`  backdrop-filter: blur(12px) !important;`);
+      lines.push(`  border-top-left-radius: 8px !important;`);
+      lines.push(`  border-top-right-radius: 8px !important;`);
+      lines.push(`  border: 1px solid rgba(255,255,255,0.05) !important;`);
+      lines.push(`  border-bottom: none !important;`);
+      lines.push(`}`);
+      lines.push(
+        `lol-social-chat-window .chat-header { background: transparent !important; }`,
+      );
+      lines.push(
+        `lol-social-chat-window .chat-area { background: transparent !important; }`,
+      );
+      lines.push(
+        `lol-social-chat-window .conversation:hover, lol-social-chat-window .create-panel-search-match:hover { background: rgba(255,255,255,0.05) !important; }`,
+      );
+    }
+
+    const hiddenButtons = [];
+    if (hideBug) hiddenButtons.push(".bug-report-button");
+    if (hideVer) hiddenButtons.push(".lol-social-version-bar");
+    if (hideVoice) hiddenButtons.push("lol-parties-comm-button");
+    if (hideMission) hiddenButtons.push(".mission-button-component");
+    if (hideChat) hiddenButtons.push(".chat-toggle-button");
+    if (hideArrows) hiddenButtons.push(".arrow-container");
+
+    if (hiddenButtons.length > 0) {
+      lines.push(`${hiddenButtons.join(", ")} { display: none !important; }`);
+    }
+
+    if (lines.length === 1) {
+      lines.push(`/* No options selected */`);
+    }
+
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(
+      row.querySelector("#soc-flash"),
+      "Social CSS Updated!",
+      "#4caf82",
+    );
+  });
+
+  return row;
+}
+
+function buildPlayerIdentityRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Player Identity</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Customize banners, player name styles, and borders.</div>
+    
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="pi-hide-banners" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hide Player Banners</span>
+      </label>
+
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-top:8px; margin-bottom:4px;">Player Name Style</div>
+      <div class="ci-inline-row" style="margin-bottom: 6px;">
+        <div class="ci-field">
+          <div class="ci-label">Text Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="pi-name-color-picker" type="color" value="">
+            <input class="ci-input" id="pi-name-color" type="text" value="" style="width:70px;">
+          </div>
+        </div>
+        <div class="ci-field">
+          <div class="ci-label">Glow Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="pi-name-glow-color-picker" type="color" value="">
+            <input class="ci-input" id="pi-name-glow-color" type="text" value="" style="width:70px;">
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Glow Intensity</div>
+          <select class="ci-select" id="pi-name-glow-intensity">
+            <option value="none">None</option>
+            <option value="subtle">Subtle</option>
+            <option value="normal">Normal</option>
+            <option value="strong">Strong</option>
+            <option value="intense">Intense</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-top:8px; margin-bottom:4px;">Title / Challenge Banner Style</div>
+      <div class="ci-inline-row" style="margin-bottom: 6px;">
+        <div class="ci-field">
+          <div class="ci-label">Text Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="pi-title-color-picker" type="color" value="">
+            <input class="ci-input" id="pi-title-color" type="text" value="" style="width:70px;">
+          </div>
+        </div>
+        <div class="ci-field">
+          <div class="ci-label">Glow Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="pi-title-glow-color-picker" type="color" value="">
+            <input class="ci-input" id="pi-title-glow-color" type="text" value="" style="width:70px;">
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Glow Intensity</div>
+          <select class="ci-select" id="pi-title-glow-intensity">
+            <option value="none" selected>None</option>
+            <option value="subtle">Subtle</option>
+            <option value="normal">Normal</option>
+            <option value="strong">Strong</option>
+            <option value="intense">Intense</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-top:8px; margin-bottom:4px;">Customize Avatar Border</div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
+        <input type="checkbox" id="pi-hide-border" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hide Level Border Image</span>
+      </label>
+      <div class="ci-inline-row">
+        <div class="ci-field" style="grid-column: span 2;">
+          <div class="ci-label">Custom Border Image URL</div>
+          <div style="display:flex;gap:4px;">
+            <input class="ci-input" id="pi-border-url" type="text" placeholder="./assets/border.png" style="font-size:12px; padding:8px 10px;flex:1;">
+            <button class="ci-btn-prop" id="pi-border-browse" title="Browse files">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <button class="ci-btn-primary" id="pi-apply-btn" style="width:100%;font-size:11px;margin-top:12px;">Update Player Identity CSS</button>
+    <div style="text-align:center; margin-top:6px;">
+        <span class="ci-flash" id="pi-flash"></span>
+    </div>
+  `;
+
+  // Sync color pickers
+  const syncColor = (pickerId, textId) => {
+    const picker = row.querySelector(pickerId);
+    const text = row.querySelector(textId);
+    picker.addEventListener("input", () => (text.value = picker.value));
+    text.addEventListener("input", () => {
+      if (/^#[0-9a-f]{6}$/i.test(text.value)) picker.value = text.value;
+    });
+  };
+
+  syncColor("#pi-name-color-picker", "#pi-name-color");
+  syncColor("#pi-name-glow-color-picker", "#pi-name-glow-color");
+  syncColor("#pi-title-color-picker", "#pi-title-color");
+  syncColor("#pi-title-glow-color-picker", "#pi-title-glow-color");
+
+  row.querySelector("#pi-border-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#pi-border-url"));
+  });
+
+  row.querySelector("#pi-apply-btn").addEventListener("click", () => {
+    const hideBanners = row.querySelector("#pi-hide-banners").checked;
+
+    const nameColor = row.querySelector("#pi-name-color").value.trim();
+    const nameGlowColor = row.querySelector("#pi-name-glow-color").value.trim();
+    const nameGlowIntensity = row.querySelector(
+      "#pi-name-glow-intensity",
+    ).value;
+
+    const titleColor = row.querySelector("#pi-title-color").value.trim();
+    const titleGlowColor = row
+      .querySelector("#pi-title-glow-color")
+      .value.trim();
+    const titleGlowIntensity = row.querySelector(
+      "#pi-title-glow-intensity",
+    ).value;
+
+    const hideBorder = row.querySelector("#pi-hide-border").checked;
+    const borderUrl = row.querySelector("#pi-border-url").value.trim();
+
+    const START_MARKER = "/* === PLAYER IDENTITY === */";
+    const END_MARKER = "/* === END PLAYER IDENTITY === */";
+    const lines = [START_MARKER];
+
+    // Generate glow shadow
+    const getGlowString = (color, intensity) => {
+      if (intensity === "none" || !color) return "";
+      if (intensity === "subtle") return `0 0 4px ${color}`;
+      if (intensity === "normal") return `0 0 8px ${color}`;
+      if (intensity === "strong") return `0 0 10px ${color}, 0 0 4px ${color}`;
+      if (intensity === "intense")
+        return `0 0 15px ${color}, 0 0 8px ${color}, 0 0 4px ${color}`;
+      return "";
+    };
+
+    if (hideBanners) {
+      lines.push(
+        ".regalia-banner-state-machine, .regalia-parties-v2-root .regalia-parties-v2-banner-backdrop, .placeholder-invited-container, .regalia-banner-asset-static-image { display: none !important; }",
+      );
+    }
+
+    const nameShadow = getGlowString(nameGlowColor, nameGlowIntensity);
+    if (nameColor || nameShadow) {
+      lines.push(".player-name-component {");
+      if (nameColor) lines.push(`  color: ${nameColor} !important;`);
+      if (nameShadow) lines.push(`  text-shadow: ${nameShadow} !important;`);
+      lines.push("}");
+    }
+
+    const titleShadow = getGlowString(titleGlowColor, titleGlowIntensity);
+    if (titleColor || titleShadow) {
+      lines.push(".challenge-banner-title-container {");
+      if (titleColor) lines.push(`  color: ${titleColor} !important;`);
+      if (titleShadow) lines.push(`  text-shadow: ${titleShadow} !important;`);
+      lines.push("}");
+    }
+
+    if (hideBorder) {
+      lines.push(".theme-ring-border { background-image: none !important; }");
+    } else if (borderUrl) {
+      lines.push(".theme-ring-border {");
+      lines.push(`  background-image: url('${borderUrl}') !important;`);
+      lines.push("  background-size: cover !important;");
+      lines.push("  background-position: center !important;");
+      lines.push("}");
+    }
+
+    if (lines.length === 1) lines.push("/* No options selected */");
+
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(
+      row.querySelector("#pi-flash"),
+      "Player Identity Updated!",
+      "#4caf82",
+    );
+  });
+
+  return row;
+}
+
+function buildPlayerHoverCardRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Player Hover Card</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Customize the appearance of the player hover card (profile tooltip).</div>
+    
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="phc-glass" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Apply Full Glass Hover Card Style</span>
+      </label>
+    </div>
+
+    <button class="ci-btn-primary" id="phc-apply-btn" style="width:100%;font-size:11px;margin-top:12px;">Update Hover Card CSS</button>
+    <div style="text-align:center; margin-top:6px;">
+        <span class="ci-flash" id="phc-flash"></span>
+    </div>
+  `;
+
+  row.querySelector("#phc-apply-btn").addEventListener("click", () => {
+    const applyGlass = row.querySelector("#phc-glass").checked;
+
+    const START_MARKER = "/* === PLAYER HOVER CARD === */";
+    const END_MARKER = "/* === END PLAYER HOVER CARD === */";
+    const lines = [START_MARKER];
+
+    if (applyGlass) {
+      lines.push(
+        `
+.hover-card {
+  padding-right: 10px;
+}
+
+/* Hide the old SVG border */
+#border-container {
+  display: none !important;
+}
+
+.hover-card-container {
+  position: relative;
+  border-radius: 16px;
+  background: rgba(20, 20, 28, 0.35) !important;
+  backdrop-filter: blur(18px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(140%) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), inset 0 1px 2px rgba(255, 255, 255, 0.1) !important;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.3s ease !important;
+}
+
+.hover-card-container:hover {
+  transform: translateY(-4px) scale(1.01) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7), 0 0 20px rgba(122, 162, 255, 0.4) !important;
+}
+
+.hover-card-container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 30%, transparent 60%) !important;
+  pointer-events: none;
+  z-index: 5;
+}
+
+#hover-card-backdrop {
+  filter: brightness(0.45) saturate(1.1) !important;
+  transform: scale(1.02) !important;
+  transition: filter 0.2s ease !important;
+}
+
+.hover-card:hover #hover-card-backdrop {
+  filter: brightness(0.55) saturate(1.15) !important;
+}
+
+.hover-card-name {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 18px !important;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6) !important;
+}
+
+.hover-card-game-tag {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.hover-card-title {
+  color: #7aa2ff !important;
+}
+
+.hover-card-info-container {
+  background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(10,12,18,0.7) 60%) !important;
+}
+
+.hover-card-footer {
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(10px) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.hover-card-mastery-score,
+.hover-card-rank-image,
+.hover-card-crystal-image {
+  filter: drop-shadow(0 0 6px rgba(122, 162, 255, 0.6)) !important;
+}
+
+.open-party-occupancy {
+  color: #4cffc6 !important;
+  text-shadow: 0 0 6px rgba(76,255,198,0.6) !important;
+}
+
+.open-party-string {
+  color: #7aa2ff !important;
+}
+`.trim(),
+      );
+    } else {
+      lines.push("/* No options selected */");
+    }
+
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(
+      row.querySelector("#phc-flash"),
+      "Hover Card CSS Updated!",
+      "#4caf82",
+    );
+  });
+
+  return row;
+}
+
+function buildChampSelectRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Champion Select</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Controls for the Champion Select phase.</div>
+    
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="cs-glass-art" style="accent-color:#c8aa6e;cursor:pointer;margin-top:2px;">
+        <div style="display:flex;flex-direction:column;">
+            <span style="font-size:11px;color:#a0b4c8;font-weight:600;">Glass Card Splash Art</span>
+        </div>
+      </label>
+    </div>
+    
+    <button class="ci-btn-primary" id="cs-apply-btn" style="width:100%;font-size:11px;margin-top:12px;">Update Champ Select CSS</button>
+    <div style="text-align:center; margin-top:6px;">
+        <span class="ci-flash" id="cs-flash"></span>
+    </div>
+  `;
+
+  row.querySelector("#cs-apply-btn").addEventListener("click", () => {
+    const doGlassArt = row.querySelector("#cs-glass-art").checked;
+
+    const START_MARKER = "/* === CHAMP SELECT MODS === */";
+    const END_MARKER = "/* === END CHAMP SELECT MODS === */";
+    const lines = [START_MARKER];
+
+    if (doGlassArt) {
+      lines.push(
+        `img.champion-background-image, div.skin-selection-thumbnail img, div.portrait-icon img {`,
+      );
+      lines.push(
+        `  opacity: 1 !important; display: block !important; visibility: visible !important;`,
+      );
+      lines.push(`}`);
+      lines.push(``);
+      lines.push(`.champion-select .champion-splash-background {`);
+      lines.push(`  position: absolute !important;`);
+      lines.push(`  display: block !important;`);
+      lines.push(`  width: 60% !important;`);
+      lines.push(`  height: 75% !important;`);
+      lines.push(`  top: 10% !important;`);
+      lines.push(`  left: 50% !important;`);
+      lines.push(`  transform: translateX(-50%) !important;`);
+      lines.push(
+        `  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(5,5,10,0.4) 100%) !important;`,
+      );
+      lines.push(`  backdrop-filter: blur(12px) saturate(110%) !important;`);
+      lines.push(`  border: 1px solid rgba(255,255,255,0.1) !important;`);
+      lines.push(`  border-top: 1px solid rgba(255,255,255,0.2) !important;`);
+      lines.push(`  border-radius: 12px !important;`);
+      lines.push(
+        `  box-shadow: 0 24px 48px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.05) !important;`,
+      );
+      lines.push(`  z-index: 0 !important;`);
+      lines.push(`  overflow: hidden !important;`);
+      lines.push(`  -webkit-mask-image: none !important;`);
+      lines.push(`}`);
+      lines.push(``);
+      lines.push(`.champion-select, .champion-select .champ-select-bg {`);
+      lines.push(`  position: absolute !important;`);
+      lines.push(`  width: 100% !important;`);
+      lines.push(`  height: 100% !important;`);
+      lines.push(`  inset: 0 !important;`);
+      lines.push(`  background: transparent !important;`);
+      lines.push(`}`);
+      lines.push(``);
+      lines.push(`.champion-select .champ-select-bg img {`);
+      lines.push(`  width: 100% !important;`);
+      lines.push(`  height: 100% !important;`);
+      lines.push(`  object-fit: cover !important;`);
+      lines.push(`  object-position: top center !important;`);
+      lines.push(
+        `  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%) !important;`,
+      );
+      lines.push(`}`);
+      lines.push(
+        `img[src*="map-south.png"], img[src*="map-north.png"], img[src*="champ-select-planning-intro.jpg"], img[src*="gameflow-background.jpg"], img[src*="ready-check-background.png"] { display: none !important;}`,
+      );
+    } else {
+      lines.push(`/* No options selected */`);
+    }
+
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(
+      row.querySelector("#cs-flash"),
+      "Champ Select CSS Updated!",
+      "#4caf82",
     );
   });
 
@@ -611,7 +2629,7 @@ function buildOmniRow() {
   row.className = "ci-generic-row";
   row.style.borderBottom = "2px solid #785a28";
   row.innerHTML = `
-    <div class="ci-generic-title" style="color:#f0e6d3; font-size:12px;">✨ Omni Inspector</div>
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:12px;">Omni Inspector</div>
     <div class="ci-generic-desc">Type any selector OR use the picker (🎯). Then click Inspect to see and edit its live CSS properties.</div>
     
     <div style="display:flex;gap:4px;margin-bottom:8px;">
@@ -631,6 +2649,7 @@ function buildOmniRow() {
       <div id="omni-controls-wrap" class="ci-element-controls" style="padding:10px 12px;"></div>
       <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid #1a2535;">
         <button id="omni-add-all-btn" class="ci-btn-primary" style="font-size:10px;padding:5px 12px;">→ Add All to CSS</button>
+        <button id="omni-extract-btn" class="ci-btn-secondary" style="font-size:10px;padding:5px 12px;">🖼 Extract Assets</button>
         <span class="ci-flash" id="omni-add-all-flash">Added ✓</span>
       </div>
     </div>
@@ -646,88 +2665,16 @@ function buildOmniRow() {
   const propCount = row.querySelector("#omni-prop-count");
   const controlsWrap = row.querySelector("#omni-controls-wrap");
   const addAllBtn = row.querySelector("#omni-add-all-btn");
+  const extractBtn = row.querySelector("#omni-extract-btn");
   const addAllFlash = row.querySelector("#omni-add-all-flash");
 
   let _inspInputs = [];
 
-  // Query in main document, plus shadow roots and same-origin frames recursively.
-  function querySelectorInDocument(doc, selector, visitedDocs = new Set()) {
-    if (!doc || !selector) return null;
-    if (visitedDocs.has(doc)) return null;
-    visitedDocs.add(doc);
-
-    // 1) direct searched document
-    try {
-      const el = doc.querySelector(selector);
-      if (el) return el;
-    } catch {
-      // invalid selector or no access
-    }
-
-    // 2) shadow roots tracked by our manager (global hook in shadow-manager.js)
-    try {
-      const roots = getShadowRoots();
-      for (const { shadowRoot } of roots) {
-        if (!shadowRoot) continue;
-        try {
-          const inner = shadowRoot.querySelector(selector);
-          if (inner) return inner;
-        } catch {
-          /* ignore */
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-
-    // 3) fallback: manual scan for open shadow roots in this doc
-    try {
-      const candidates = doc.querySelectorAll("*:not(script):not(style)");
-      for (const node of candidates) {
-        if (node.shadowRoot) {
-          try {
-            const inner = node.shadowRoot.querySelector(selector);
-            if (inner) return inner;
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-
-    // 4) traverse nested same-origin iframes recursively
-    try {
-      const iframes = doc.querySelectorAll("iframe");
-      for (const iframe of iframes) {
-        try {
-          if (!iframe.contentDocument) continue;
-          const fromFrame = querySelectorInDocument(
-            iframe.contentDocument,
-            selector,
-            visitedDocs,
-          );
-          if (fromFrame) return fromFrame;
-        } catch {
-          // cross-origin iframe, cannot access
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-
-    return null;
-  }
-
-  function querySelectorDeep(selector) {
-    return querySelectorInDocument(document, selector);
-  }
-
+  // Omni Inspector runner
   const runInspect = () => {
     const sel = selInput.value.trim();
     if (!sel) return;
-    const el = querySelectorDeep(sel);
+    const el = piercingQuerySelector(sel);
     status.style.display = "block";
     if (!el) {
       status.style.color = "#c84b4b";
@@ -753,12 +2700,13 @@ function buildOmniRow() {
     const notBadge = document.createElement("span");
     notBadge.style.display = "none";
     props.forEach((prop) => {
-      const ctrl = buildPropControl(sel, prop, notBadge);
-      if (_inputs.length > 0) {
-        _inputs[_inputs.length - 1].isOmni = true;
-        _inspInputs.push(_inputs[_inputs.length - 1]);
+      const { wrap, reg } = buildPropControl(sel, prop, notBadge);
+      if (reg) {
+        reg.isOmni = true;
+        reg.domNode = el; // pass the found node directly
+        _inspInputs.push(reg);
       }
-      controlsWrap.appendChild(ctrl);
+      controlsWrap.appendChild(wrap);
     });
     _inspInputs.forEach((reg) => {
       try {
@@ -783,21 +2731,38 @@ function buildOmniRow() {
     const sel = selInput.value.trim();
     if (!sel || !_inspInputs.length) return;
 
-    // Use batch update to keep CSS clean
     const batch = {};
     _inspInputs.forEach((reg) => {
-      const val = reg.inputEl?.value?.trim();
+      let val = reg.inputEl?.value?.trim();
       if (!val || val === "" || val === "auto" || val === "normal") return;
       const finalProp = reg.prop === "scale" ? "transform" : reg.prop;
+
+      if (
+        (finalProp === "background-image" || finalProp === "content") &&
+        val !== "none" &&
+        val !== "inherit" &&
+        val !== "initial" &&
+        val !== "unset" &&
+        !val.startsWith("url(") &&
+        !val.startsWith("linear-gradient(") &&
+        !val.startsWith("radial-gradient(")
+      ) {
+        val = `url('${val}')`;
+      }
       batch[finalProp] = val;
     });
 
     if (Object.keys(batch).length === 0) return;
 
-    setCssBatch(sel, batch); // SMART UPDATE HERE
+    setCssBatch(sel, batch);
 
     flashMessage(addAllFlash);
     sendToRaw();
+  });
+
+  extractBtn.addEventListener("click", () => {
+    const sel = selInput.value.trim();
+    if (sel) extractAndNavigate(sel);
   });
 
   return row;
@@ -809,7 +2774,7 @@ function buildHoverRevealRow() {
   row.className = "ci-generic-row";
 
   row.innerHTML = `
-    <div class="ci-generic-title">👻 Hover-to-Reveal</div>
+    <div class="ci-generic-title">Hover-to-Reveal</div>
     <div class="ci-generic-desc">The most popular theme trick — elements stay hidden until you hover over them. Check what you want to hide, then add to CSS.</div>
     <div id="htr-list" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:8px 0;font-size:10px;"></div>
     <div class="ci-inline-row" style="margin-top:6px;">
@@ -913,7 +2878,6 @@ function buildHoverRevealRow() {
       const cb = row.querySelector("#" + item.id);
       if (!cb?.checked) return;
       const hideSel = item.sel;
-      // If element has a special hover selector (like xp-ring), use that; else self:hover
       const hoverSel = item.hover || hideSel + ":hover";
       lines.push(
         `${hideSel} {\n  opacity: 0 !important;\n  transition: ${speed} !important;\n}`,
@@ -1062,7 +3026,7 @@ function buildMinimalModeRow() {
   ];
 
   row.innerHTML = `
-    <div class="ci-generic-title">🧹 Minimal / Clean Mode</div>
+    <div class="ci-generic-title">Minimal / Clean Mode</div>
     <div class="ci-generic-desc">One-click transparency sweep. Select categories to include — generates the same CSS block used by every popular acrylic theme.</div>
     <div id="min-cats" style="display:flex;flex-direction:column;gap:4px;margin:8px 0;"></div>
     <button class="ci-btn-add" data-action="min" style="margin-top:6px;">→ Generate Clean CSS</button>
@@ -1103,7 +3067,7 @@ function buildMinimalModeRow() {
 
       if (cat.selectors && cat.props) {
         const propLines = Object.entries(cat.props)
-          .map(([p, v]) => `  ${p}: ${v} !important;`)
+          .map(([p, v]) => `${p}: ${v} !important;`)
           .join("\n");
         lines.push(`${cat.selectors.join(",\n")} {\n${propLines}\n}`);
       }
@@ -1169,7 +3133,7 @@ function buildCssVarsRow() {
   ];
 
   row.innerHTML = `
-    <div class="ci-generic-title">🎨 CSS Variable Palette</div>
+    <div class="ci-generic-title">CSS Variable Palette</div>
     <div class="ci-generic-desc">Set :root color variables used by League's own styles and community themes. Change these to recolor large parts of the UI at once.</div>
     <div id="cssvar-list" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:8px 0;"></div>
     <div class="ci-inline-row" style="margin-top:4px;">
@@ -1220,11 +3184,11 @@ function buildCssVarsRow() {
     const lines = [];
     vars.forEach((v) => {
       const val = row.querySelector("#" + v.id + "-text").value.trim();
-      if (val) lines.push(`  ${v.name}: ${val};`);
+      if (val) lines.push(`${v.name}: ${val};`);
     });
     const customName = row.querySelector("#var-custom-name").value.trim();
     const customVal = row.querySelector("#var-custom-val").value.trim();
-    if (customName && customVal) lines.push(`  ${customName}: ${customVal};`);
+    if (customName && customVal) lines.push(`${customName}: ${customVal};`);
 
     if (!lines.length) return;
 
@@ -1331,7 +3295,6 @@ function buildHueRotateRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
 
-  // Curated target groups from theme analysis
   const targetGroups = [
     {
       id: "hue-nav",
@@ -1416,7 +3379,7 @@ function buildHueRotateRow() {
   ];
 
   row.innerHTML = `
-    <div class="ci-generic-title">🌈 Global Hue-Rotate</div>
+    <div class="ci-generic-title">Global Hue-Rotate</div>
     <div class="ci-generic-desc">Shift the color of large groups of UI elements at once using CSS <code style="color:#c8aa6e;font-size:9px;">filter: hue-rotate()</code>. The fastest way to recolor the entire client's theme.</div>
     <div class="ci-inline-row" style="margin-bottom:8px;">
       <div class="ci-field" style="grid-column:span 2;">
@@ -1451,7 +3414,6 @@ function buildHueRotateRow() {
   const updateHue = () => {
     const deg = parseInt(slider.value) || 0;
     text.value = deg + "deg";
-    // Rotate the gold color to preview
     preview.style.filter = `hue-rotate(${deg}deg)`;
   };
   slider.addEventListener("input", () => {
@@ -1531,7 +3493,7 @@ function buildGradientBgRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
   row.innerHTML = `
-    <div class="ci-generic-title">🎨 Gradient Background</div>
+    <div class="ci-generic-title">Gradient Background</div>
     <div class="ci-generic-desc">Apply a linear gradient to any element. Used by themes on the play button, sidebar, nav items, and screen overlays.</div>
     <div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Selector</div>
@@ -1644,7 +3606,6 @@ function buildGradientBgRow() {
 }
 
 // SCREEN TINT (::before)
-// mix-blend-mode: hue overlay via ::before
 function buildScreenTintRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
@@ -1803,8 +3764,6 @@ ${sel}::before {
 }`,
     );
 
-    // If content inside needs to be above the ::before, generate z-index rules
-
     const START_MARKER =
       "/* =========================================== */\n/* SCREEN TINT OVERLAY                         */\n/* =========================================== */";
     const END_MARKER =
@@ -1821,12 +3780,11 @@ ${sel}::before {
 }
 
 // ROOT VIEWPORT OVERLAY (::before on #rcp-fe-viewport-root)
-// Adds a semi-transparent colour wash to darken/tint the client when using a custom background image.
 function buildRootOverlayRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
   row.innerHTML = `
-    <div class="ci-generic-title">🌑 Root Viewport Overlay</div>
+    <div class="ci-generic-title">Root Viewport Overlay</div>
     <div class="ci-generic-desc">Adds a <code style="color:#c8aa6e;font-size:9px;">::before</code> dark tint behind the entire client. Used in every background-image theme to darken the wallpaper without affecting UI elements. Targets <code style="color:#c8aa6e;font-size:9px;">#rcp-fe-viewport-root</code>.</div>
     <div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Overlay color</div>
@@ -1885,15 +3843,15 @@ function buildRootOverlayRow() {
     const z = row.querySelector("#rovl-z").value;
     const iso = row.querySelector("#rovl-iso").value;
 
-    const rootProps = iso === "yes" ? "  isolation: isolate;\n" : "";
+    const rootProps = iso === "yes" ? "isolation: isolate;\n" : "";
     const css =
       "#rcp-fe-viewport-root {\n" +
       rootProps +
-      "}\n\n#rcp-fe-viewport-root::before {\n  content: '';\n  position: absolute;\n  inset: 0;\n  background: " +
+      "}\n\n#rcp-fe-viewport-root::before {\n  content: '';\n  position: absolute;\n  inset: 0;\n  background:" +
       color +
-      ";\n  opacity: " +
+      ";\n  opacity:" +
       opacity +
-      ";\n  pointer-events: none;\n  z-index: " +
+      ";\n  pointer-events: none;\n  z-index:" +
       z +
       ";\n}";
 
@@ -1910,7 +3868,6 @@ function buildRootOverlayRow() {
 }
 
 // GLASS PANEL (targeted backdrop-filter)
-// Apply blur + optional dark background to give any panel the frosted glass look.
 function buildGlassPanelRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
@@ -1936,7 +3893,7 @@ function buildGlassPanelRow() {
   ];
 
   row.innerHTML = `
-    <div class="ci-generic-title">🪟 Glass Panel (backdrop-filter)</div>
+    <div class="ci-generic-title">Glass Panel (backdrop-filter)</div>
     <div class="ci-generic-desc">Apply a frosted-glass blur to specific panels. Uses <code style="color:#c8aa6e;font-size:9px;">backdrop-filter: blur()</code> with an optional dark tint. Pick presets or enter a custom selector.</div>
     <div id="gp-presets" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin:8px 0;font-size:10px;"></div>
     <div id="gp-custom-wrap" style="display:none;margin-bottom:6px;">
@@ -2028,7 +3985,7 @@ function buildGlassPanelRow() {
     const bg = text.value.trim();
     const radius = row.querySelector("#gp-radius").value;
 
-    const bfVal = bright ? blur + " " + bright : blur;
+    const bfVal = bright ? blur + "" + bright : blur;
 
     const sels = [];
     presets.forEach((p) => {
@@ -2045,14 +4002,14 @@ function buildGlassPanelRow() {
 
     const lines = sels.map((sel) => {
       let props =
-        "  backdrop-filter: blur(" +
+        "backdrop-filter: blur(" +
         blur +
         ")" +
-        (bright ? " " + bright : "") +
-        " !important;";
-      if (bg) props += "\n  background: " + bg + " !important;";
-      if (radius) props += "\n  border-radius: " + radius + " !important;";
-      return sel + " {\n" + props + "\n}";
+        (bright ? "" + bright : "") +
+        "!important;";
+      if (bg) props += "\n  background:" + bg + "!important;";
+      if (radius) props += "\n  border-radius:" + radius + "!important;";
+      return sel + "{\n" + props + "\n}";
     });
 
     const START_MARKER =
@@ -2111,7 +4068,7 @@ function buildMaskFadeRow() {
   ];
 
   row.innerHTML = `
-    <div class="ci-generic-title">🎭 Mask / Fade Edge</div>
+    <div class="ci-generic-title">Mask / Fade Edge</div>
     <div class="ci-generic-desc">Fade the edges of elements using <code style="color:#c8aa6e;font-size:9px;">-webkit-mask</code> gradients — used by acrylic themes to blend splash art, banners, and sidebars into the background.</div>
     <div id="mf-presets" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin:8px 0;font-size:10px;"></div>
     <div id="mf-custom-wrap" style="display:none;margin-bottom:6px;">
@@ -2195,10 +4152,10 @@ function buildMaskFadeRow() {
     const lines = sels.map((sel) => {
       let props = "";
       if (target === "both" || target === "webkit")
-        props += "  -webkit-mask: " + pattern + ";\n";
+        props += "-webkit-mask:" + pattern + ";\n";
       if (target === "both" || target === "standard")
-        props += "  mask: " + pattern + ";\n";
-      return sel + " {\n" + props + "}";
+        props += "mask:" + pattern + ";\n";
+      return sel + "{\n" + props + "}";
     });
 
     const START_MARKER =
@@ -2222,16 +4179,18 @@ function buildLocalAssetRow() {
 
   row.innerHTML = `
     <div class="ci-generic-title">📁 Local Asset Path</div>
-    <div class="ci-generic-desc">Reference images from your plugin's <code style="color:#c8aa6e;font-size:9px;">assets/</code> folder. Drop files into <code style="color:#c8aa6e;font-size:9px;">/plugins/snooze-css/assets/yourtheme/</code> — Pengu serves them as static files.</div>
+    <div class="ci-generic-desc">Reference images from your plugin's <code style="color:#c8aa6e;font-size:9px;">assets/</code> folder. Drop files into <code style="color:#c8aa6e;font-size:9px;">/plugins/snooze-css/assets/</code> — Pengu serves them as static files.</div>
     <div class="ci-inline-row">
-      <div class="ci-field"><div class="ci-label">Theme folder name</div>
-        <input class="ci-input" id="asset-theme" type="text" placeholder="mytheme" style="width:100px;"></div>
       <div class="ci-field"><div class="ci-label">Filename</div>
-        <input class="ci-input" id="asset-file" type="text" placeholder="background.jpg"></div>
+        <div style="display:flex;gap:4px;">
+          <input class="ci-input" id="asset-file" type="text" placeholder="background.jpg" style="flex:1;">
+          <button class="ci-btn-prop" id="asset-browse-btn" title="Browse files">+</button>
+        </div>
+      </div>
     </div>
     <div style="margin:6px 0 8px;">
       <div class="ci-label" style="margin-bottom:3px;">Generated path</div>
-      <code id="asset-preview" style="font-size:10px;color:#c8aa6e;font-family:'Fira Code',monospace;background:rgba(0,0,0,0.3);padding:4px 8px;display:block;">./assets/mytheme/background.jpg</code>
+      <code id="asset-preview" style="font-size:10px;color:#c8aa6e;font-family:'Fira Code',monospace;background:rgba(0,0,0,0.3);padding:4px 8px;display:block;">./assets/background.jpg</code>
     </div>
     <div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Use as</div>
@@ -2248,19 +4207,77 @@ function buildLocalAssetRow() {
     </div>
     <button class="ci-btn-add" data-action="asset" style="margin-top:8px;">→ Add to CSS</button>
     <span class="ci-flash" id="ci-flash-asset">Added ✓</span>
+    <div class="ci-flash" id="ci-flash-asset-status" style="margin-top:6px;font-size:10px;"></div>
   `;
 
-  const themeInput = row.querySelector("#asset-theme");
   const fileInput = row.querySelector("#asset-file");
   const preview = row.querySelector("#asset-preview");
+  const browseBtn = row.querySelector("#asset-browse-btn");
+  const statusEl = row.querySelector("#ci-flash-asset-status");
+
+  // Create hidden file input
+  const hiddenFileInput = document.createElement("input");
+  hiddenFileInput.type = "file";
+  hiddenFileInput.accept =
+    "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm";
+  hiddenFileInput.style.display = "none";
+  row.appendChild(hiddenFileInput);
 
   const updatePreview = () => {
-    const theme = themeInput.value.trim() || "mytheme";
     const file = fileInput.value.trim() || "image.jpg";
-    preview.textContent = `./assets/${theme}/${file}`;
+    preview.textContent = `./assets/${file}`;
   };
-  themeInput.addEventListener("input", updatePreview);
+
+  // Status flash helper
+  const flashStatus = (msg, type = "info") => {
+    const colors = {
+      info: "#a0b4c8",
+      success: "#4caf82",
+      error: "#d97777",
+    };
+    statusEl.textContent = msg;
+    statusEl.style.color = colors[type];
+    setTimeout(() => (statusEl.textContent = ""), 5000);
+  };
+
   fileInput.addEventListener("input", updatePreview);
+
+  // File picker handler
+  browseBtn.addEventListener("click", () => {
+    hiddenFileInput.click();
+  });
+
+  hiddenFileInput.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const filename = file.name;
+
+    // Set the form field
+    fileInput.value = filename;
+    updatePreview();
+
+    const relPath = `./assets/${filename}`;
+
+    const testUrl = new URL(relPath, import.meta.url).href;
+    try {
+      const testFetch = await fetch(testUrl, { method: "HEAD" });
+      if (testFetch.ok) {
+        flashStatus(`Asset found at ${relPath}`, "success");
+      } else if (testFetch.status === 404) {
+        flashStatus(
+          `⚠ Asset not found at ${relPath} — Make sure file exists in assets folder!`,
+          "error",
+        );
+      } else {
+        flashStatus(`Selected: ${filename}`, "success");
+      }
+    } catch (err) {
+      flashStatus(`⚠ Please ensure ${filename} is in ./assets/`, "info");
+    }
+
+    hiddenFileInput.value = "";
+  });
 
   row.querySelector(".ci-picker-btn").addEventListener("click", () => {
     startElementPicker((sel) => (row.querySelector("#asset-sel").value = sel));
@@ -2273,7 +4290,6 @@ function buildLocalAssetRow() {
 
     let cssToAppend = null;
     if (use === "copy") {
-      // Just append the path as a comment so user can use it manually
       cssToAppend = `/* Local asset path: ${path} */`;
     } else if (use === "bg" && sel) {
       setCssBatch(sel, {
@@ -2376,7 +4392,11 @@ function buildBgRow() {
         </div>
       </div>
       <div class="ci-field"><div class="ci-label">Image URL</div>
-        <input class="ci-input" id="ci-bg-url" type="text" placeholder="https://... or file:///..."></div>
+        <div style="display:flex;gap:4px;">
+          <input class="ci-input" id="ci-bg-url" type="text" placeholder="https://... or file:///..." style="flex:1;">
+          <button class="ci-btn-prop" id="ci-bg-browse" title="Browse files">+</button>
+        </div>
+      </div>
     </div>
     <div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Size</div>
@@ -2397,6 +4417,9 @@ function buildBgRow() {
         (sel) => (row.querySelector("#ci-bg-sel").value = sel),
       ),
     );
+  row.querySelector("#ci-bg-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#ci-bg-url"));
+  });
   row.querySelector('[data-action="bg"]').addEventListener("click", () => {
     const sel = row.querySelector("#ci-bg-sel").value.trim();
     const url = row.querySelector("#ci-bg-url").value.trim();
@@ -2429,7 +4452,11 @@ function buildImgReplaceRow() {
         </div>
       </div>
       <div class="ci-field"><div class="ci-label">New Image URL</div>
-        <input class="ci-input" id="ci-img-url" type="text" placeholder="https://... or file:///..."></div>
+        <div style="display:flex;gap:4px;">
+          <input class="ci-input" id="ci-img-url" type="text" placeholder="https://... or file:///..." style="flex:1;">
+          <button class="ci-btn-prop" id="ci-img-browse" title="Browse files">+</button>
+        </div>
+      </div>
     </div>`,
     "img-replace",
   );
@@ -2440,6 +4467,9 @@ function buildImgReplaceRow() {
         (sel) => (row.querySelector("#ci-img-sel").value = sel),
       ),
     );
+  row.querySelector("#ci-img-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#ci-img-url"));
+  });
   row
     .querySelector('[data-action="img-replace"]')
     .addEventListener("click", () => {
@@ -2465,49 +4495,189 @@ function buildFontRow() {
   row.className = "ci-generic-row";
 
   row.innerHTML = `
-    <div class="ci-generic-title">🔤 Font Override</div>
-    <div class="ci-generic-desc">Replace the client font globally via <code style="color:#c8aa6e;font-size:9px;">:root</code> CSS variables — the correct approach used by every community theme. Find fonts at <a style="color:#785a28;" href="https://fonts.google.com" target="_blank">fonts.google.com</a></div>
-    <div class="ci-inline-row">
-      <div class="ci-field"><div class="ci-label">Font name</div>
-        <input class="ci-input" id="ci-font-name" type="text" placeholder="Orbitron"></div>
-      <div class="ci-field"><div class="ci-label">Scope</div>
-        <select class="ci-select" id="ci-font-scope">
-          <option value="both">Both (display + body)</option>
-          <option value="display">Display only</option>
-          <option value="body">Body only</option>
-        </select></div>
-    </div>
-    <div class="ci-field" style="margin-bottom:8px;"><div class="ci-label">Google Fonts @import URL</div>
+    <div class="ci-generic-title">Font Override</div>
+    <div class="ci-generic-desc">Replace the client font globally or target specific elements. You can mix and match by adding multiple rules. Find fonts at <a style="color:#785a28;" href="https://fonts.google.com" target="_blank">fonts.google.com</a></div>
+    
+    <div class="ci-field" style="margin-bottom:8px;">
+      <div class="ci-label">1. Google Fonts @import URL (Optional)</div>
       <input class="ci-input" id="ci-font-url" type="text" placeholder="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" style="width:100%;">
+      <div style="font-size:9px;color:#3a5060;margin-top:3px;padding:4px 6px;background:rgba(0,0,0,0.2);border:1px solid #1a2535;">
+        💡 Tip: In Google Fonts, select your styles, click "Get embed code", and copy the @import link.
+      </div>
     </div>
-    <div style="font-size:9px;color:#3a5060;margin-bottom:8px;padding:6px 8px;background:rgba(0,0,0,0.2);border:1px solid #1a2535;">
-      💡 On Google Fonts: pick a font → click "Get font" → "Get embed code" → copy the @import URL
+
+    <div class="ci-inline-row">
+      <div class="ci-field">
+        <div class="ci-label">2. Font Family Name</div>
+        <input class="ci-input" id="ci-font-name" type="text" placeholder="Auto-detected or type manually">
+      </div>
+      <div class="ci-field">
+        <div class="ci-label">3. Apply To</div>
+        <select class="ci-select" id="ci-font-scope">
+          <option value="both">Global (All Text)</option>
+          <option value="display">Headers & Titles Only</option>
+          <option value="body">Body Text Only</option>
+          <option value="custom">Custom Element...</option>
+        </select>
+      </div>
     </div>
-    <button class="ci-btn-add" data-action="font">→ Add to CSS</button>
-    <span class="ci-flash" id="ci-flash-font">Added ✓</span>
+
+    <div class="ci-inline-row" id="ci-font-custom-wrap" style="display:none; margin-top:8px;">
+      <div class="ci-field" style="grid-column: span 2;">
+        <div class="ci-label">Custom Selector</div>
+        <div style="display:flex;gap:4px;">
+          <input class="ci-input" id="ci-font-custom-sel" type="text" placeholder=".player-name">
+          <button class="ci-btn-prop ci-picker-btn" title="Pick element">🎯</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:center;">
+      <button class="ci-btn-add" data-action="font" style="margin-top:8px;">→ Add to CSS</button>
+      <button class="ci-btn-danger" id="ci-font-reset" style="margin-top:8px; margin-left:8px; padding:5px 10px; font-size:10px; letter-spacing:0.08em; text-transform:uppercase;">Reset Fonts</button>
+      <span class="ci-flash" id="ci-flash-font">Added ✓</span>
+    </div>
   `;
+
+  // Toggle custom input
+  row.querySelector("#ci-font-scope").addEventListener("change", (e) => {
+    row.querySelector("#ci-font-custom-wrap").style.display =
+      e.target.value === "custom" ? "block" : "none";
+  });
+
+  // Picker
+  row.querySelector(".ci-picker-btn").addEventListener("click", () => {
+    startElementPicker(
+      (sel) => (row.querySelector("#ci-font-custom-sel").value = sel),
+    );
+  });
+
+  // Auto-detect on paste/input
+  row.querySelector("#ci-font-url").addEventListener("input", (e) => {
+    const url = e.target.value;
+    const nameField = row.querySelector("#ci-font-name");
+    let cleanUrl = url;
+    const urlMatch = cleanUrl.match(/(https?:\/\/[^'"><\s)]+)/);
+    if (urlMatch) {
+      cleanUrl = urlMatch[1];
+    }
+    if (cleanUrl.includes("family=")) {
+      const familyMatch = cleanUrl.match(/[?&]family=([^&:]+)/);
+      if (familyMatch && !nameField.value) {
+        nameField.value = decodeURIComponent(familyMatch[1]).replace(
+          /\+/g,
+          " ",
+        );
+      }
+    }
+  });
+
+  // Reset Fonts
+  row.querySelector("#ci-font-reset").addEventListener("click", () => {
+    const rawTa = row.getRootNode().querySelector("#ci-raw-textarea");
+    if (rawTa) {
+      let val = rawTa.value;
+      val = val.replace(
+        /\/\* === FONT OVERRIDE: [\s\S]*?\/\* === END FONT: .*? \*\/\n?/g,
+        "",
+      );
+      val = val.replace(
+        /@import url\(['"]https:\/\/fonts\.googleapis\.com.*?['"]\);\n?/g,
+        "",
+      );
+      rawTa.value = val.trimStart();
+      rawTa.dispatchEvent(new Event("input"));
+      const applyBtn = row.getRootNode().querySelector("#ci-btn-apply");
+      if (applyBtn) applyBtn.click();
+      flashMessage(
+        row.querySelector("#ci-flash-font"),
+        "Fonts Reset!",
+        "#c84b4b",
+      );
+    }
+  });
 
   row.querySelector('[data-action="font"]').addEventListener("click", () => {
     const url = row.querySelector("#ci-font-url").value.trim();
-    const name = row.querySelector("#ci-font-name").value.trim();
+    let name = row.querySelector("#ci-font-name").value.trim();
     const scope = row.querySelector("#ci-font-scope").value;
-    if (!name) return;
+    const customSel = row.querySelector("#ci-font-custom-sel").value.trim();
+
+    let cleanUrl = url;
+    const urlMatch = cleanUrl.match(/(https?:\/\/[^'"><\s)]+)/);
+    if (urlMatch) {
+      cleanUrl = urlMatch[1];
+    }
+
+    if (!name && cleanUrl && cleanUrl.includes("family=")) {
+      const familyMatch = cleanUrl.match(/[?&]family=([^&:]+)/);
+      if (familyMatch) {
+        name = decodeURIComponent(familyMatch[1]).replace(/\+/g, " ");
+        row.querySelector("#ci-font-name").value = name;
+      }
+    }
+
+    if (!name) {
+      flashMessage(
+        row.querySelector("#ci-flash-font"),
+        "Enter a font name",
+        "#c84b4b",
+      );
+      return;
+    }
+
+    if (!name.includes("'") && !name.includes('"') && !name.includes(",")) {
+      name = `'${name}', sans-serif`;
+    }
 
     const lines = [];
-    if (url) lines.push(`@import url('${url}');`);
+    const scopeName =
+      scope === "custom"
+        ? "CUSTOM_" + customSel.replace(/[^a-zA-Z0-9]/g, "")
+        : scope.toUpperCase();
+    const START_MARKER = `/* === FONT OVERRIDE: ${scopeName} === */`;
+    const END_MARKER = `/* === END FONT: ${scopeName} === */`;
 
-    const vars = [];
-    if (scope === "both" || scope === "display")
-      vars.push(`  --font-display: '${name}', sans-serif !important;`);
-    if (scope === "both" || scope === "body")
-      vars.push(`  --font-body: '${name}', sans-serif !important;`);
-    if (vars.length)
-      lines.push(`:root {
-${vars.join("\n")}
-}`);
+    lines.push(START_MARKER);
+
+    // Prepend the @import safely to the very top of the CSS file
+    if (cleanUrl) {
+      const rawTa = row.getRootNode().querySelector("#ci-raw-textarea");
+      if (rawTa) {
+        const importStmt = `@import url('${cleanUrl}');\n`;
+        if (!rawTa.value.includes(`@import url('${cleanUrl}')`)) {
+          rawTa.value = importStmt + rawTa.value;
+          rawTa.dispatchEvent(new Event("input"));
+        }
+      } else {
+        lines.push(`@import url('${cleanUrl}');`);
+      }
+    }
+
+    if (scope === "both") {
+      lines.push(
+        `:root {\n  --font-display: ${name} !important;\n  --font-body: ${name} !important;\n}`,
+      );
+    } else if (scope === "display") {
+      lines.push(`:root {\n  --font-display: ${name} !important;\n}`);
+    } else if (scope === "body") {
+      lines.push(`:root {\n  --font-body: ${name} !important;\n}`);
+    } else if (scope === "custom" && customSel) {
+      lines.push(`${customSel} {\n  font-family: ${name} !important;\n}`);
+    } else {
+      flashMessage(
+        row.querySelector("#ci-flash-font"),
+        "Enter a selector",
+        "#c84b4b",
+      );
+      return;
+    }
+
+    lines.push(END_MARKER);
+    const finalCss = lines.join("\n");
 
     flashMessage(row.querySelector("#ci-flash-font"));
-    sendToRaw(lines.join("\n"));
+    replaceOrAppendBlock(finalCss, START_MARKER, END_MARKER);
   });
 
   return row;
@@ -2652,30 +4822,127 @@ function makeGenericRow(title, desc, fieldsHTML, flashId) {
 function buildElementRow(el) {
   const row = document.createElement("div");
   row.className = "ci-element-row";
-  row.dataset.search = (el.label + " " + el.cls).toLowerCase();
+  // If label and cls are the same, just use one to avoid repetition
+  const searchVal = el.label === el.cls ? el.label : (el.label + " " + el.cls);
+  row.dataset.search = searchVal.toLowerCase();
+
+  const countBadge = document.createElement("span");
+  if (el._count && el._count > 1) {
+    countBadge.style.cssText =
+      "font-size:9px; color:#c8aa6e; background:rgba(200,170,110,0.1); border:1px solid rgba(200,170,110,0.3); padding:0 4px; border-radius:4px; margin-right:4px; font-weight:bold;";
+    countBadge.textContent = "×" + el._count;
+  }
   const notBadge = document.createElement("span");
+  notBadge.className = "ci-not-in-dom";
   notBadge.title = "Element not found in current DOM";
   notBadge.style.cssText =
     "font-size:8px;color:#2a3a4a;background:rgba(0,0,0,0.3);border:1px solid #1a2535;padding:1px 5px;letter-spacing:0.05em;display:none;flex-shrink:0;";
   notBadge.textContent = "not in DOM";
   const info = document.createElement("div");
-  info.style.cssText = "display:flex;align-items:baseline;gap:8px;";
+  info.style.cssText =
+    "display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;";
+  if (el._count && el._count > 1) info.appendChild(countBadge);
   const labelSpan = document.createElement("span");
   labelSpan.className = "ci-element-label";
   labelSpan.textContent = el.label;
   const clsCode = document.createElement("code");
   clsCode.className = "ci-element-cls";
   clsCode.textContent = el.cls;
+  // Copy selector helper
+  clsCode.title = "Click to copy selector";
+  clsCode.style.cursor = "pointer";
+  clsCode.addEventListener("click", (e) => {
+    e.stopPropagation();
+    try {
+      navigator.clipboard.writeText(el.cls);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = el.cls;
+      ta.style.cssText = "position:fixed;opacity:0;pointer-events:none;";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    const prev = clsCode.textContent;
+    clsCode.textContent = "✓ copied";
+    clsCode.style.color = "#4caf82";
+    clsCode.style.borderColor = "#4caf82";
+    setTimeout(() => {
+      clsCode.textContent = prev;
+      clsCode.style.color = "";
+      clsCode.style.borderColor = "";
+    }, 1200);
+  });
+
+  // Raw button handler
+  const sendBtn = document.createElement("button");
+  sendBtn.className = "ci-az-send-btn";
+  sendBtn.textContent = "→ Raw";
+  sendBtn.title = "Send all current values to Raw CSS";
+  sendBtn.style.cssText = "margin-left:auto;flex-shrink:0;";
+  sendBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const regs = _inputs.filter((r) => r.cls === el.cls && r.inputEl);
+    const batch = {};
+    regs.forEach((reg) => {
+      let val = reg.inputEl?.value?.trim();
+      if (!val || val === "" || val === "auto" || val === "normal") return;
+      const finalProp = reg.prop === "scale" ? "transform" : reg.prop;
+      if (
+        (finalProp === "background-image" || finalProp === "content") &&
+        val !== "none" &&
+        val !== "inherit" &&
+        val !== "initial" &&
+        val !== "unset" &&
+        !val.startsWith("url(") &&
+        !val.startsWith("linear-gradient(") &&
+        !val.startsWith("radial-gradient(")
+      ) {
+        val = `url('${val}')`;
+      }
+      batch[finalProp] = val;
+    });
+    if (Object.keys(batch).length === 0) return;
+    setCssBatch(el.cls, batch);
+    sendToRaw();
+  });
+
+  // Extract assets button
+  const extractBtn = document.createElement("button");
+  extractBtn.className = "ci-az-send-btn";
+  extractBtn.textContent = "🖼";
+  extractBtn.title = "Extract assets for this element";
+  extractBtn.style.cssText = "flex-shrink:0;";
+  extractBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    extractAndNavigate(el.cls);
+  });
+
   info.appendChild(labelSpan);
   info.appendChild(clsCode);
   info.appendChild(notBadge);
+  info.appendChild(sendBtn);
+  info.appendChild(extractBtn);
   row.appendChild(info);
   const controls = document.createElement("div");
   controls.className = "ci-element-controls";
-  el.props.forEach((prop) =>
-    controls.appendChild(buildPropControl(el.cls, prop, notBadge)),
-  );
+  const localRegs = [];
+  el.props.forEach((prop) => {
+    const { wrap, reg } = buildPropControl(el.cls, prop, notBadge);
+    controls.appendChild(wrap);
+    if (reg) localRegs.push(reg);
+  });
   row.appendChild(controls);
+
+  if (el._domNode) {
+    localRegs.forEach((r) => (r.domNode = el._domNode));
+  }
+
+  // Row virtualization
+  row._regs = localRegs;
+  _rowObserver.observe(row);
+
   return row;
 }
 
@@ -2683,15 +4950,18 @@ function buildElementRow(el) {
 function buildPropControl(cls, prop, notBadge) {
   if (typeof prop === "object") {
     if (prop.type === "bg-replace")
-      return buildBgReplaceControl(cls, prop, notBadge);
+      return { wrap: buildBgReplaceControl(cls, prop, notBadge), reg: null };
     if (prop.type === "img-replace")
-      return buildImgReplaceControl(cls, prop, notBadge);
-    return document.createElement("span");
+      return { wrap: buildImgReplaceControl(cls, prop, notBadge), reg: null };
+    return { wrap: document.createElement("span"), reg: null };
   }
 
-  // Handle special pseudo-properties generated by the Omni Inspector
-  if (prop === "child-img-replace") {
-    return buildChildImgReplaceControl(cls);
+  if (prop.type === "smart-asset") {
+    const row = buildCompactAssetRow(prop.asset, (css) => {
+      appendToRaw(css);
+      flashMessage(notBadge, "Asset CSS Added!", "#4caf82");
+    });
+    return { wrap: row, reg: null };
   }
 
   const wrap = document.createElement("div");
@@ -2876,7 +5146,30 @@ function buildPropControl(cls, prop, notBadge) {
         return this.container.value;
       },
     };
-  else if (prop === "left" || prop === "top") {
+  else if (prop === "background-image" || prop === "content") {
+    const textIn = makeTextInput("url(...) or path", "120px");
+    const browseBtn = document.createElement("button");
+    browseBtn.className = "ci-btn-prop";
+    browseBtn.textContent = "+";
+    browseBtn.title = "Browse assets";
+    browseBtn.style.width = "24px";
+    browseBtn.style.height = "24px";
+    browseBtn.addEventListener("click", () => attachFilePickerToInput(textIn));
+
+    const group = document.createElement("div");
+    group.style.display = "flex";
+    group.style.gap = "4px";
+    group.appendChild(textIn);
+    group.appendChild(browseBtn);
+
+    input = {
+      container: group,
+      textIn: textIn,
+      get value() {
+        return textIn.value;
+      },
+    };
+  } else if (prop === "left" || prop === "top") {
     const textIn = makeTextInput("e.g. 3.95px", "75px");
     input = {
       container: textIn,
@@ -2895,8 +5188,23 @@ function buildPropControl(cls, prop, notBadge) {
   }
 
   const btn = makeAddBtn(() => {
-    const val = input.value;
+    let val = input.value.trim();
     if (!val) return;
+
+    // Auto-wrap paths in url() for background-image and content
+    if (
+      (prop === "background-image" || prop === "content") &&
+      val !== "none" &&
+      val !== "inherit" &&
+      val !== "initial" &&
+      val !== "unset" &&
+      !val.startsWith("url(") &&
+      !val.startsWith("linear-gradient(") &&
+      !val.startsWith("radial-gradient(")
+    ) {
+      val = `url('${val}')`;
+    }
+
     const finalProp = prop === "scale" ? "transform" : prop;
     setCssProperty(cls, finalProp, val);
     sendToRaw();
@@ -2905,13 +5213,14 @@ function buildPropControl(cls, prop, notBadge) {
   inner.appendChild(input.container);
   inner.appendChild(btn);
   wrap.appendChild(inner);
-  register({
+  const reg = {
     cls,
     prop: prop === "scale" ? "transform" : prop,
     inputEl: input.textIn || input.container,
     notBadge,
-  });
-  return wrap;
+  };
+  register(reg);
+  return { wrap, reg };
 }
 
 function buildBgReplaceControl(cls, propObj, notBadge) {
@@ -2926,6 +5235,12 @@ function buildBgReplaceControl(cls, propObj, notBadge) {
   inner.style.cssText =
     "display:flex;align-items:center;gap:4px;flex-wrap:wrap;";
   const urlInput = makeTextInput("image URL", "160px");
+  const browseBtn = document.createElement("button");
+  browseBtn.className = "ci-btn-prop";
+  browseBtn.textContent = "+";
+  browseBtn.title = "Browse assets";
+  browseBtn.addEventListener("click", () => attachFilePickerToInput(urlInput));
+
   const sizeSelect = makeSelect([
     ["cover", "cover"],
     ["contain", "contain"],
@@ -2949,6 +5264,7 @@ function buildBgReplaceControl(cls, propObj, notBadge) {
     sendToRaw();
   });
   inner.appendChild(urlInput);
+  inner.appendChild(browseBtn);
   inner.appendChild(sizeSelect);
   inner.appendChild(btn);
   wrap.appendChild(inner);
@@ -2967,6 +5283,12 @@ function buildImgReplaceControl(cls, propObj, notBadge) {
   inner.style.cssText =
     "display:flex;align-items:center;gap:4px;flex-wrap:wrap;";
   const urlInput = makeTextInput("image URL or file:/// path", "200px");
+  const browseBtn = document.createElement("button");
+  browseBtn.className = "ci-btn-prop";
+  browseBtn.textContent = "+";
+  browseBtn.title = "Browse assets";
+  browseBtn.addEventListener("click", () => attachFilePickerToInput(urlInput));
+
   const btn = makeAddBtn(() => {
     const url = urlInput.value.trim();
     if (!url) return;
@@ -2974,50 +5296,13 @@ function buildImgReplaceControl(cls, propObj, notBadge) {
     sendToRaw();
   });
   inner.appendChild(urlInput);
+  inner.appendChild(browseBtn);
   inner.appendChild(btn);
   wrap.appendChild(inner);
   return wrap;
 }
 
-function buildChildImgReplaceControl(cls) {
-  const wrap = document.createElement("div");
-  wrap.className = "ci-prop-wrap";
-  wrap.style.flexBasis = "100%";
-  const lbl = document.createElement("div");
-  lbl.className = "ci-prop-label";
-  lbl.textContent = "REPLACE CHILD <img>";
-  lbl.style.color = "#c8aa6e";
-  wrap.appendChild(lbl);
-  const inner = document.createElement("div");
-  inner.className = "ci-prop-inner";
-  inner.style.gap = "6px";
-  const urlInput = makeTextInput("new image URL...", "160px");
-  const sizeSelect = makeSelect([
-    ["cover", "cover"],
-    ["contain", "contain"],
-    ["100% 100%", "stretch"],
-  ]);
-  sizeSelect.style.width = "auto";
-  const btn = makeAddBtn(() => {
-    const url = urlInput.value.trim();
-    if (!url) return;
-    const size = sizeSelect.value;
-
-    setCssBatch(`${cls} img`, { opacity: "0", visibility: "hidden" });
-    setCssBatch(cls, {
-      "background-image": `url('${url}')`,
-      "background-size": size,
-      "background-position": "center",
-    });
-
-    sendToRaw();
-  });
-  inner.appendChild(urlInput);
-  inner.appendChild(sizeSelect);
-  inner.appendChild(btn);
-  wrap.appendChild(inner);
-  return wrap;
-}
+// [DELETED] buildChildImgReplaceControl — replaced by smart-asset system
 
 function makeHybridSlider(min, max, step, defaultVal, formatOut, parseIn) {
   const container = document.createElement("div");
@@ -3149,7 +5434,7 @@ function makeAddBtn(onClick) {
 }
 
 // THE DYNAMIC PROPERTY ENGINE
-function getSmartProperties(el) {
+function getSmartProperties(el, searchIntent = []) {
   const props = new Set();
   const genericProps = [
     "display",
@@ -3159,8 +5444,16 @@ function getSmartProperties(el) {
     "text-shadow",
   ];
   genericProps.forEach((p) => props.add(p));
+
   if (!el) return Array.from(props);
   const cs = window.getComputedStyle(el);
+
+  if (props.has("background-image")) {
+    props.add("background-size");
+    props.add("background-position");
+    props.add("background-repeat");
+  }
+
   if (
     cs.color &&
     cs.color !== "rgb(0, 0, 0)" &&
@@ -3194,10 +5487,11 @@ function getSmartProperties(el) {
   if (cs.visibility && cs.visibility === "hidden") props.add("visibility");
   if (cs.mixBlendMode && cs.mixBlendMode !== "normal")
     props.add("mix-blend-mode");
-  // SMART ADDITIONS
-  if (el.querySelector("img")) {
-    props.add("child-img-replace");
-  }
+  const assets = collectFromNode(el, "unknown");
+  assets.forEach((a) => {
+    props.add({ type: "smart-asset", asset: a });
+  });
+
   return Array.from(props);
 }
 
@@ -3214,9 +5508,7 @@ function findCatalogMatch(sel) {
   return null;
 }
 
-// ELEMENT PICKER (INSPECTOR WITH DOM TRAVERSAL & TOOLTIP)
-// Shadow-DOM aware: uses elementFromPoint on every tracked shadow root
-// to find elements inside shadows that document.elementFromPoint misses.
+// ELEMENT PICKER
 export function startElementPicker(onPickCallback) {
   const backdrop = getBackdrop();
   if (backdrop) backdrop.style.display = "none";
@@ -3229,15 +5521,14 @@ export function startElementPicker(onPickCallback) {
     'position:fixed; pointer-events:none; z-index:999999; background:#091220; color:#c8aa6e; border:1px solid #c8aa6e; font-family:"Fira Code",monospace; padding:4px 8px; white-space:nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.7); display:none; transition:all 0.1s ease-out;';
   document.body.appendChild(overlay);
   document.body.appendChild(label);
+  
+  const settings = getSettings();
+  let isGlobal = settings.lastGlobalToggle || false;
   let currentTarget = null;
   let isInShadow = false; // tracks whether currentTarget lives inside a shadow root
   let isLocked = false;
 
-  //  Shadow-piercing elementFromPoint
-  // document.elementFromPoint stops at shadow hosts. To find what's
-  // actually under the cursor inside a shadow root, we call
-  // shadowRoot.elementFromPoint() on every tracked root whose host
-  // rect contains the cursor. The deepest (smallest area) match wins.
+  // Shadow-piercing elementFromPoint
   function deepElementFromPoint(x, y) {
     // Start with the document-level hit
     let best = document.elementFromPoint(x, y);
@@ -3246,8 +5537,6 @@ export function startElementPicker(onPickCallback) {
       : Infinity;
     let bestInShadow = false;
 
-    // Import getShadowRoots from shadow-manager via the module scope.
-    // It's imported at the top of builder.js already.
     const roots = getShadowRoots();
     for (const { shadowRoot, host } of roots) {
       // Skip our own modal shadow root
@@ -3283,25 +5572,11 @@ export function startElementPicker(onPickCallback) {
     return best;
   }
 
-  //  Selector builder
-  // Builds a plain CSS selector. For shadow-DOM elements, we note
-  // the shadow host in a comment so the user understands the context,
-  // but the selector itself is just the element's classes — it works
-  // because _globalSheet is adopted into all shadow roots.
+  // Selector builder
   function buildSelector(el) {
-    let selector = el.tagName.toLowerCase();
-    if (el.id && !/^ember\d+$/.test(el.id)) {
-      selector += "#" + el.id;
-    } else if (el.classList.length > 0) {
-      const validClasses = [...el.classList].filter(
-        (c) => !/^(ng-|ember|active|hover|focus)/i.test(c),
-      );
-      if (validClasses.length > 0) selector = "." + validClasses.join(".");
-    }
-    return selector;
+    return buildStrategicSelector(el, isGlobal ? 'categorical' : 'specific');
   }
 
-  //  Shadow host path — shown in label as context
   function getShadowHostLabel(el) {
     // Walk up until we find a shadow root, return its host selector
     let node = el.parentNode;
@@ -3341,17 +5616,23 @@ export function startElementPicker(onPickCallback) {
     const selector = buildSelector(currentTarget);
     const hostLabel = isInShadow ? getShadowHostLabel(currentTarget) : null;
 
-    // Shadow indicator in the label
     const shadowBadge = hostLabel
       ? `<div style="font-size:9px;color:#c84b4b;margin-bottom:2px;">◆ shadow of ${hostLabel}</div>`
       : "";
+
+    const globalCheckHtml = `
+      <label style="display:flex; align-items:center; gap:4px; cursor:pointer; margin-top:6px; padding-top:6px; border-top:1px solid rgba(200,170,110,0.2); pointer-events:auto;">
+        <input type="checkbox" id="ci-global-toggle" ${isGlobal ? 'checked' : ''} style="margin:0; width:12px; height:12px;">
+        <span style="font-size:10px; color:#c8aa6e;">Global Selector</span>
+      </label>
+    `;
 
     if (isLocked) {
       overlay.style.borderColor = "#4caf82";
       overlay.style.backgroundColor = "rgba(76, 175, 130, 0.2)";
       label.style.borderColor = "#4caf82";
       label.style.color = "#4caf82";
-      label.innerHTML = `${shadowBadge}<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Scroll / Arrows] Change Depth •[Click / Enter] Confirm • [Esc] Unlock</div>`;
+      label.innerHTML = `${shadowBadge}<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Scroll / Arrows] Change Depth •[Click / Enter] Confirm • [Esc] Unlock</div>${globalCheckHtml}`;
     } else {
       overlay.style.borderColor = hostLabel ? "#c84b4b" : "#c8aa6e";
       overlay.style.backgroundColor = hostLabel
@@ -3359,7 +5640,17 @@ export function startElementPicker(onPickCallback) {
         : "rgba(200, 170, 110, 0.2)";
       label.style.borderColor = hostLabel ? "#c84b4b" : "#c8aa6e";
       label.style.color = hostLabel ? "#c84b4b" : "#c8aa6e";
-      label.innerHTML = `${shadowBadge}<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Click] Lock element • [Esc] Cancel</div>`;
+      label.innerHTML = `${shadowBadge}<div style="font-weight:bold; font-size:12px; margin-bottom:4px;">${selector}</div><div style="font-size:9px; color:#a0b4c8; font-family:'Sora', sans-serif;">[Click] Lock element • [Esc] Cancel</div>${globalCheckHtml}`;
+    }
+
+    const toggle = label.querySelector("#ci-global-toggle");
+    if (toggle) {
+      toggle.addEventListener("change", (e) => {
+        isGlobal = e.target.checked;
+        settings.lastGlobalToggle = isGlobal;
+        saveSettings();
+        renderOverlay();
+      });
     }
     label.style.display = "block";
     const pad = 6;
@@ -3392,6 +5683,10 @@ export function startElementPicker(onPickCallback) {
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("keydown", onKeyDown, true);
     document.removeEventListener("wheel", onWheel, true);
+    document.removeEventListener("mousedown", blockEvent, true);
+       document.removeEventListener("mouseup", blockEvent, true);
+       document.removeEventListener("pointerdown", blockEvent, true);
+       document.removeEventListener("pointerup", blockEvent, true);
     overlay.remove();
     label.remove();
     if (backdrop) backdrop.style.display = "flex"; // restore modal
@@ -3400,11 +5695,20 @@ export function startElementPicker(onPickCallback) {
     cleanup();
     if (!currentTarget) return;
     const finalSelector = buildSelector(currentTarget);
-    onPickCallback(finalSelector);
+    onPickCallback(finalSelector, currentTarget);
   }
+  function blockEvent(e) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }
+
   function onClick(e) {
+    // Ignore clicks on the checkbox and its wrapping label element only
+    const toggle = label.querySelector("#ci-global-toggle");
+    if (toggle && (e.target === toggle || e.target === toggle.closest("label"))) return;
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
     if (!currentTarget) return;
     if (!isLocked) {
       isLocked = true;
@@ -3419,7 +5723,7 @@ export function startElementPicker(onPickCallback) {
     e.stopPropagation();
     let nextTarget = null;
     if (e.deltaY < 0) {
-      // Scroll up = go to parent. If parent is a ShadowRoot, jump to its host.
+      // Traverse to parent/host
       const parent = currentTarget.parentNode;
       if (parent && parent.nodeType === 11) {
         nextTarget = parent.host;
@@ -3427,7 +5731,10 @@ export function startElementPicker(onPickCallback) {
         nextTarget = currentTarget.parentElement;
       }
     } else if (e.deltaY > 0) {
-      nextTarget = currentTarget.firstElementChild;
+      // Step INTO shadow roots if they exist, otherwise normal light DOM
+      const sRoot = currentTarget.shadowRoot || getShadowRoots().find(r => r.host === currentTarget)?.shadowRoot;
+      nextTarget = sRoot ? sRoot.firstElementChild : currentTarget.firstElementChild;
+      //nextTarget = currentTarget.firstElementChild;
     }
     if (
       nextTarget &&
@@ -3462,7 +5769,8 @@ export function startElementPicker(onPickCallback) {
             ? parent.host
             : currentTarget.parentElement;
       } else if (e.key === "ArrowDown") {
-        nextTarget = currentTarget.firstElementChild;
+        const sRoot = currentTarget.shadowRoot || getShadowRoots().find(r => r.host === currentTarget)?.shadowRoot;
+        nextTarget = sRoot ? sRoot.firstElementChild : currentTarget.firstElementChild;
       } else if (e.key === "ArrowLeft") {
         nextTarget = currentTarget.previousElementSibling;
       } else if (e.key === "ArrowRight") {
@@ -3486,4 +5794,21 @@ export function startElementPicker(onPickCallback) {
     capture: true,
     passive: false,
   });
+  document.addEventListener("mousedown", blockEvent, true);
+  document.addEventListener("mouseup", blockEvent, true);
+  document.addEventListener("pointerdown", blockEvent, true);
+  document.addEventListener("pointerup", blockEvent, true);
+}
+export function cleanupBuilderTab() {
+  if (_rowObserver) {
+    _rowObserver.disconnect();
+  }
+  _bodyEl = null;
+  _inputs = [];
+  _activeInputs.clear();
+  _deepScanCache = null;
+  _scrollPos = 0;
+  _activeTags = [];
+  _searchRenderToken = 0;
+  setRefreshCallback(null); // clear the callback reference
 }

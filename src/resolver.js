@@ -1,84 +1,25 @@
-/* 
-Rewrites relative url() paths in dynamically injected CSS to absolute
-plugin URLs, so local assets work regardless of document.baseURI.
-
-Usage:
-  import { initResolver, resolveAssetUrls } from './resolver.js';
-  initResolver(import.meta.url);  // call once in index.js
-  el.textContent = resolveAssetUrls(css);  // call before every injection 
-*/
-
+// Absolute path resolver
 let _base = null;
 
-// Call once from index.js, passing import.meta.url
 export function initResolver(metaUrl) {
-  // Normalize Windows backslashes to forward slashes
-  // metaUrl = 'https://plugins/Snooze-CSS/index.js'  → 'https://plugins/Snooze-CSS/'
-  // metaUrl = 'https://plugins/Snooze-CSS\index.js' → 'https://plugins/Snooze-CSS/'
+  if (!metaUrl) return;
   const normalized = metaUrl.replace(/\\/g, "/");
-
-  // Extract directory by finding the last slash and keeping everything up to it (inclusive)
   const lastSlash = normalized.lastIndexOf("/");
-  if (lastSlash === -1) {
-    console.warn(
-      "[Snooze-CSS] initResolver: malformed meta URL, cannot extract base:",
-      metaUrl,
-    );
-    _base = "https://plugins/Snooze-CSS/"; // Fallback
-    return;
-  }
-
-  _base = normalized.substring(0, lastSlash + 1);
-
-  // Defensive check: ensure base contains 'Snooze-CSS' to catch loader bugs early
-  if (!_base.includes("Snooze-CSS")) {
-    console.warn(
-      "[Snooze-CSS] initResolver: Snooze-CSS not found in base URL. metaUrl:",
-      metaUrl,
-      "normalized:",
-      normalized,
-      "extracted base:",
-      _base,
-    );
-  }
-
-  console.log("[Snooze-CSS] Asset base:", _base);
+  // _base will be something like "https://plugins/Snooze-CSS/"
+  _base = lastSlash === -1 ? "https://plugins/Snooze-CSS/" : normalized.substring(0, lastSlash + 1);
 }
 
-// Rewrite any local url() paths in injected CSS to absolute plugin URLs.
-// Remote URLs (http/https/data), protocol-relative, and absolute paths pass through as-is.
+// Rewrite relative url() paths to absolute plugin URLs
 export function resolveAssetUrls(css) {
   if (!_base || !css) return css;
 
-  // Matches url('...'), url("..."), url(...) and captures the URL path.
-  return css.replace(
-    /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,
-    (match, quote, path) => {
-      const trimmed = path.trim();
-
-      // Preserve full URLs / data URIs / protocol-relative URIs (remote resources)
-      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(trimmed)) {
-        return match;
-      }
-
-      let absolute;
-      try {
-        if (trimmed.startsWith("/")) {
-          // Normalize root-relative path to plugin directory root (e.g. /assets/foo.jpg -> https://plugins/Snooze-CSS/assets/foo.jpg)
-          absolute = _base.replace(/\/$/, "") + trimmed;
-        } else {
-          absolute = new URL(trimmed, _base).href;
-        }
-      } catch (err) {
-        console.warn("[Snooze-CSS] resolveAssetUrls invalid url", trimmed, err);
-        return match;
-      }
-
-      if (absolute !== trimmed) {
-        // Uncomment to debug: console.debug("[Snooze-CSS] resolveAssetUrls", trimmed, "→", absolute);
-      }
-
-      return "url(" + quote + absolute + quote + ")";
-    },
-  );
+  // We simply replace the relative prefix with the absolute one.
+  // This handles:
+  // 1. url("./assets/img.png") -> url("https://.../assets/img.png")
+  // 2. [src="./assets/img.png"] -> [src="https://.../assets/img.png"]
+  // 3. [style*="./assets/img.png"] -> [style*="https://.../assets/img.png"]
+  
+  // We use a regex for "./assets/" to ensure we don't accidentally 
+  // match things like "my-assets/" or "/assets/".
+  return css.replace(/\.\/assets\//g, _base + "assets/");
 }

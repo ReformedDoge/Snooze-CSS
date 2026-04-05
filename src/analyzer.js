@@ -1,47 +1,45 @@
-// Zone-aware DOM/CSS discovery tool for theming
+// DOM/CSS ANALYZER
 
 import { sendToRaw } from "./raw.js";
-import { copyText } from "./utils.js";
+import { copyText, buildStrategicSelector } from "./utils.js";
 import { getShadowRoots, _globalSheet } from "./shadow-manager.js";
 
-// CLIENT ARCHITECTURE
-// These are the static structural zones of the League client.
-// The main viewport swaps content; everything else is persistent.
+// CLIENT ZONES
 
 const CLIENT_ZONES = [
   {
     id: "__full__",
-    label: "🌐 Full Page (all zones)",
+    label: "Full Page (all zones)",
     desc: "All viewports simultaneously. Best for a complete overview.",
   },
   {
     id: "rcp-fe-viewport-main",
-    label: "📺 Main View",
+    label: "Main View",
     desc: "The active screen — Profile, Loot, Lobby, Store, etc. Only this part swaps.",
   },
   {
     id: "rcp-fe-viewport-overlay",
-    label: "🧭 Navigation & Top Bar",
+    label: "Navigation & Top Bar",
     desc: "Play button, nav tabs, currency display, window controls.",
   },
   {
     id: "rcp-fe-viewport-sidebar",
-    label: "💬 Social Sidebar",
+    label: "Social Sidebar",
     desc: "Friends list, status, search, action bar.",
   },
   {
     id: "rcp-fe-viewport-persistent",
-    label: "🎯 Activity Center",
+    label: "Activity Center",
     desc: "Persistent slide-out panel — activity center, esports viewer.",
   },
   {
     id: "#lol-uikit-layer-manager",
-    label: "🪟 Layer Manager (Popups & Chat)",
+    label: "Layer Manager (Popups & Chat)",
     desc: "Tooltips, modals, dropdowns, detached chat. Lives outside the viewport root — the only way to theme these.",
   },
 ];
 
-// Known individual screens for the "specific screen" dropdown group
+// KNOWN SCREENS
 const KNOWN_SCREENS = [
   { tag: "rcp-fe-lol-navigation", label: "Navigation Bar" },
   { tag: "rcp-fe-lol-parties", label: "Home / Lobby" },
@@ -75,7 +73,7 @@ const KNOWN_SCREENS = [
   { tag: "rcp-fe-lol-shared-components", label: "Shared Components" },
 ];
 
-// Zone IDs walked in full-page mode
+// ZONE IDs
 const FULL_PAGE_ZONE_IDS = [
   "rcp-fe-viewport-main",
   "rcp-fe-viewport-overlay",
@@ -100,8 +98,7 @@ function getDefaultStyles() {
   return defaults;
 }
 
-// Pure measurement artefacts — always skip, they add noise without
-// any theming value (logical shorthands, perspective math, etc.)
+// FILTERED PROPERTIES
 const SKIP_PROPS = new Set([
   "perspective-origin",
   "transform-origin",
@@ -148,7 +145,7 @@ const SKIP_PROPS = new Set([
   "direction",
 ]);
 
-// These are always captured if non-default — they're what themes actually change.
+// FORCE INCLUDE PROPERTIES
 const ALWAYS_INCLUDE = new Set([
   "color",
   "background-color",
@@ -257,12 +254,10 @@ function getNonDefaultStyles(el) {
   const result = {};
   for (let i = 0; i < cs.length; i++) {
     const prop = cs[i];
-    // Skip measurement noise unless it's in our always-include set
     if (SKIP_PROPS.has(prop) && !ALWAYS_INCLUDE.has(prop)) continue;
     const val = cs.getPropertyValue(prop).trim();
     const def = defaults[prop] ?? "";
     if (!val || val === def) continue;
-    // Skip trivial non-values unless explicitly important
     if (
       !ALWAYS_INCLUDE.has(prop) &&
       (val === "auto" ||
@@ -273,7 +268,6 @@ function getNonDefaultStyles(el) {
         val === "transparent")
     )
       continue;
-    // Skip zero-value inset properties — they're computed defaults, not intentional placement
     if (
       (prop === "top" ||
         prop === "right" ||
@@ -288,37 +282,23 @@ function getNonDefaultStyles(el) {
 }
 
 // VISIBILITY CHECK
-// Returns true if this element is invisible and its subtree is ghost DOM.
-function isInvisible(el) {
+function isInvisible(el, relaxed = false) {
+  if (!el || el.nodeType !== 1) return true;
   if (el.classList.contains("hidden")) return true;
-  // Inline style check first (faster than getComputedStyle)
-  const style = el.style;
-  if (
-    style.display === "none" ||
-    style.visibility === "hidden" ||
-    style.opacity === "0"
-  )
-    return true;
   const cs = window.getComputedStyle(el);
   if (cs.display === "none") return true;
   if (cs.visibility === "hidden") return true;
-  if (cs.opacity === "0") return true;
+  if (!relaxed && cs.opacity === "0") return true;
   return false;
 }
 
-// BOUNDING RECT
+// GEOMETRY HELPERS
 function getRect(el) {
   try {
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return null;
     return (
-      Math.round(r.x) +
-      "," +
-      Math.round(r.y) +
-      "  " +
-      Math.round(r.width) +
-      "\xd7" +
-      Math.round(r.height)
+      Math.round(r.x) + "," + Math.round(r.y) + " " + Math.round(r.width) + "\xd7" + Math.round(r.height)
     );
   } catch {
     return null;
@@ -333,7 +313,7 @@ function getRectRaw(el) {
   }
 }
 
-// FINGERPRINT
+// ELEMENT FINGERPRINTING
 function classFingerprint(el, depth) {
   const classes = [...el.classList]
     .filter(
@@ -351,85 +331,71 @@ function classFingerprint(el, depth) {
   return base + "@" + depth + ":" + parentTag;
 }
 
-// SELECTOR BUILDER
-function buildSelector(el) {
-  const tag = el.tagName.toLowerCase();
-  const classes = [...el.classList]
-    .filter(
-      (c) =>
-        !/^(ember-view|ng-|active|hover|focus|selected|disabled|open|closed|visible|hidden|loading|ember-application)$/i.test(
-          c,
-        ),
-    )
-    .slice(0, 4);
-  if (el.id && !/^ember\d+$/.test(el.id)) return "#" + el.id;
-  return tag + (classes.length ? "." + classes.join(".") : "");
-}
 
-// CORE WALK
-// Accepts a single root or array of roots.
-// skipInvisible: prunes ghost DOM branches entirely.
-// Pierces shadow roots and marks those elements with fromShadow flag.
-function walkDOM(roots, maxDepth, skipInvisible = true) {
+// DOM TRAVERSAL
+export function walkDOM(roots, maxDepth, skipInvisible = true, relaxed = false) {
   const rootList = Array.isArray(roots) ? roots : [roots];
   const seen = new Set();
   const elements = [];
   const treeLines = [];
-  const shadowStylesheets = []; // collected by walk() when shadow roots are encountered
+  const shadowStylesheets = [];
   const allTrackedRoots =
     typeof getShadowRoots === "function" ? getShadowRoots() : [];
 
   function walk(el, depth, prefix, isLast, fromShadow) {
     if (depth > maxDepth) return;
-    if (el.nodeType !== 1) return;
-    // Skip bare <slot> elements — shadow DOM plumbing, not theming targets
-    if (el.tagName.toLowerCase() === "slot") return;
-    // Ignore the plugin's own Shadow Host container to prevent analyzing itself
-    if (el.id === "snooze-css-host") return;
+    
+    if (el.nodeType !== 1 && (depth > 0 || el.nodeType !== 11)) return;
 
-    // Ghost DOM gate
-    // At depth 0 (the zone root itself) we always walk — the root
-    // may be a hidden screen that was explicitly selected.
-    if (skipInvisible && depth > 0 && isInvisible(el)) return;
+    if (el.nodeType === 1 && el.tagName.toLowerCase() === "slot") return;
+    if (el.nodeType === 1 && el.id === "snooze-css-host") return;
 
-    const fp = classFingerprint(el, depth);
-    const selector = buildSelector(el);
-    const rect = getRect(el);
-    const connector =
-      depth === 0 ? "" : isLast ? "\u2514\u2500 " : "\u251c\u2500 ";
+    if (skipInvisible && depth > 0 && el.nodeType === 1 && isInvisible(el, relaxed)) return;
+
     const childPfx = depth === 0 ? "" : prefix + (isLast ? "   " : "\u2502  ");
-    const shadowMark = fromShadow ? "\u25c6 " : "";
-    const rectStr = rect ? "  [" + rect + "]" : "";
 
-    treeLines.push(prefix + connector + shadowMark + selector + rectStr);
+    if (el.nodeType === 1) {
+      const fp = classFingerprint(el, depth);
+      const selector = buildStrategicSelector(el);
+      const rect = getRect(el);
+      const connector = depth === 0 ? "" : isLast ? "\u2514\u2500 " : "\u251c\u2500 ";
+      const shadowMark = fromShadow ? "\u25c6 " : "";
+      const rectStr = rect ? "[" + rect + "]" : "";
 
-    if (!seen.has(fp)) {
-      seen.add(fp);
-      const styles = getNonDefaultStyles(el);
-      const rawRect = getRectRaw(el);
-      // Store the actual DOM node so constraints analysis can walk the real parent chain
-      elements.push({
-        fingerprint: fp,
-        selector,
-        depth,
-        styles,
-        rect,
-        rawRect,
-        fromShadow: !!fromShadow,
-        domNode: el,
-      });
+      let leftSide = prefix + connector + shadowMark + selector;
+      if (rectStr) {
+          leftSide = leftSide.padEnd(55, " ") + rectStr;
+      }
+      treeLines.push(leftSide);
+
+      if (!seen.has(el)) {
+        seen.add(el);
+        const styles = getNonDefaultStyles(el);
+        const rawRect = getRectRaw(el);
+        elements.push({
+          fingerprint: fp,
+          selector,
+          depth,
+          styles,
+          rect,
+          rawRect,
+          fromShadow: !!fromShadow,
+          domNode: el,
+          hasImgChild: !!el.querySelector("img"),
+        });
+      }
     }
 
-    // Children: light DOM then shadow DOM
-    const lightChildren = [...el.children];
+    // Process children
+    const lightChildren = el.nodeType === 1 ? [...el.children] : [...el.childNodes].filter(n => n.nodeType === 1);
 
-    // If this element has a shadow root, extract its stylesheets before walking children
+    // Shadow root traversal
     const sRoot =
       el.shadowRoot || allTrackedRoots.find((r) => r.host === el)?.shadowRoot;
 
     if (sRoot) {
       try {
-        const hostSel = buildSelector(el);
+        const hostSel = buildStrategicSelector(el);
         const standardSheets = [...sRoot.styleSheets];
         const adoptedSheets = sRoot.adoptedStyleSheets
           ? [...sRoot.adoptedStyleSheets]
@@ -437,7 +403,6 @@ function walkDOM(roots, maxDepth, skipInvisible = true) {
         const allSheets = [...standardSheets, ...adoptedSheets];
 
         allSheets.forEach((sheet) => {
-          // Skip our Snooze-CSS global sheet to prevent infinite loop/duplicate themes
           if (sheet === _globalSheet || sheet.href?.includes("Snooze-CSS"))
             return;
 
@@ -473,12 +438,13 @@ function walkDOM(roots, maxDepth, skipInvisible = true) {
   }
 
   rootList.forEach((root) => {
+    if (!root) return;
     if (rootList.length > 1) {
       const zoneRect = getRect(root);
       const zoneLabel =
-        buildSelector(root) + (zoneRect ? "  [" + zoneRect + "]" : "");
+        buildStrategicSelector(root) + (zoneRect ? "[" + zoneRect + "]" : "");
       treeLines.push("");
-      treeLines.push("\u250c\u2500\u2500 ZONE: " + zoneLabel);
+      treeLines.push("\u250c\u2500\u2500 ZONE:" + zoneLabel);
     }
     walk(root, 0, "", true, false);
   });
@@ -486,16 +452,7 @@ function walkDOM(roots, maxDepth, skipInvisible = true) {
   return { elements, treeLines, shadowStylesheets };
 }
 
-// LAYOUT SUMMARY
-// The key addition for LLM comprehension. Produces a spatial map of
-// the screen so the model understands WHERE things are, not just what
-// they look like. Format is designed to be read as a brief before
-// the full element dump.
-// OVERLAY CONTEXT
-// Snapshots the bounding rects of all persistent overlay zones that are
-// ALWAYS present regardless of which screen is active. Emitted at the top
-// of every capture so LLMs know which regions of the canvas are already
-// occupied by chrome they cannot theme away.
+// LAYOUT ANALYSIS
 function buildOverlayContext(cw, ch) {
   const lines = [];
   const PERSISTENT_ZONES = [
@@ -560,7 +517,7 @@ function buildOverlayContext(cw, ch) {
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return;
 
-    // Only include if actually occupying visible space
+    // Visibility check
     const x = Math.round(r.x),
       y = Math.round(r.y);
     const w = Math.round(r.width),
@@ -569,7 +526,7 @@ function buildOverlayContext(cw, ch) {
     found.push({ label: zone.label, note: zone.note, x, y, w, h });
   });
 
-  // Also try to find the nav bar height by looking for nav elements that are reliable indicators of the chrome height
+  // Detect navigation height
   const navIndicators = [
     ".navigation-root-component",
     "lol-uikit-navigation-bar.main-nav-bar",
@@ -589,7 +546,7 @@ function buildOverlayContext(cw, ch) {
 
   if (!found.length && navHeight === null) return "";
 
-  lines.push("\u2500\u2500 PERSISTENT OVERLAY REGIONS " + "\u2500".repeat(33));
+  lines.push("\u2500\u2500 PERSISTENT OVERLAY REGIONS" + "\u2500".repeat(33));
   lines.push(
     "These zones are ALWAYS rendered on top of the main screen content.",
   );
@@ -600,26 +557,24 @@ function buildOverlayContext(cw, ch) {
     "be covered. These are measured live from the current client state.",
   );
   lines.push("");
-  lines.push("  " + "ZONE".padEnd(40) + "POSITION          SIZE      OCCUPIES");
-  lines.push("  " + "\u2500".repeat(78));
+  lines.push("" + "ZONE".padEnd(40) + "POSITION          SIZE      OCCUPIES");
+  lines.push("" + "\u2500".repeat(78));
 
   found.forEach((z) => {
-    const pos = ("x:" + z.x + " y:" + z.y).padEnd(18);
+    const pos = ("x:" + z.x + "y:" + z.y).padEnd(18);
     const dim = (z.w + "\xd7" + z.h).padEnd(10);
-    // Describe what region of screen it occupies in plain english
     let occupies = "";
-    if (z.y < 20 && z.h < ch * 0.25) occupies = "top " + z.h + "px strip";
-    else if (z.x > cw * 0.6) occupies = "right " + z.w + "px strip";
-    else if (z.x < 20 && z.w < cw * 0.25) occupies = "left " + z.w + "px strip";
-    else occupies = z.w + "\xd7" + z.h + " overlay";
-    lines.push("  " + z.label.padEnd(40) + pos + dim + occupies);
-    lines.push("    \u2192 " + z.note);
+    if (z.y < 20 && z.h < ch * 0.25) occupies = "top" + z.h + "px strip";
+    else if (z.x > cw * 0.6) occupies = "right" + z.w + "px strip";
+    else if (z.x < 20 && z.w < cw * 0.25) occupies = "left" + z.w + "px strip";
+    else occupies = z.w + "\xd7" + z.h + "overlay";
+    lines.push("" + z.label.padEnd(40) + pos + dim + occupies);
+    lines.push("\u2192" + z.note);
   });
 
   lines.push("");
 
-  // Derive the usable safe area for content
-  // Find the lowest bottom edge of any top bar
+  // Safe area detection
   const topBars = found.filter((z) => z.y < 50 && z.h < ch * 0.25);
   const rightBars = found.filter((z) => z.x > cw * 0.6 && z.w < cw * 0.4);
 
@@ -630,20 +585,20 @@ function buildOverlayContext(cw, ch) {
     ? Math.min(...rightBars.map((z) => z.x))
     : cw;
 
-  lines.push("  SAFE CONTENT AREA (not covered by persistent chrome):");
+  lines.push("SAFE CONTENT AREA (not covered by persistent chrome):");
   lines.push(
-    "  x:0  y:" +
+    "x:0  y:" +
       safeTop +
-      "  →  " +
+      "→" +
       safeRight +
       "\xd7" +
       (ch - safeTop) +
       "px",
   );
   lines.push(
-    "  Top " +
+    "Top" +
       safeTop +
-      "px reserved by nav  ·  Right " +
+      "px reserved by nav  ·  Right" +
       (cw - safeRight) +
       "px reserved by sidebar",
   );
@@ -660,16 +615,14 @@ function buildLayoutSummary(roots, elements, screenLabel) {
   const cw = vpRect ? Math.round(vpRect.width) : window.innerWidth;
   const ch = vpRect ? Math.round(vpRect.height) : window.innerHeight;
 
-  lines.push("CANVAS: " + cw + "\xd7" + ch + "px  (client window dimensions)");
-  lines.push("SCREEN: " + screenLabel);
+  lines.push("CANVAS:" + cw + "\xd7" + ch + "px  (client window dimensions)");
+  lines.push("SCREEN:" + screenLabel);
   lines.push("");
 
   const overlayCtx = buildOverlayContext(cw, ch);
   if (overlayCtx) lines.push(overlayCtx);
 
-  // Collect positioned/sized elements worth mapping.
-  // Exclude pure background containers that span >55% of the canvas in both
-  // dimensions they're often wrappers
+  // Background detection
   const isBackgroundContainer = (e) =>
     e.rawRect.width > cw * 0.55 && e.rawRect.height > ch * 0.55;
 
@@ -691,7 +644,7 @@ function buildLayoutSummary(roots, elements, screenLabel) {
     )
     .slice(0, 40);
 
-  // Spatial zones
+  // Spatial bucketing
   const top = mapped.filter((e) => e.rawRect.y < ch * 0.18);
   const bottom = mapped.filter(
     (e) => e.rawRect.y + e.rawRect.height > ch * 0.78,
@@ -710,16 +663,15 @@ function buildLayoutSummary(roots, elements, screenLabel) {
 
   const fmt = (e) => {
     const r = e.rawRect;
-    const pos = ("x:" + Math.round(r.x) + " y:" + Math.round(r.y)).padEnd(18);
+    const pos = ("x:" + Math.round(r.x) + "y:" + Math.round(r.y)).padEnd(18);
     const dim = (Math.round(r.width) + "\xd7" + Math.round(r.height)).padEnd(
       10,
     );
-    return "  " + e.selector.padEnd(50) + pos + dim;
+    return "" + e.selector.padEnd(50) + pos + dim;
   };
 
-  lines.push("\u2500\u2500 SPATIAL MAP " + "\u2500".repeat(49));
-  lines.push("  " + "SELECTOR".padEnd(50) + "POSITION          SIZE");
-  lines.push("  " + "\u2500".repeat(74));
+  lines.push("SPATIAL MAP");
+  lines.push("SELECTOR".padEnd(50) + "POSITION          SIZE");
 
   const pushZone = (label, items) => {
     if (!items.length) return;
@@ -734,7 +686,7 @@ function buildLayoutSummary(roots, elements, screenLabel) {
   pushZone("RIGHT (panel/sidebar):", right);
   pushZone("BOTTOM (footer/bar):", bottom);
 
-  // Z-index stack
+  // Depth analysis
   const stacked = elements
     .filter(
       (e) =>
@@ -749,37 +701,35 @@ function buildLayoutSummary(roots, elements, screenLabel) {
 
   if (stacked.length) {
     lines.push("");
-    lines.push(
-      "\u2500\u2500 Z-INDEX STACK (front \u2192 back) " + "\u2500".repeat(32),
-    );
+    lines.push("Z-INDEX STACK");
     stacked.forEach((e) => {
       lines.push(
-        "  z:" + String(e.styles["z-index"]).padStart(8) + "  " + e.selector,
+        "z:" + String(e.styles["z-index"]).padStart(8) + "" + e.selector,
       );
     });
   }
 
-  // Backdrop-filter elements
+  // Glass effect detection
   const glass = elements.filter(
     (e) => e.styles["backdrop-filter"] || e.styles["-webkit-backdrop-filter"],
   );
   if (glass.length) {
     lines.push("");
-    lines.push("\u2500\u2500 GLASS / BLUR PANELS " + "\u2500".repeat(41));
+    lines.push("GLASS / BLUR PANELS");
     glass.slice(0, 8).forEach((e) => {
       const bf =
         e.styles["backdrop-filter"] || e.styles["-webkit-backdrop-filter"];
       lines.push(
-        "  " +
+        "" +
           e.selector +
-          "  \u2192  " +
+          "\u2192" +
           bf +
-          (e.rect ? "  [" + e.rect + "]" : ""),
+          (e.rect ? "[" + e.rect + "]" : ""),
       );
     });
   }
 
-  // Position:absolute elements with specific coordinates.
+  // Absolute positioning analysis
   const absEls = elements
     .filter(
       (e) =>
@@ -792,9 +742,7 @@ function buildLayoutSummary(roots, elements, screenLabel) {
     .slice(0, 16);
   if (absEls.length) {
     lines.push("");
-    lines.push(
-      "\u2500\u2500 ABSOLUTELY POSITIONED ELEMENTS " + "\u2500".repeat(30),
-    );
+    lines.push("ABSOLUTELY POSITIONED ELEMENTS");
     absEls.forEach((e) => lines.push(fmt(e)));
   }
 
@@ -802,14 +750,9 @@ function buildLayoutSummary(roots, elements, screenLabel) {
   return lines.join("\n");
 }
 
-// CSS CONSTRAINTS
-// Walks the real DOM parent chain to compute exact containing block offsets,
-// detects the CSS property responsible for each element's position,
-// identifies flex/grid layout contexts, and provides z-index guidance.
+// Analyzes containing blocks, repositioning logic, and layout contexts.
 
-// Walk the real DOM parent chain to find the containing block for an element.
-// The containing block is the nearest ancestor with position != static,
-// or the viewport if none exists. Returns { node, rect } or null.
+// Find nearest positioned ancestor or viewport.
 function findContainingBlock(el) {
   let node = el.parentElement;
   while (node && node !== document.documentElement) {
@@ -835,7 +778,7 @@ function findContainingBlock(el) {
   return null;
 }
 
-// Detect what CSS property is responsible for an element's position.
+// Position Detection
 function detectPositionMechanism(el, styles) {
   const pos = styles.position;
 
@@ -850,7 +793,7 @@ function detectPositionMechanism(el, styles) {
       parts.push("right:" + styles.right);
     return (
       (pos === "absolute" ? "position:absolute" : "position:fixed") +
-      (parts.length ? " via " + parts.join(", ") : " (inset 0)")
+      (parts.length ? "via" + parts.join(",") : "(inset 0)")
     );
   }
 
@@ -862,11 +805,10 @@ function detectPositionMechanism(el, styles) {
       parts.push("left:" + styles.left);
     return (
       "position:relative" +
-      (parts.length ? " via " + parts.join(", ") : " (no offset)")
+      (parts.length ? "via" + parts.join(",") : "(no offset)")
     );
   }
 
-  // Check parent for flex/grid context
   try {
     if (el.parentElement) {
       const pcs = window.getComputedStyle(el.parentElement);
@@ -881,10 +823,10 @@ function detectPositionMechanism(el, styles) {
         if (styles["flex-shrink"] !== undefined)
           parts.push("flex-shrink:" + styles["flex-shrink"]);
         return (
-          "flex item in " +
+          "flex item in" +
           pcs["flex-direction"] +
-          " flex" +
-          (parts.length ? " — override: " + parts.join(", ") : "")
+          "flex" +
+          (parts.length ? "— override:" + parts.join(",") : "")
         );
       }
       if (pcs.display === "grid" || pcs.display === "inline-grid") {
@@ -901,13 +843,10 @@ function detectPositionMechanism(el, styles) {
 function buildCssConstraints(elements) {
   const lines = [];
 
-  lines.push(
-    "\u2500\u2500 CSS CONSTRAINTS (read before writing any theme) " +
-      "\u2500".repeat(13),
-  );
+  lines.push("CSS CONSTRAINTS");
   lines.push("");
 
-  // 1. Containers with absolutely-positioned children
+  // Absolute child detection
   const absParents = [];
   elements.forEach((el) => {
     if (!el.rawRect) return;
@@ -933,7 +872,7 @@ function buildCssConstraints(elements) {
       absParents.push({
         el,
         count: absChildren.length,
-        childExamples: absChildren.slice(0, 2).map((c) => c.selector),
+        childExamples: absChildren.slice(0, 3),
       });
     }
   });
@@ -943,46 +882,40 @@ function buildCssConstraints(elements) {
       "CONTAINERS WITH ABSOLUTE CHILDREN — do not resize or change their dimensions:",
     );
     lines.push(
-      "  Children use top/left relative to this container's width/height.",
+      "Children use top/left relative to this container's width/height.",
     );
     lines.push(
-      "  Safe: move the whole container. Unsafe: resize it or set children position:static.",
+      "Safe: move the whole container. Unsafe: resize it or set children position:static.",
     );
     lines.push("");
     absParents.slice(0, 8).forEach(({ el, count, childExamples }) => {
       const r = el.rawRect;
       lines.push(
-        "  " +
+        "" +
           el.selector +
-          "  [" +
+          "[" +
           Math.round(r.width) +
           "\xd7" +
           Math.round(r.height) +
-          "]  \u2192  " +
+          "]  \u2192" +
           count +
-          " abs children",
+          "abs children",
       );
-      childExamples.forEach((s) => lines.push("      child: " + s));
+      childExamples.forEach((s) => lines.push("child:" + s));
     });
     lines.push("");
   }
 
-  // 2. Repositioning guide
+  // REPOSITIONING GUIDE
   lines.push("REPOSITIONING GUIDE — exact CSS values for moving each element:");
   lines.push(
-    '  "CB" = containing block (the positioned ancestor top/left is relative to)',
+    '"CB" = containing block (the positioned ancestor top/left is relative to)',
   );
-  lines.push('  "To move to viewport x:X y:Y" — use these CSS values');
-  lines.push("  Formula: css_left = target_viewport_x - cb_viewport_x");
-  lines.push("           css_top  = target_viewport_y - cb_viewport_y");
+  lines.push('"To move to viewport x:X y:Y" — use these CSS values');
+  lines.push("Formula: left = target_x - cb_x, top = target_y - cb_y");
   lines.push("");
-
   const repositionableEls = elements.filter(
-    (el) =>
-      el.rawRect &&
-      el.rawRect.width > 20 &&
-      el.rawRect.height > 10 &&
-      !absParents.some((p) => p.el === el), // skip containers with abs children
+    (el) => el.rawRect && el.rawRect.width > 26 && el.rawRect.height > 10,
   );
 
   repositionableEls.slice(0, 20).forEach((el) => {
@@ -1000,31 +933,31 @@ function buildCssConstraints(elements) {
     if (cb) {
       cbVx = Math.round(cb.rect.x);
       cbVy = Math.round(cb.rect.y);
-      cbDesc = buildSelector(cb.node) + " @ vp:" + cbVx + "," + cbVy;
+      cbDesc = buildStrategicSelector(cb.node) + "@ vp:" + cbVx + "," + cbVy;
     }
 
     const curCssLeft = vx - cbVx;
     const curCssTop = vy - cbVy;
 
     lines.push(
-      "  \u25b6 " +
+      "\u25b6" +
         el.selector +
-        "  [vp:" +
+        "[vp:" +
         vx +
         "," +
         vy +
-        "  " +
+        "" +
         vw +
         "\xd7" +
         vh +
         "]",
     );
-    lines.push("    position mechanism: " + mechanism);
-    lines.push("    CB: " + cbDesc);
+    lines.push("position mechanism:" + mechanism);
+    lines.push("CB:" + cbDesc);
     lines.push(
-      "    current CSS: left:" + curCssLeft + "px  top:" + curCssTop + "px",
+      "current CSS: left:" + curCssLeft + "px  top:" + curCssTop + "px",
     );
-    // Show CSS needed to reach safe area corners as quick reference
+    // Safe area coordinates
     const safeTop = 82;
     const toTopLeft =
       "left:" + (0 - cbVx) + "px  top:" + (safeTop - cbVy) + "px";
@@ -1034,14 +967,14 @@ function buildCssConstraints(elements) {
       "left:" + (0 - cbVx) + "px  top:" + (720 - vh - cbVy) + "px";
     const toBotRight =
       "left:" + (862 - cbVx - vw) + "px  top:" + (720 - vh - cbVy) + "px";
-    lines.push("    \u2192 to place at safe-top-left:   " + toTopLeft);
-    lines.push("    \u2192 to place at safe-top-right:  " + toTopRight);
-    lines.push("    \u2192 to place at safe-bot-left:   " + toBotLeft);
-    lines.push("    \u2192 to place at safe-bot-right:  " + toBotRight);
+    lines.push("\u2192 to place at safe-top-left:" + toTopLeft);
+    lines.push("\u2192 to place at safe-top-right:" + toTopRight);
+    lines.push("\u2192 to place at safe-bot-left:" + toBotLeft);
+    lines.push("\u2192 to place at safe-bot-right:" + toBotRight);
     lines.push("");
   });
 
-  // 3. Engine-managed elements
+  // ENGINE-MANAGED ELEMENTS
   const engineTags = [
     "lol-regalia",
     "lol-uikit",
@@ -1058,22 +991,22 @@ function buildCssConstraints(elements) {
       "ENGINE-MANAGED (Riot custom elements — internal layout recalculated at runtime):",
     );
     lines.push(
-      "  Safe: color, opacity, filter, transform on the element itself.",
+      "Safe: color, opacity, filter, transform on the element itself.",
     );
     lines.push(
-      "  Safe to move: set top/left on the outermost custom element tag.",
+      "Safe to move: set top/left on the outermost custom element tag.",
     );
     lines.push(
-      "  Unsafe: override top/left/width/height on children inside these.",
+      "Unsafe: override top/left/width/height on children inside these.",
     );
     lines.push("");
     engineEls.slice(0, 6).forEach((el) => {
-      lines.push("  " + el.selector + (el.rect ? "  [" + el.rect + "]" : ""));
+      lines.push("" + el.selector + (el.rect ? "[" + el.rect + "]" : ""));
     });
     lines.push("");
   }
 
-  // 4. Flex / grid layout contexts. what you must neutralise before moving
+  // FLEX/GRID CONTEXT DETECTION
   const flexContexts = [];
   elements.forEach((el) => {
     if (!el.domNode) return;
@@ -1100,45 +1033,45 @@ function buildCssConstraints(elements) {
       "FLEX/GRID LAYOUT CONTEXTS — children are positioned by the layout engine:",
     );
     lines.push(
-      "  To reposition a flex/grid child with CSS top/left, you MUST first",
+      "To reposition a flex/grid child with CSS top/left, you MUST first",
     );
     lines.push(
-      "  set position:absolute on that child (removing it from flex/grid flow).",
+      "set position:absolute on that child (removing it from flex/grid flow).",
     );
     lines.push(
-      "  OR change the parent flex-direction / justify-content / align-items.",
+      "OR change the parent flex-direction / justify-content / align-items.",
     );
     lines.push("");
     flexContexts.slice(0, 8).forEach(({ el, d, fd, jc, ai, childCount }) => {
       lines.push(
-        "  " + el.selector + "  display:" + d + "  flex-direction:" + fd,
+        "" + el.selector + "display:" + d + "flex-direction:" + fd,
       );
       lines.push(
-        "    justify-content:" +
+        "justify-content:" +
           jc +
-          "  align-self:" +
+          "align-self:" +
           ai +
-          "  (" +
+          "(" +
           childCount +
-          " children in flow)",
+          "children in flow)",
       );
       lines.push(
-        "    \u2192 children use flex placement — add position:absolute to take a child out of flow",
+        "\u2192 children use flex placement — add position:absolute to take a child out of flow",
       );
     });
     lines.push("");
   }
 
-  // 5. Z-index stacking
+  // Z-INDEX STACKING
   lines.push(
     "Z-INDEX STACKING — if you reposition elements, set z-index to control layering:",
   );
   lines.push(
-    "  Elements later in DOM render on top by default (z-index:auto).",
+    "Elements later in DOM render on top by default (z-index:auto).",
   );
-  lines.push("  If repositioned elements are covered, increase their z-index.");
+  lines.push("If repositioned elements are covered, increase their z-index.");
   lines.push(
-    "  If repositioned elements cover others, decrease or set z-index:0.",
+    "If repositioned elements cover others, decrease or set z-index:0.",
   );
   lines.push("");
   const stacked = elements.filter(
@@ -1152,24 +1085,24 @@ function buildCssConstraints(elements) {
       .slice(0, 10)
       .forEach((e) =>
         lines.push(
-          "  z:" + String(e.styles["z-index"]).padStart(6) + "  " + e.selector,
+          "z:" + String(e.styles["z-index"]).padStart(6) + "" + e.selector,
         ),
       );
     lines.push(
-      "  z:     0  (default for all other elements — last in DOM = on top)",
+      "z:     0  (default for all other elements — last in DOM = on top)",
     );
   } else {
-    lines.push("  No explicit z-index found. DOM order determines stacking.");
+    lines.push("No explicit z-index found. DOM order determines stacking.");
     lines.push(
-      "  Sub-nav and emblems share the same stacking context — last in DOM wins.",
+      "Sub-nav and emblems share the same stacking context — last in DOM wins.",
     );
     lines.push(
-      "  If sub-nav is after emblems in DOM, it renders on top and vice versa.",
+      "If sub-nav is after emblems in DOM, it renders on top and vice versa.",
     );
   }
   lines.push("");
 
-  // 6. Overflow:hidden clipping zones
+  // OVERFLOW CLIPPING
   const clippers = elements.filter(
     (el) =>
       (el.styles["overflow-x"] === "hidden" ||
@@ -1183,19 +1116,19 @@ function buildCssConstraints(elements) {
       "OVERFLOW:HIDDEN — elements repositioned outside these bounds will be clipped:",
     );
     lines.push(
-      "  Add overflow:visible !important to the container before repositioning children.",
+      "Add overflow:visible !important to the container before repositioning children.",
     );
     lines.push("");
     clippers.slice(0, 6).forEach((el) => {
       const r = el.rawRect;
       lines.push(
-        "  " +
+        "" +
           el.selector +
-          "  clips at [" +
+          "clips at [" +
           Math.round(r.x) +
           "," +
           Math.round(r.y) +
-          "  " +
+          "" +
           Math.round(r.width) +
           "\xd7" +
           Math.round(r.height) +
@@ -1208,7 +1141,9 @@ function buildCssConstraints(elements) {
   return lines.join("\n");
 }
 
-// FORMAT OUTPUT
+let _lastElements = [];
+
+// OUTPUT FORMATTER
 function formatOutput(
   screenTag,
   screenLabel,
@@ -1219,59 +1154,50 @@ function formatOutput(
 ) {
   const lines = [];
 
-  lines.push("\u2550".repeat(62));
   lines.push("SNOOZE-CSS ANALYZER");
-  lines.push("Screen : " + screenLabel);
-  lines.push("Zone   : " + screenTag);
-  lines.push("Visible elements: " + elements.length + " unique");
+  lines.push("Screen :" + screenLabel);
+  lines.push("Zone   :" + screenTag);
+  lines.push("Visible elements:" + elements.length + "unique");
   const shadowCount = elements.filter((e) => e.fromShadow).length;
   if (shadowCount)
-    lines.push("Shadow DOM elements: " + shadowCount + " (\u25c6 in tree)");
+    lines.push("Shadow DOM elements:" + shadowCount + "(\u25c6 in tree)");
   if (shadowStylesheets && shadowStylesheets.length)
     lines.push(
-      "Shadow stylesheets extracted: " + shadowStylesheets.length + " rules",
+      "Shadow stylesheets extracted:" + shadowStylesheets.length + "rules",
     );
   lines.push("\u2550".repeat(62));
   lines.push("");
 
   lines.push(buildLayoutSummary(roots, elements, screenLabel));
 
-  // CSS constraints — critical if we use LLMs to quickly spit out a mvp theme
+  // CSS Constraints
   lines.push(buildCssConstraints(elements));
 
-  // DOM tree with inline bounding boxes
-  lines.push("\u2500\u2500 DOM TREE " + "\u2500".repeat(52));
-  lines.push("Each node shows: selector  [x,y  width\xd7height]");
-  lines.push("\u25c6 = element inside a Shadow DOM root");
+  // DOM TREE GENERATOR
+  lines.push("DOM TREE");
+  lines.push("selector [x,y width\u00d7height]");
   lines.push("");
   treeLines.forEach((l) => lines.push(l));
   lines.push("");
 
-  // Element styles
-  lines.push("\u2500\u2500 ELEMENTS & STYLES " + "\u2500".repeat(43));
+  // STYLE REPORTER
+  lines.push("ELEMENTS & STYLES");
   lines.push("Only theming-relevant non-default properties.");
   lines.push("Each block: selector  @ x,y  width\xd7height");
   lines.push("");
   elements.forEach(({ selector, styles, rect, fromShadow }) => {
     const entries = Object.entries(styles);
     if (!entries.length) return;
-    const shadow = fromShadow ? "  \u25c6shadow" : "";
-    const rectPart = rect ? "  @ " + rect : "";
+    const shadow = fromShadow ? "\u25c6shadow" : "";
+    const rectPart = rect ? "@" + rect : "";
     lines.push(selector + shadow + rectPart);
-    entries.forEach(([p, v]) => lines.push("  " + p + ": " + v));
+    entries.forEach(([p, v]) => lines.push("" + p + ":" + v));
     lines.push("");
   });
 
-  // Shadow stylesheet source rules
-  // These are the ACTUAL CSS rules Riot ships inside shadow roots.
-  // They define positions/sizes that CANNOT be overridden by normal CSS selectors.
-  // To override: use CSS custom properties on the host element if available,
-  // or use transform on the shadow HOST element (not the child).
-  // Rules are grouped by host element.
+  // SHADOW DOM STYLE EXTRACTOR
   if (shadowStylesheets && shadowStylesheets.length) {
-    lines.push(
-      "\u2500\u2500 SHADOW DOM SOURCE STYLESHEETS " + "\u2500".repeat(31),
-    );
+    lines.push("SHADOW DOM SOURCE STYLESHEETS");
     lines.push(
       "These rules live inside shadow roots. Normal CSS CANNOT override them.",
     );
@@ -1289,7 +1215,7 @@ function formatOutput(
       byHost[host].push(rule);
     });
     Object.entries(byHost).forEach(([host, rules]) => {
-      lines.push("HOST: " + host);
+      lines.push("HOST:" + host);
       // Only emit rules with position/size/layout properties — skip decoration
       const layoutKeywords = [
         "position",
@@ -1312,22 +1238,22 @@ function formatOutput(
       ];
       const layoutRules = rules.filter((r) =>
         layoutKeywords.some(
-          (kw) => r.includes(kw + ":") || r.includes(kw + " :"),
+          (kw) => r.includes(kw + ":") || r.includes(kw + ":"),
         ),
       );
       layoutRules.slice(0, 20).forEach((r) => {
         // Indent each line of the rule for readability
-        r.split("\n").forEach((line) => lines.push("  " + line.trim()));
+        r.split("\n").forEach((line) => lines.push("" + line.trim()));
         lines.push("");
       });
       if (layoutRules.length === 0) {
-        lines.push("  (no layout rules — decoration only)");
+        lines.push("(no layout rules — decoration only)");
         lines.push("");
       }
     });
   }
 
-  // Color palette
+  // COLOR PALETTE
   const colors = new Set();
   elements.forEach(({ styles }) => {
     [
@@ -1346,27 +1272,27 @@ function formatOutput(
     });
   });
   if (colors.size) {
-    lines.push("\u2500\u2500 COLOR PALETTE " + "\u2500".repeat(47));
-    lines.push([...colors].join("  \xb7  "));
+    lines.push("COLOR PALETTE");
+    lines.push([...colors].join("\xb7"));
     lines.push("");
   }
 
-  // Fonts
+  // FONT INVENTORY
   const fonts = new Set();
   elements.forEach(({ styles }) => {
     if (styles["font-family"]) {
       styles["font-family"]
         .split(",")
-        .forEach((f) => fonts.add(f.trim().replace(/['"]/g, "")));
+        .forEach((f) => fonts.add(f.trim().replace(/['"]/g,"")));
     }
   });
   if (fonts.size) {
-    lines.push("\u2500\u2500 FONTS " + "\u2500".repeat(55));
-    lines.push([...fonts].join("  \xb7  "));
+    lines.push("FONTS");
+    lines.push([...fonts].join("\xb7"));
     lines.push("");
   }
 
-  // Assets
+  // ASSET INVENTORY
   const images = new Set();
   elements.forEach(({ styles }) => {
     [
@@ -1384,7 +1310,7 @@ function formatOutput(
     });
   });
   if (images.size) {
-    lines.push("\u2500\u2500 IMAGES / ASSETS " + "\u2500".repeat(45));
+    lines.push("IMAGES / ASSETS");
     [...images].forEach((u) => lines.push(u));
     lines.push("");
   }
@@ -1392,7 +1318,7 @@ function formatOutput(
   return lines.join("\n");
 }
 
-// BUILD ANALYZER TAB
+// ANALYZER UI
 
 export function buildAnalyzerTab(container) {
   container.innerHTML = `
@@ -1449,6 +1375,7 @@ export function buildAnalyzerTab(container) {
           <button class="ci-btn-secondary" id="az-copy-layout-btn" style="font-size:10px;padding:4px 10px;">Layout</button>
           <button class="ci-btn-secondary" id="az-copy-tree-btn"   style="font-size:10px;padding:4px 10px;">Tree</button>
           <button class="ci-btn-secondary" id="az-copy-styles-btn" style="font-size:10px;padding:4px 10px;">Styles</button>
+          <button class="ci-btn-secondary" id="az-copy-json-btn"   style="font-size:10px;padding:4px 10px;color:#c8aa6e;border-color:#785a28;">Agentic Context (JSON)</button>
         </div>
         <textarea class="ci-textarea ci-az-textarea" id="az-raw-output" readonly spellcheck="false"></textarea>
       </div>
@@ -1458,7 +1385,7 @@ export function buildAnalyzerTab(container) {
   const select = container.querySelector("#az-screen-select");
   const descEl = container.querySelector("#az-zone-desc");
 
-  // Zones group
+  // Zones
   const zoneGroup = document.createElement("optgroup");
   zoneGroup.label = "Client Zones (architectural sections)";
   CLIENT_ZONES.forEach((z) => {
@@ -1470,7 +1397,7 @@ export function buildAnalyzerTab(container) {
   });
   select.appendChild(zoneGroup);
 
-  // Specific screens group
+  // Specific Screens Group
   const screenGroup = document.createElement("optgroup");
   screenGroup.label = "Specific Screens";
 
@@ -1489,25 +1416,19 @@ export function buildAnalyzerTab(container) {
   screenList.forEach((s) => {
     const opt = document.createElement("option");
     opt.value = s.tag;
-    opt.textContent = s.label + "  (" + s.tag + ")";
+    opt.textContent = s.label + "(" + s.tag + ")";
     screenGroup.appendChild(opt);
   });
   select.appendChild(screenGroup);
 
-  // Show zone description on change
-  select.addEventListener("change", () => {
-    const opt = select.options[select.selectedIndex];
-    descEl.textContent = opt?.dataset?.desc || "";
-  });
-
-  // Depth slider
+  // Depth Slider
   const depthSlider = container.querySelector("#az-depth");
   const depthVal = container.querySelector("#az-depth-val");
   depthSlider.addEventListener("input", () => {
     depthVal.textContent = depthSlider.value;
   });
 
-  // Sub-tab switching
+  // Sub-Tab Switching
   container.querySelectorAll(".ci-az-subtab").forEach((btn) => {
     btn.addEventListener("click", () => {
       container
@@ -1522,12 +1443,12 @@ export function buildAnalyzerTab(container) {
     });
   });
 
-  // Capture
+  // Capture UI
   container
     .querySelector("#az-capture-btn")
     .addEventListener("click", () => runCapture(container));
 
-  // Copy buttons
+  // Copy Buttons
   container.querySelector("#az-copy-btn").addEventListener("click", () => {
     copyText(container.querySelector("#az-raw-output").value);
     setStatus(container, "Copied \u2713", "ok");
@@ -1539,8 +1460,8 @@ export function buildAnalyzerTab(container) {
       copyText(
         extractSection(
           raw,
-          "\u2500\u2500 SPATIAL MAP",
-          "\u2500\u2500 DOM TREE",
+          "SPATIAL MAP",
+          "DOM TREE",
         ),
       );
       setStatus(container, "Layout copied \u2713", "ok");
@@ -1548,7 +1469,7 @@ export function buildAnalyzerTab(container) {
   container.querySelector("#az-copy-tree-btn").addEventListener("click", () => {
     const raw = container.querySelector("#az-raw-output").value;
     copyText(
-      extractSection(raw, "\u2500\u2500 DOM TREE", "\u2500\u2500 ELEMENTS"),
+      extractSection(raw, "DOM TREE", "ELEMENTS"),
     );
     setStatus(container, "Tree copied \u2713", "ok");
   });
@@ -1559,24 +1480,52 @@ export function buildAnalyzerTab(container) {
       copyText(
         extractSection(
           raw,
-          "\u2500\u2500 ELEMENTS & STYLES",
-          "\u2500\u2500 COLOR PALETTE",
+          "ELEMENTS & STYLES",
+          "COLOR PALETTE",
         ),
       );
       setStatus(container, "Styles copied \u2713", "ok");
     });
 
+  container.querySelector("#az-copy-json-btn").addEventListener("click", () => {
+    if (!_lastElements || _lastElements.length === 0) {
+      setStatus(container, "No data to capture", "err");
+      return;
+    }
+
+    const vpRoot = document.getElementById("rcp-fe-viewport-root");
+    const vpRect = vpRoot ? vpRoot.getBoundingClientRect() : null;
+
+    const screenName =
+      container.querySelector("#az-screen-select")?.options[
+        container.querySelector("#az-screen-select").selectedIndex
+      ]?.text || "unknown";
+
+    const aiData = {
+      screen: screenName,
+      canvas: {
+        width: vpRect ? Math.round(vpRect.width) : window.innerWidth,
+        height: vpRect ? Math.round(vpRect.height) : window.innerHeight,
+      },
+      elements: _lastElements.map((e) => {
+        const out = { sel: e.selector, depth: e.depth };
+        if (e.rect) out.rect = e.rect;
+        if (Object.keys(e.styles).length) out.styles = e.styles;
+        if (e.fromShadow) out.shadow = true;
+        return out;
+      }),
+    };
+
+    copyText(JSON.stringify(aiData, null, 2));
+    setStatus(container, "Agentic Context copied \u2713", "ok");
+  });
+
   setupAutoDetect(container);
   updateActiveScreens(select);
 }
 
-// CAPTURE
-
-// Resolves a zone/screen ID to a DOM element. Handles:
-// - '#id' selectors (layer manager)
-// - element tag names (rcp-fe-viewport-main as a tag or section with that class)
-// - CSS classes
-// - data-screen-name attributes
+// CAPTURE ENGINE
+// Resolve zone/screen ID to Element
 function resolveZoneRoot(id) {
   if (!id) return null;
   if (id.startsWith("#")) return document.querySelector(id);
@@ -1602,8 +1551,7 @@ function findScreenRoot(tag) {
 }
 
 function getActiveScreenTag() {
-  // Find visible screen roots that ACTUALLY have content inside them
-  // (Riot sometimes leaves empty dummy screens in the main viewport)
+  // Find populated screen roots
   const visibleScreens = [
     ...document.querySelectorAll("[data-screen-name]"),
   ].filter(
@@ -1620,8 +1568,7 @@ function getActiveScreenTag() {
     );
     if (mainVpScreen) return mainVpScreen.dataset.screenName;
 
-    // Otherwise, prefer screens explicitly marked 'active'
-    // (like the modern Activity Center home page)
+    // Prefer active screens
     const activeScreen = visibleScreens.find((el) =>
       el.classList.contains("active"),
     );
@@ -1661,6 +1608,7 @@ function getActiveScreenTag() {
   return null;
 }
 
+// Main capture entry
 function runCapture(container) {
   const select = container.querySelector("#az-screen-select");
   const depth = parseInt(container.querySelector("#az-depth").value);
@@ -1669,7 +1617,7 @@ function runCapture(container) {
   let screenTag = select.value;
   let screenLabel =
     select.options[select.selectedIndex]?.text
-      ?.split("  (")[0]
+      ?.split("(")[0]
       ?.replace(/^\u25cf /, "")
       .trim() || screenTag;
 
@@ -1694,11 +1642,11 @@ function runCapture(container) {
         renderResults(container, tag, label, elements, treeLines, rawText);
         setStatus(
           container,
-          label + "  \u00b7  " + elements.length + " elements",
+          label + "\u00b7" + elements.length + "elements",
           "ok",
         );
       } catch (err) {
-        setStatus(container, "Capture failed: " + err.message, "err");
+        setStatus(container, "Capture failed:" + err.message, "err");
         console.error("[Snooze-CSS Analyzer]", err);
       }
     });
@@ -1720,7 +1668,7 @@ function runCapture(container) {
   if (isZone) {
     const root = resolveZoneRoot(screenTag);
     if (!root) {
-      setStatus(container, screenTag + " not found", "err");
+      setStatus(container, screenTag + "not found", "err");
       return;
     }
     doCapture(root, screenTag, screenLabel);
@@ -1741,13 +1689,13 @@ function runCapture(container) {
   // Specific screen
   const root = findScreenRoot(screenTag);
   if (!root) {
-    setStatus(container, screenTag + " not in DOM", "err");
+    setStatus(container, screenTag + "not in DOM", "err");
     return;
   }
   doCapture(root, screenTag, screenLabel);
 }
 
-// RENDER RESULTS
+// RESULT RENDERER
 
 function renderResults(
   container,
@@ -1761,6 +1709,7 @@ function renderResults(
   container.querySelector("#az-content").style.display = "block";
 
   container.querySelector("#az-raw-output").value = rawText;
+  _lastElements = elements;
 
   // DOM tree
   const treeEl = container.querySelector("#az-view-tree");
@@ -1785,10 +1734,10 @@ function renderResults(
     "font-size:10px;color:#4a6070;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1a2535;";
   countBar.textContent =
     withStyles.length +
-    " styled  \xb7  " +
+    "styled  \xb7" +
     withoutStyles.length +
-    " unstyled" +
-    (shadowCount ? "  \xb7  " + shadowCount + " from shadow DOM" : "");
+    "unstyled" +
+    (shadowCount ? "\xb7" + shadowCount + "from shadow DOM" : "");
   elEl.appendChild(countBar);
 
   withStyles.forEach(({ selector, styles, rect, fromShadow }) => {
@@ -1800,7 +1749,7 @@ function renderResults(
 
     const selEl = document.createElement("code");
     selEl.className = "ci-az-selector";
-    selEl.textContent = selector + (fromShadow ? " \u25c6" : "");
+    selEl.textContent = selector + (fromShadow ? "\u25c6" : "");
 
     const meta = document.createElement("span");
     meta.style.cssText =
@@ -1816,7 +1765,7 @@ function renderResults(
 
     const count = document.createElement("span");
     count.className = "ci-az-prop-count";
-    count.textContent = Object.keys(styles).length + " props";
+    count.textContent = Object.keys(styles).length + "props";
     meta.appendChild(count);
 
     const sendBtn = document.createElement("button");
@@ -1827,9 +1776,9 @@ function renderResults(
       e.stopPropagation();
       sendToRaw(
         selector +
-          " {\n" +
+          "{\n" +
           Object.entries(styles)
-            .map(([p, v]) => "\t" + p + ": " + v + " !important;")
+            .map(([p, v]) => "\t" + p + ":" + v + "!important;")
             .join("\n") +
           "\n}",
       );
@@ -1842,9 +1791,9 @@ function renderResults(
       e.stopPropagation();
       copyText(
         selector +
-          " {\n" +
+          "{\n" +
           Object.entries(styles)
-            .map(([p, v]) => "  " + p + ": " + v + ";")
+            .map(([p, v]) => "" + p + ":" + v + ";")
             .join("\n") +
           "\n}",
       );
@@ -1888,7 +1837,7 @@ function renderResults(
       sendPropBtn.textContent = "\u2192";
       sendPropBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        sendToRaw(selector + " {\n\t" + prop + ": " + val + " !important;\n}");
+        sendToRaw(selector + "{\n\t" + prop + ":" + val + "!important;\n}");
       });
 
       row.appendChild(propEl);
@@ -1917,7 +1866,7 @@ function renderResults(
     uh.className = "ci-az-element-header";
     uh.style.cursor = "pointer";
     uh.textContent =
-      withoutStyles.length + " visible but unstyled elements (click to expand)";
+      withoutStyles.length + "visible but unstyled elements (click to expand)";
     const ubody = document.createElement("div");
     ubody.className = "ci-az-element-body";
     ubody.style.display = "none";
@@ -1925,7 +1874,7 @@ function renderResults(
       const row = document.createElement("div");
       row.style.cssText =
         'font-size:10px;color:#3a5060;padding:2px 0;font-family:"Fira Code",monospace;';
-      row.textContent = selector + (rect ? "  [" + rect + "]" : "");
+      row.textContent = selector + (rect ? "[" + rect + "]" : "");
       ubody.appendChild(row);
     });
     uh.addEventListener("click", () => {
@@ -1937,7 +1886,7 @@ function renderResults(
   }
 }
 
-// AUTO DETECT
+// AUTO-DETECTION ENGINE
 
 function setupAutoDetect(container) {
   let observer = null;
@@ -1977,13 +1926,13 @@ function updateActiveScreens(select) {
     if (!opt.value || opt.value === "__full__") return;
     const inDOM = !!(resolveZoneRoot(opt.value) || findScreenRoot(opt.value));
     if (inDOM && !opt.textContent.startsWith("\u25cf"))
-      opt.textContent = "\u25cf " + opt.textContent;
+      opt.textContent = "\u25cf" + opt.textContent;
     if (!inDOM && opt.textContent.startsWith("\u25cf"))
       opt.textContent = opt.textContent.replace(/^\u25cf /, "");
   });
 }
 
-// UTILS
+// HELPERS
 
 function extractSection(text, fromMarker, toMarker) {
   const start = text.indexOf(fromMarker);
@@ -1998,4 +1947,8 @@ function setStatus(container, msg, type = "info") {
   el.textContent = msg;
   el.style.color =
     type === "ok" ? "#4caf82" : type === "err" ? "#c84b4b" : "#785a28";
+}
+
+export function cleanupAnalyzerTab() {
+  _lastElements = [];
 }

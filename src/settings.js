@@ -1,11 +1,22 @@
-// Settings state (persisted to DataStore)
+// Settings state
 import { Storage } from "./storage.js";
 import { makeSection, makeToggle } from "./utils.js";
+import { CATALOG } from "./catalog.js";
 
 const SETTINGS_KEY = "Snooze-CSS-settings";
 
 const defaults = {
   autoMonitor: true,
+  blurEnabled: false,
+  blurColor: "#ff000010",
+  selectorConfig: {
+    ids: true,
+    attrs: true,
+    media: true,
+    classes: true,
+    climbing: false,
+  },
+  lastGlobalToggle: false,
 };
 
 let state = { ...defaults };
@@ -37,18 +48,16 @@ export function setRefreshCallback(fn) {
   refreshCallback = fn;
 }
 
-// Start watching top-level DOM for screen swaps
 export function startMonitor() {
   if (observer) return; // already running
 
   let debounceTimer = null;
 
   observer = new MutationObserver((mutations) => {
-    // Only care if a sentinel element was added or removed
     let changed = false;
     for (const m of mutations) {
       for (const node of [...m.addedNodes, ...m.removedNodes]) {
-        if (node.nodeType !== 1) continue; // elements only
+        if (node.nodeType !== 1) continue;
         const tag = node.tagName?.toLowerCase() || "";
         if (
           SENTINEL_SELECTORS.includes(tag) ||
@@ -62,14 +71,13 @@ export function startMonitor() {
     }
     if (!changed) return;
 
-    // Debounce (screen transitions fire multiple mutations, wait for them to settle)
+    // Debounce screen transitions
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       if (refreshCallback) refreshCallback("monitor");
     }, 400);
   });
 
-  // Watch body direct children only
   observer.observe(document.body, { childList: true, subtree: false });
   console.log("[Snooze-CSS] Monitor started");
 }
@@ -90,7 +98,7 @@ export function buildSettingsTab(container) {
 
   // AUTO MONITOR
   const monSection = makeSection(
-    "🔍 Live Value Monitor",
+    "Live Value Monitor",
     "Watch for screen changes (lobby → champ select → post-game) and automatically refresh the Visual Builder's live values. Uses a lightweight MutationObserver on top-level containers only.",
   );
 
@@ -122,15 +130,55 @@ export function buildSettingsTab(container) {
   note.appendChild(noteSpan);
   note.appendChild(
     document.createTextNode(
-      ' Values are also refreshed when you switch to the Visual Builder tab. Elements not present in the current screen show a dim "not in DOM" indicator.',
+      'Values are also refreshed when you switch to the Visual Builder tab. Elements not present in the current screen show a dim "not in DOM" indicator.',
     ),
   );
   monSection.appendChild(note);
 
   wrap.appendChild(monSection);
+  
+  // SELECTOR STRATEGY
+  const selSection = makeSection(
+    "Selector Strategy",
+    "Configure the 'Sniper' heuristics used by the Inspector and Assets Tab. Disabling tiers will force the engine to find more categorical/generic selectors.",
+  );
 
-  // DATA / DANGER
-  const dangerSection = makeSection("🗑 Data", "");
+  const selRows = [
+    { key: "ids", label: "Prioritize Unique IDs", desc: "Use specific IDs (excluding auto-generated ones)" },
+    { key: "attrs", label: "Prioritize Attributes", desc: "Use data-screen-name, data-testid, etc." },
+    { key: "media", label: "Media Sniper [src]", desc: "Directly target images/videos by their URL" },
+    { key: "classes", label: "Use Semantic Classes", desc: "Target elements by their category identity" },
+    { key: "climbing", label: "Automated Parent Climbing", desc: "Crawl up the DOM if the target isn't unique" },
+  ];
+
+  selRows.forEach((row) => {
+    const r = document.createElement("div");
+    r.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:8px;";
+    
+    const info = document.createElement("div");
+    const t = document.createElement("div");
+    t.style.cssText = "font-size:11px;color:#8a9aaa;";
+    t.textContent = row.label;
+    const d = document.createElement("div");
+    d.style.cssText = "font-size:9px;color:#3a5060;";
+    d.textContent = row.desc;
+    info.appendChild(t);
+    info.appendChild(d);
+
+    const toggle = makeToggle(state.selectorConfig[row.key], async (val) => {
+      state.selectorConfig[row.key] = val;
+      await saveSettings();
+    });
+
+    r.appendChild(info);
+    r.appendChild(toggle);
+    selSection.appendChild(r);
+  });
+
+  wrap.appendChild(selSection);
+
+  // DATA MANAGEMENT
+  const dangerSection = makeSection("Data", "");
 
   const dangerDesc = document.createElement("div");
   dangerDesc.style.cssText =
@@ -156,7 +204,7 @@ export function buildSettingsTab(container) {
   const deleteStatus = document.createElement("span");
   deleteStatus.style.cssText =
     "font-size:10px;color:#4caf82;opacity:0;transition:opacity 0.2s;";
-  deleteStatus.textContent = "Deleted ✓";
+  deleteStatus.textContent = "Deleted";
 
   deleteBtn.addEventListener("click", async () => {
     const ok = await Storage.removeAll("Snooze-CSS-css", SETTINGS_KEY);
@@ -175,7 +223,7 @@ export function buildSettingsTab(container) {
   wrap.appendChild(dangerSection);
 
   // ABOUT
-  const aboutSection = makeSection("ℹ️ About", "");
+  const aboutSection = makeSection("About", "");
 
   const aboutContent = document.createElement("div");
   aboutContent.style.cssText =
@@ -183,7 +231,10 @@ export function buildSettingsTab(container) {
 
   const aboutLines = [
     ["Plugin:", "Snooze-CSS by Reformed Doge"],
-    ["Catalog:", "~470 elements · 44 groups"],
+    [
+      "Catalog:",
+      `${CATALOG.reduce((a, g) => a + (g.elements?.length || 0), 0)} elements · ${CATALOG.length} groups`,
+    ],
     [
       "Generic Tools:",
       "Omni Inspector · Hover-Reveal · Clean Mode · Client Frame · Hue-Rotate · Font · CSS Vars · Gradient BG · Screen Tint · Root Overlay · Glass Panel · Mask Fade · Local Asset · BG Replace · Img Replace · Hide · Color · Scrollbar · Custom CSS",
@@ -197,7 +248,7 @@ export function buildSettingsTab(container) {
   aboutLines.forEach(([label, value]) => {
     const row = document.createElement("div");
     const labelEl = document.createElement("span");
-    labelEl.textContent = label + " ";
+    labelEl.textContent = label + "";
     const valueEl = document.createElement("span");
     valueEl.style.color = "#7a8a9a";
     valueEl.textContent = value;
@@ -210,4 +261,9 @@ export function buildSettingsTab(container) {
   wrap.appendChild(aboutSection);
 
   container.appendChild(wrap);
+}
+
+export function cleanupSettingsTab() {
+  stopMonitor();
+  refreshCallback = null;
 }

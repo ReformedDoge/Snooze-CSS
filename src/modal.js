@@ -1,12 +1,8 @@
-import { buildBuilderTab, refreshValues } from "./builder.js";
-import { buildRawTab } from "./raw.js";
-import {
-  buildSettingsTab,
-  loadSettings,
-  startMonitor,
-  getSettings,
-} from "./settings.js";
-import { buildAnalyzerTab } from "./analyzer.js";
+import { buildBuilderTab, refreshValues, restoreScrollPos, startElementPicker, cleanupBuilderTab } from "./builder.js";
+import { buildRawTab, cleanupRawTab } from "./raw.js";
+import { buildSettingsTab, loadSettings, startMonitor, cleanupSettingsTab } from "./settings.js";
+import { buildAnalyzerTab, cleanupAnalyzerTab } from "./analyzer.js";
+import { buildAssetsTab, extractAndNavigate, setSwitchTab, cleanupAssetsTab } from "./assets.js";
 import { STYLES } from "./styles.js";
 
 let modalHost = null;
@@ -14,10 +10,13 @@ let shadowRoot = null;
 let modalEl = null; // Points to modal window inside the shadow DOM
 let minimized = false;
 
-// Exported so builder.js can reach the backdrop inside the shadow root
-// without querying document (which can't see into shadow DOM).
+// Helper for builder.js to reach backdrop inside shadow DOM
 export function getBackdrop() {
   return shadowRoot ? shadowRoot.getElementById("css-injector-backdrop") : null;
+}
+
+export function getModalEl() {
+  return modalEl;
 }
 
 export function createModal() {
@@ -35,10 +34,9 @@ export function createModal() {
   // Create the protective Host Element
   modalHost = document.createElement("div");
   modalHost.id = "snooze-css-host";
-  modalHost.style.cssText =
-    "position: fixed; inset: 0; z-index: 999999; pointer-events: none; -webkit-app-region: no-drag;";
+  modalHost.style.cssText = "position: fixed; inset: 0; z-index: 999999; pointer-events: none; -webkit-app-region: no-drag;";
   document.body.appendChild(modalHost);
-  // Ensure modal stacks above viewport overlay by inserting after it
+  // Ensure modal stacks above viewport overlay
   const overlay = document.querySelector("section.rcp-fe-viewport-overlay");
   if (overlay && overlay.parentNode === document.body) {
     overlay.after(modalHost);
@@ -72,17 +70,18 @@ export function createModal() {
       <button class="ci-tab ci-tab-active" data-tab="builder">Visual Builder</button>
       <button class="ci-tab" data-tab="raw">Raw CSS</button>
       <button class="ci-tab" data-tab="analyzer">Analyzer</button>
+      <button class="ci-tab" data-tab="assets">Assets</button>
       <button class="ci-tab" data-tab="settings">Settings</button>
     </div>
     <div class="ci-body" id="ci-body">
       <div class="ci-panel" id="ci-panel-builder"></div>
       <div class="ci-panel ci-panel-hidden" id="ci-panel-raw"></div>
       <div class="ci-panel ci-panel-hidden" id="ci-panel-analyzer"></div>
+      <div class="ci-panel ci-panel-hidden ci-panel--flush" id="ci-panel-assets"></div>
       <div class="ci-panel ci-panel-hidden" id="ci-panel-settings"></div>
     </div>
   `;
 
-  // Center modal on screen initially
   const initW = 720,
     initH = Math.round(window.innerHeight * 0.82);
   modal.style.width = initW + "px";
@@ -93,24 +92,47 @@ export function createModal() {
   backdrop.appendChild(modal);
   shadowRoot.appendChild(backdrop);
 
-  // Prevent OS drag conflicts by opting out of app region drag
+  // Allow drag events bubble to modal content for file drop
+  backdrop.addEventListener("dragover", (e) => {
+    e.stopPropagation();
+  });
+
+  backdrop.addEventListener("drop", (e) => {
+    e.stopPropagation();
+  });
+
+  // Prevent OS drag conflicts
   backdrop.style.webkitAppRegion = "no-drag";
 
-  // Safely inject styles INTO the shadow root
+  // Inject styles into shadow root
   injectStyles(shadowRoot);
 
   buildBuilderTab(shadowRoot.querySelector("#ci-panel-builder"));
   buildRawTab(shadowRoot.querySelector("#ci-panel-raw"));
   buildAnalyzerTab(shadowRoot.querySelector("#ci-panel-analyzer"));
+  buildAssetsTab(shadowRoot.querySelector("#ci-panel-assets"));
   buildSettingsTab(shadowRoot.querySelector("#ci-panel-settings"));
 
-  // Tab switching
+  // Asset tab switch handler
+  setSwitchTab(switchTab);
+
+  // Asset element picker integration
+  shadowRoot.querySelector("#ci-panel-assets").addEventListener("ax-pick-element", () => {
+    startElementPicker((sel, targetNode) => {
+      const input = shadowRoot.querySelector("#ax-sel-input");
+      if (input) input.value = sel;
+      extractAndNavigate(sel, targetNode);
+    });
+  });
+
   modal.querySelectorAll(".ci-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       const prev = shadowRoot.querySelector(".ci-tab-active")?.dataset.tab;
       switchTab(btn.dataset.tab);
-      if (btn.dataset.tab === "builder" && prev !== "builder")
+      if (btn.dataset.tab === "builder" && prev !== "builder") {
         refreshValues("tab-switch");
+        requestAnimationFrame(() => restoreScrollPos());
+      }
     });
   });
 
@@ -119,12 +141,23 @@ export function createModal() {
     .querySelector("#ci-minimize")
     .addEventListener("click", toggleMinimize);
 
-  // ESC closes
   const onKey = (e) => {
     if (e.key === "Escape") destroyModal();
   };
   document.addEventListener("keydown", onKey);
   modalHost._onKey = onKey; // Attach reference to the host so we can remove it later
+
+  // Global drag/drop for CEF support
+  const onWindowDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const onWindowDrop = (e) => {
+    e.preventDefault();
+  };
+  window.addEventListener("dragover", onWindowDragOver);
+  window.addEventListener("drop", onWindowDrop);
+  modalHost._dragHandlers = { onWindowDragOver, onWindowDrop };
 
   initDrag(modal, shadowRoot.querySelector("#ci-drag-handle"));
   initResize(modal);
@@ -176,17 +209,35 @@ function restoreModal() {
   handles.forEach((h) => (h.style.display = ""));
   minBtn.innerHTML = "&#x2212;";
   minimized = false;
+  requestAnimationFrame(() => restoreScrollPos());
 }
 
 export function destroyModal() {
   if (modalHost) {
     if (modalHost._onKey)
       document.removeEventListener("keydown", modalHost._onKey);
+
+    if (modalHost._dragHandlers) {
+      window.removeEventListener(
+        "dragover",
+        modalHost._dragHandlers.onWindowDragOver,
+      );
+      window.removeEventListener("drop", modalHost._dragHandlers.onWindowDrop);
+      modalHost._dragHandlers = null;
+    }
+
     modalHost.remove();
     modalHost = null;
     shadowRoot = null;
     modalEl = null;
     minimized = false;
+
+    // Call all cleanup functions to reset module state
+    cleanupRawTab();
+    cleanupBuilderTab();
+    cleanupAssetsTab();
+    cleanupSettingsTab();
+    cleanupAnalyzerTab();
   }
 }
 
@@ -202,7 +253,7 @@ export function switchTab(name) {
   if (panel) panel.classList.remove("ci-panel-hidden");
 }
 
-// DRAG
+// DRAG HANDLER
 function initDrag(modal, handle) {
   let startX, startY, startL, startT;
 
@@ -231,7 +282,7 @@ function initDrag(modal, handle) {
   });
 }
 
-// RESIZE
+// RESIZE HANDLER
 function initResize(modal) {
   const MIN_W = 400,
     MIN_H = 200;
