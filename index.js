@@ -21,7 +21,7 @@ export function init() {
       window.Effect.apply("blurbehind", { color: settings.blurColor || "#ff000010" });
     }
   });
-  // This will check if the user has enabled it and if 6 hours have passed
+  // Check for updates if enabled by the user
   checkForUpdates(); 
 
   // Initialize shadow tracking
