@@ -1,6 +1,6 @@
 import { buildBuilderTab, refreshValues, restoreScrollPos, startElementPicker, cleanupBuilderTab } from "./builder.js";
 import { buildRawTab, cleanupRawTab } from "./raw.js";
-import { buildSettingsTab, loadSettings, startMonitor, cleanupSettingsTab, setUpdateBadgeCallback, getLatestRelease } from "./settings.js";
+import { buildSettingsTab, loadSettings, startMonitor, cleanupSettingsTab, setUpdateBadgeCallback, getLatestRelease, getCurrentVersion } from "./settings.js";
 import { buildAnalyzerTab, cleanupAnalyzerTab } from "./analyzer.js";
 import { buildAssetsTab, extractAndNavigate, setSwitchTab, cleanupAssetsTab } from "./assets.js";
 import { STYLES } from "./styles.js";
@@ -61,10 +61,12 @@ export function createModal() {
     <div class="ci-resize-handle ci-rh-se" data-dir="se"></div>
     <div class="ci-resize-handle ci-rh-sw" data-dir="sw"></div>
     <div class="ci-header" id="ci-drag-handle">
-      <span class="ci-title">Snooze-CSS</span>
-      <span class="ci-hotkey">Alt + C</span>
-      <button class="ci-minimize" id="ci-minimize" title="Minimize">&#x2212;</button>
-      <button class="ci-close"    id="ci-close"    title="Close">&#x2715;</button>
+    <span class="ci-title">
+      Snooze-CSS <span class="ci-version-tag">v${getCurrentVersion()}</span>
+    </span>
+    <span class="ci-hotkey">Alt + C</span>
+    <button class="ci-minimize" id="ci-minimize" title="Minimize">&#x2212;</button>
+    <button class="ci-close"    id="ci-close"    title="Close">&#x2715;</button>
     </div>
     <div class="ci-tabs" id="ci-tabs-bar">
       <button class="ci-tab ci-tab-active" data-tab="builder">Visual Builder</button>

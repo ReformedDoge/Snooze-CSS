@@ -114,6 +114,20 @@ export const STYLES = `
       color: #c8aa6e;
       flex: 1;
     }
+    .ci-version-tag {
+      font-size: 9px;
+      font-family: 'Fira Code', monospace;
+      color: #4a6070; /* Muted bluish-gray */
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid #1e2d3d;
+      padding: 1px 5px;
+      margin-left: 8px;
+      vertical-align: middle;
+      letter-spacing: 0.02em;
+      font-weight: 400;
+      text-transform: none; /* Keeps the lowercase 'v' */
+      border-radius: 2px;
+    }
 
     .ci-hotkey {
       font-size: 10px;

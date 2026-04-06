@@ -435,11 +435,15 @@ function renderProfilesList() {
     
     if (!isActive) {
       row.querySelector(".ci-pp-btn--activate").onclick = async () => {
-        const cur = _profilesData.profiles.find(x => x.id === _profilesData.activeId);
-        if (cur) cur.css = textareaEl.value;
+        // Update the active ID only
         _profilesData.activeId = p.id;
+        
+        // Load the CSS from the NEW profile into the textarea
         textareaEl.value = p.css || "";
+        
+        // Updates which ID is 'active'
         await saveProfiles(_profilesData);
+        
         updateLineCount();
         applyCSS();
         renderProfilesList();
