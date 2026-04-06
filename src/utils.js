@@ -131,7 +131,7 @@ export function customConfirm(parent, message, onConfirm) {
 
   parent.appendChild(overlay);
 }
-// SELECTOR ENGINE (Unified Strategic Selector V4)
+// SELECTOR ENGINE
 export function buildStrategicSelector(el, mode = 'specific') {
   if (!el) return "unknown";
   if (el instanceof ShadowRoot) return "#shadow-root";
@@ -149,99 +149,88 @@ export function buildStrategicSelector(el, mode = 'specific') {
     if (!node.classList) return [];
     return [...node.classList].filter(c => !ignoreClasses.test(c) && !/^\d+(\.\d+)*$/.test(c));
   };
-
-  const isCategorical = mode === 'categorical';
-
-  // 1. HIGH-CONFIDENCE SNIPERS (ID)
-  // Skip in categorical mode or if disabled in settings
-  if (!isCategorical && config.ids) {
-    if (el.id && !/^(ember|ng-)\d+$/.test(el.id)) return "#" + CSS.escape(el.id);
-  }
-
-  // 2. HIGH-CONFIDENCE SNIPERS (SPECIFIC ATTRIBUTES)
-  if (!isCategorical && config.attrs) {
-    const attrPriorities = ["data-screen-name", "data-testid", "action", "name", "role"];
-    for (const attr of attrPriorities) {
-      const val = el.getAttribute(attr);
-      if (val) return `${tag}[${attr}="${CSS.escape(val)}"]`;
+  
+  // SUB-FUNCTION TO BUILD A SELECTOR FOR A SINGLE NODE
+  const buildNodeSelector = (node, isCategorical) => {
+    const nodeTag = node.tagName.toLowerCase();
+    
+    // 1. ID (for specific mode only)
+    if (!isCategorical && config.ids && node.id && !/^(ember|ng-)\d+$/.test(node.id)) {
+      return "#" + CSS.escape(node.id);
     }
-  }
 
-  // 3. MEDIA SNIPERS (ASSET MATCHING - INSTANCE SPECIFIC)
-  if (!isCategorical && config.media) {
-    if (tag === "img" || tag === "video" || tag === "source") {
-      const src = el.getAttribute("src");
-      if (src && !src.startsWith("data:")) return `${tag}[src="${CSS.escape(src)}"]`;
+    // 2. Specific Attributes (for specific mode only)
+    if (!isCategorical && config.attrs) {
+      const attrPriorities = ["data-screen-name", "data-testid", "action", "name", "role"];
+      for (const attr of attrPriorities) {
+        const val = node.getAttribute(attr);
+        if (val) return `${nodeTag}[${attr}="${CSS.escape(val)}"]`;
+      }
     }
-  }
+    
+    // 3. Media Snipers (for specific mode only)
+    if (!isCategorical && config.media && (nodeTag === "img" || nodeTag === "video" || nodeTag === "source")) {
+      const src = node.getAttribute("src");
+      if (src && !src.startsWith("data:")) return `${nodeTag}[src="${CSS.escape(src)}"]`;
+    }
 
-  // 4. CLASS SIGNATURE (CATEGORICAL IDENTITY)
-  let classStr = "";
-  if (config.classes) {
-    // In categorical mode, use only the first/most generic class to avoid
-    // instance-specific classes like menu_item_navbar_competitive being included
-    const maxClasses = isCategorical ? 1 : 3;
-    const classes = getCleanClasses(el).slice(0, maxClasses);
-    classStr = classes.length ? "." + classes.map(CSS.escape).join(".") : "";
-  }
-
-  // In categorical mode, prefer just the class over the tag+class combo —
-  // custom element tags like lol-uikit-navigation-item are too specific
-  const isCustomTag = tag.includes("-");
-  let selector = (isCategorical && classStr)
-    ? classStr
-    : (tag === "div" && classStr) ? classStr : (tag + classStr);
-
-  // Check if unique in context (Shadow or Doc)
-  const isUnique = (sel, context) => {
-    try {
-      return context.querySelectorAll(sel).length === 1;
-    } catch { return false; }
+    // 4. Class Signature
+    let classStr = "";
+    if (config.classes) {
+      const maxClasses = isCategorical ? 1 : 3;
+      const classes = getCleanClasses(node).slice(0, maxClasses);
+      classStr = classes.length ? "." + classes.map(CSS.escape).join(".") : "";
+    }
+    
+    // In categorical mode, class-only is better for custom elements.
+    const isCustomTag = nodeTag.includes("-");
+    if (isCategorical && classStr && isCustomTag) return classStr;
+    if (nodeTag === "div" && classStr) return classStr;
+    
+    return nodeTag + classStr;
   };
 
-  const root = el.getRootNode();
-  if (isUnique(selector, root)) return selector;
+  const isCategorical = (mode === 'categorical');
+  let selector = buildNodeSelector(el, isCategorical);
 
-  // Detect a useless bare-tag selector (no classes, no id, no attrs resolved it) —
-  // e.g. just "img" or "video". Always climb in this case regardless of the setting,
-  // so the user gets a meaningful parent-qualified selector instead of a useless one.
-  const bareMediaTags = new Set(["img", "video", "source", "audio"]);
-  const isBareTag = !classStr && bareMediaTags.has(tag);
-
-  // 5. STRUCTURAL CLIMBING (CATEGORICAL CONTEXT)
-  if (config.climbing || isBareTag) {
-    let current = el.parentElement;
-    let levels = 0;
-    const maxLevels = isBareTag ? 5 : 3;
-    while (current && current.tagName !== "BODY" && current.tagName !== "HTML" && levels < maxLevels) {
-      const cClasses = getCleanClasses(current).slice(0, 1);
-      const cTag = current.tagName.toLowerCase();
-      const cId = (!isCategorical && config.ids && current.id && !/^(ember|ng-)\d+$/.test(current.id)) 
-        ? "#" + CSS.escape(current.id) 
-        : "";
-      
-      const cClassStr = (config.classes && cClasses.length) ? "." + CSS.escape(cClasses[0]) : "";
-      const parentPart = cId || ((cTag === "div" && cClassStr) ? cClassStr : (cTag + cClassStr));
-      
-      selector = parentPart + " > " + selector;
-      
-      if (isUnique(selector, root)) return selector;
-      if (cId) break; 
-      
-      current = current.parentElement;
-      levels++;
+  // For contextual mode, we start with the element's selector and prepend its parent
+  if (mode === 'contextual' && el.parentElement) {
+    const parentSelector = buildNodeSelector(el.parentElement, true); // Parent is always categorical
+    if (parentSelector) {
+      selector = `${parentSelector} > ${selector}`;
     }
   }
 
-  // 6. LAST RESORT: NTH-CHILD (Only for Specific Mode)
-  if (!isCategorical) {
+  // Check for uniqueness. If not unique, attempt to climb.
+  const root = el.getRootNode();
+  try {
+    if (root.querySelectorAll(selector).length === 1) {
+      return selector;
+    }
+  } catch (e) {
+    // Invalid selector, proceed to climbing
+  }
+  
+  // Last resort for specific mode: Nth-child
+  if (mode === 'specific') {
     const parent = el.parentElement;
     if (parent) {
       const index = Array.from(parent.children).indexOf(el) + 1;
-      const indexedSelector = `${selector}:nth-child(${index})`;
-      if (isUnique(indexedSelector, root)) return indexedSelector;
+      const baseSelector = buildNodeSelector(el, true); // use a more generic base for nth-child
+      const indexedSelector = `${baseSelector}:nth-child(${index})`;
+      
+      const parentSelector = buildNodeSelector(parent, true);
+      const finalSelector = `${parentSelector} > ${indexedSelector}`;
+      
+      try {
+        if (root.querySelectorAll(finalSelector).length === 1) return finalSelector;
+      } catch(e) {}
+      // Fallback if parented version fails
+      try {
+        if (root.querySelectorAll(indexedSelector).length === 1) return indexedSelector;
+      } catch (e) {}
     }
   }
 
-  return selector;
+  return selector; // Return the best we could do
 }

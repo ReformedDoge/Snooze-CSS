@@ -1,6 +1,6 @@
 /**
  * @name Snooze-CSS
- * @version 1.0.0
+ * @version 1.1.0
  * @author SnoozeFest - github@ReformedDoge
  */
 import { createModal } from "./src/modal.js";
@@ -10,6 +10,7 @@ import {
   applyCSSToAllRoots,
 } from "./src/shadow-manager.js";
 import { loadSettings } from "./src/settings.js";
+import { checkForUpdates } from "./src/settings.js";
 import { getActiveProfileCSS } from "./src/storage.js";
 
 export function init() {
@@ -20,6 +21,8 @@ export function init() {
       window.Effect.apply("blurbehind", { color: settings.blurColor || "#ff000010" });
     }
   });
+  // This will check if the user has enabled it and if 6 hours have passed
+  checkForUpdates(); 
 
   // Initialize shadow tracking
   initShadowRootManager();

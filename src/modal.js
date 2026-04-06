@@ -1,6 +1,6 @@
 import { buildBuilderTab, refreshValues, restoreScrollPos, startElementPicker, cleanupBuilderTab } from "./builder.js";
 import { buildRawTab, cleanupRawTab } from "./raw.js";
-import { buildSettingsTab, loadSettings, startMonitor, cleanupSettingsTab } from "./settings.js";
+import { buildSettingsTab, loadSettings, startMonitor, cleanupSettingsTab, setUpdateBadgeCallback, getLatestRelease } from "./settings.js";
 import { buildAnalyzerTab, cleanupAnalyzerTab } from "./analyzer.js";
 import { buildAssetsTab, extractAndNavigate, setSwitchTab, cleanupAssetsTab } from "./assets.js";
 import { STYLES } from "./styles.js";
@@ -71,7 +71,7 @@ export function createModal() {
       <button class="ci-tab" data-tab="raw">Raw CSS</button>
       <button class="ci-tab" data-tab="analyzer">Analyzer</button>
       <button class="ci-tab" data-tab="assets">Assets</button>
-      <button class="ci-tab" data-tab="settings">Settings</button>
+      <button class="ci-tab" data-tab="settings">Settings<span id="ci-update-badge" style="display:none;width:6px;height:6px;background:#c8aa6e;border-radius:50%;margin-left:5px;vertical-align:middle;display:inline-block;opacity:0;transition:opacity 0.2s;"></span></button>
     </div>
     <div class="ci-body" id="ci-body">
       <div class="ci-panel" id="ci-panel-builder"></div>
@@ -112,6 +112,16 @@ export function createModal() {
   buildAnalyzerTab(shadowRoot.querySelector("#ci-panel-analyzer"));
   buildAssetsTab(shadowRoot.querySelector("#ci-panel-assets"));
   buildSettingsTab(shadowRoot.querySelector("#ci-panel-settings"));
+
+  // Wire up update badge on the Settings tab button
+  const updateBadge = shadowRoot.querySelector("#ci-update-badge");
+  function applyUpdateBadge(release) {
+    if (!updateBadge) return;
+    updateBadge.style.opacity = release ? "1" : "0";
+  }
+  setUpdateBadgeCallback(applyUpdateBadge);
+  // Show badge immediately if an update was already found before modal opened
+  applyUpdateBadge(getLatestRelease());
 
   // Asset tab switch handler
   setSwitchTab(switchTab);

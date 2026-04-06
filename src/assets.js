@@ -109,12 +109,14 @@ function runExtraction(selector, targetNode = null) {
   const content = _container.querySelector("#ax-content");
   if (!emptyEl || !content) return;
 
-  let domNodes = piercingQuerySelectorAll(selector);
-  
-  // Bring the specific node the user clicked on to the forefront of the queue
+  // When invoked from a specific element (e.g. the builder's extract button),
+  // restrict extraction to that exact node to avoid collecting assets from all
+  // DOM instances that share the same selector (e.g. repeated tooltip elements).
+  let domNodes;
   if (targetNode) {
-    domNodes = domNodes.filter(n => n !== targetNode);
-    domNodes.unshift(targetNode);
+    domNodes = [targetNode];
+  } else {
+    domNodes = piercingQuerySelectorAll(selector);
   }
 
   emptyEl.style.display = "none";
@@ -357,7 +359,11 @@ function walkForAssets(node, _parentSelector, results, seenAssets, includeSelf) 
 
   if (includeSelf) {
     const sel = buildStrategicSelector(node, 'categorical');
-    const assets = collectFromNode(node, sel);
+    let combinedSel = sel;
+    if (_parentSelector && _parentSelector !== "unknown" && !sel.includes(_parentSelector)) {
+      combinedSel = `${_parentSelector} ${sel}`;
+    }
+    const assets = collectFromNode(node, combinedSel);
     for (const asset of assets) {
       const fp = `${asset.prop}|${asset.url}|${asset.selector}`;
       if (!seenAssets.has(fp)) {
@@ -459,148 +465,94 @@ function buildAssetGroup(title, assets, collapsed) {
 function buildAssetRow(asset) {
   const row = document.createElement("div");
   row.className = "ax-asset-row";
-  row.style.cssText =
-    "padding:10px 14px;border-bottom:1px solid #0a1520;display:flex;gap:10px;align-items:flex-start;";
+  row.style.cssText = "padding:10px 14px;border-bottom:1px solid #0a1520;display:flex;gap:10px;align-items:flex-start;";
 
-  // Thumbnail Preview
+  // Thumbnail
   const thumb = document.createElement("div");
-  thumb.style.cssText =
-    "width:56px;height:56px;flex-shrink:0;background:#030810;border:1px solid #1a2535;" +
-    "overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;";
-
+  thumb.style.cssText = "width:56px;height:56px;flex-shrink:0;background:#030810;border:1px solid #1a2535;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;";
   const ext = asset.url.split("?")[0].split(".").pop().toLowerCase();
-  const isVideo = ["webm", "mp4", "ogg"].includes(ext);
-
-  if (isVideo) {
-    const vid = document.createElement("video");
-    vid.src = asset.url;
-    vid.preload = "metadata";
-    vid.muted = true;
-    vid.style.cssText = "max-width:100%;max-height:100%;object-fit:contain;";
-    // Seek to first frame on load
-    vid.addEventListener("loadedmetadata", () => { vid.currentTime = 0.1; });
-    vid.onerror = () => {
-      thumb.innerHTML = `<span style="font-size:9px;color:#2a3a4a;text-align:center;padding:2px;">▶ webm</span>`;
-    };
-    thumb.appendChild(vid);
+  if (["webm", "mp4", "ogg"].includes(ext)) {
+    const v = document.createElement("video"); v.src = asset.url; v.style.cssText = "max-width:100%;max-height:100%;";
+    v.muted = true; v.addEventListener("loadedmetadata", () => { v.currentTime = 0.1; });
+    thumb.appendChild(v);
   } else {
-    const img = document.createElement("img");
-    img.src = asset.url;
-    img.style.cssText = "max-width:100%;max-height:100%;object-fit:contain;";
-    img.onerror = () => {
-      thumb.innerHTML = `<span style="font-size:9px;color:#2a3a4a;text-align:center;padding:2px;">No preview</span>`;
-    };
-    thumb.appendChild(img);
+    const i = document.createElement("img"); i.src = asset.url; i.style.cssText = "max-width:100%;max-height:100%;object-fit:contain;";
+    thumb.appendChild(i);
   }
 
-  // Info + controls
   const main = document.createElement("div");
-  main.style.cssText =
-    "flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;";
+  main.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;";
 
-  // Selector + prop badge
+  // Meta (Prop Badge + URL)
   const meta = document.createElement("div");
   meta.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap;";
-
   const propBadge = document.createElement("span");
-  propBadge.style.cssText =
-    "font-size:8px;color:#c8aa6e;background:rgba(200,170,110,0.1);border:1px solid rgba(200,170,110,0.3);" +
-    "padding:1px 6px;letter-spacing:0.06em;text-transform:uppercase;flex-shrink:0;";
+  propBadge.style.cssText = "font-size:8px;color:#c8aa6e;background:rgba(200,170,110,0.1);border:1px solid rgba(200,170,110,0.3);padding:1px 6px;text-transform:uppercase;";
   propBadge.textContent = asset.prop;
-
-  const selCode = document.createElement("code");
-  selCode.style.cssText =
-    "font-size:9px;color:#4a6070;font-family:'Fira Code',monospace;word-break:break-all;flex:1;min-width:0;";
-  selCode.textContent = asset.selector;
-
   meta.appendChild(propBadge);
-  meta.appendChild(selCode);
-
-  // URL View
   const urlEl = document.createElement("div");
-  urlEl.style.cssText =
-    "font-size:9px;color:#2a4050;font-family:'Fira Code',monospace;word-break:break-all;" +
-    "background:rgba(0,0,0,0.3);padding:3px 6px;border:1px solid #0d1824;";
+  urlEl.style.cssText = "font-size:9px;color:#2a4050;font-family:monospace;word-break:break-all;background:rgba(0,0,0,0.3);padding:3px 6px;";
   urlEl.textContent = asset.url;
 
-  // Strategy Select
-  const strategyInfo = getCssStrategy(asset);
-  const strategyRow = document.createElement("div");
-  strategyRow.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:2px;";
-  
-  let currentStrategyId = strategyInfo.options?.[0]?.id || "default";
+  // SELECTOR STRATEGY
+  const selRow = document.createElement("div");
+  selRow.style.cssText = "display:flex;gap:6px;align-items:center;";
+  const selLabel = document.createElement("span");
+  selLabel.style.cssText = "font-size:9px;color:#4a6070;width:50px;flex-shrink:0;";
+  selLabel.textContent = "Target:";
+  const selSelect = document.createElement("select");
+  selSelect.className = "ci-input";
+  selSelect.style.cssText = "font-size:9px;padding:2px;height:22px;flex:1;min-width:0;";
 
-  if (strategyInfo.options) {
-    const select = document.createElement("select");
-    select.className = "ci-input";
-    select.style.cssText =
-      "font-size:9px;padding:2px 4px;background:#040912;color:#7a8a9a;border:1px solid #1a2535;outline:none;";
-    
-    strategyInfo.options.forEach(opt => {
-      const option = document.createElement("option");
-      option.value = opt.id;
-      option.textContent = opt.label;
-      if (opt.default) {
-        option.selected = true;
-        currentStrategyId = opt.id;
-      }
-      select.appendChild(option);
-    });
-    
-    select.addEventListener("change", (e) => {
-      currentStrategyId = e.target.value;
-      replaceInput.dataset.strategy = currentStrategyId;
-    });
-    
-    strategyRow.appendChild(select);
-  } else {
-    const hint = document.createElement("span");
-    hint.style.cssText = "font-size:9px;color:#2a4a5a;font-style:italic;";
-    hint.textContent = strategyInfo.hint;
-    strategyRow.appendChild(hint);
-  }
+  const pNode = asset.domNode.parentElement || asset.domNode.parentNode;
+  const parentSel = (pNode && pNode.nodeType === 1) ? buildStrategicSelector(pNode, 'categorical') : "";
+  const childSel  = buildStrategicSelector(asset.domNode, 'categorical');
+  const fileName  = asset.url.split('/').pop().split('?')[0]; 
+  const sniper    = asset.isAttr ? `[src*="${fileName}"]` : `[style*="${fileName}"]`;
 
-  // Global Scope Toggle
-  const scopeWrap = document.createElement("label");
-  scopeWrap.style.cssText = "display:flex;align-items:center;gap:4px;cursor:pointer;margin-left:auto;";
-  
-  const scopeCb = document.createElement("input");
-  scopeCb.type = "checkbox";
-  scopeCb.style.cssText = "accent-color:#785a28;cursor:pointer;margin:0;";
-  // Checkbox state default
-  scopeCb.checked = asset.isAttr;
-  
-  scopeCb.addEventListener("change", (e) => {
-    replaceInput.dataset.global = e.target.checked ? "1" : "0";
+  const scenarios = [
+    { label: "1. Specific + Screen", val: `${parentSel} ${childSel}${sniper}`.trim() },
+    { label: "2. Specific + Global", val: `${childSel}${sniper}` },
+    { label: "3. Any + Screen",      val: `${parentSel} ${childSel}`.trim() },
+    { label: "4. Any + Global",       val: `${childSel}` },
+    { label: "5. Universal URL",     val: `${sniper}` }
+  ];
+  scenarios.forEach(s => {
+    const o = document.createElement("option"); o.value = s.val; o.textContent = `${s.label}: ${s.val}`;
+    selSelect.appendChild(o);
   });
-  
-  const scopeLabel = document.createElement("span");
-  scopeLabel.style.cssText = "font-size:9px;color:#7a8a9a;";
-  scopeLabel.textContent = "Global (ignore DOM path)";
-  
-  scopeWrap.appendChild(scopeCb);
-  scopeWrap.appendChild(scopeLabel);
-  strategyRow.appendChild(scopeWrap);
+  selRow.append(selLabel, selSelect);
 
-  // Replace input row
+  // REPLACE STRATEGY
+  const methodRow = document.createElement("div");
+  methodRow.style.cssText = "display:flex;gap:6px;align-items:center;";
+  const methodLabel = document.createElement("span");
+  methodLabel.style.cssText = "font-size:9px;color:#4a6070;width:50px;flex-shrink:0;";
+  methodLabel.textContent = "Method:";
+  const methodSelect = document.createElement("select");
+  methodSelect.className = "ci-input";
+  methodSelect.style.cssText = "font-size:9px;padding:2px;height:22px;flex:1;min-width:0;";
+
+  const sInfo = getCssStrategy(asset);
+  if (sInfo.options) {
+    sInfo.options.forEach(opt => {
+      const o = document.createElement("option"); o.value = opt.id; o.textContent = opt.label;
+      methodSelect.appendChild(o);
+    });
+  } else {
+    const o = document.createElement("option"); o.value = "default"; o.textContent = sInfo.hint;
+    methodSelect.appendChild(o);
+  }
+  methodRow.append(methodLabel, methodSelect);
+
+  // INPUT ROW (With File Picker)
   const replaceRow = document.createElement("div");
   replaceRow.style.cssText = "display:flex;gap:4px;align-items:center;";
 
   const replaceInput = document.createElement("input");
-  replaceInput.type = "text";
-  replaceInput.className = "ci-input";
+  replaceInput.type = "text"; replaceInput.className = "ci-input";
   replaceInput.placeholder = "Replacement URL or ./assets/file.png…";
-  replaceInput.style.cssText = "flex:1;font-size:10px;padding:4px 8px;";
-  replaceInput.dataset.originalUrl = asset.url;
-  replaceInput.dataset.selector = asset.selector;
-  replaceInput.dataset.prop = asset.prop;
-  replaceInput.dataset.isAttr = asset.isAttr ? "1" : "0";
-  replaceInput.dataset.nodeTag = asset.domNode?.tagName?.toLowerCase() || "";
-  replaceInput.dataset.parentSelector = asset.parentSelector || "";
-  replaceInput.dataset.strategy = currentStrategyId;
-  replaceInput.dataset.global = asset.isAttr ? "1" : "0";
-  replaceInput.dataset.exactSelector = asset.exactSelector || "";
-  replaceInput.dataset.insetFallback = asset.inset || "0";
+  replaceInput.style.cssText = "font-size:10px;padding:4px 8px;flex:1;";
 
   const browseBtn = document.createElement("button");
   browseBtn.className = "ci-btn-prop";
@@ -609,12 +561,11 @@ function buildAssetRow(asset) {
   browseBtn.style.cssText = "width:26px;height:26px;flex-shrink:0;";
   browseBtn.addEventListener("click", () => attachAssetPicker(replaceInput));
 
-  replaceRow.appendChild(replaceInput);
-  replaceRow.appendChild(browseBtn);
+  replaceRow.append(replaceInput, browseBtn);
 
-  // Action buttons
+  // ACTION BUTTONS
   const btnRow = document.createElement("div");
-  btnRow.style.cssText = "display:flex;gap:6px;align-items:center;flex-wrap:wrap;";
+  btnRow.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:2px;";
 
   const downloadBtn = document.createElement("button");
   downloadBtn.className = "ci-btn-secondary";
@@ -622,51 +573,29 @@ function buildAssetRow(asset) {
   downloadBtn.textContent = "⬇ Download";
   downloadBtn.addEventListener("click", () => downloadAsset(asset.url));
 
-  const copyUrlBtn = document.createElement("button");
-  copyUrlBtn.className = "ci-btn-secondary";
-  copyUrlBtn.style.cssText = "font-size:10px;padding:3px 10px;";
-  copyUrlBtn.textContent = "Copy URL";
-  copyUrlBtn.addEventListener("click", () => {
-    try { navigator.clipboard.writeText(asset.url); } catch {}
-    copyUrlBtn.textContent = "✓ Copied";
-    setTimeout(() => (copyUrlBtn.textContent = "Copy URL"), 1400);
-  });
-
   const sendBtn = document.createElement("button");
   sendBtn.className = "ci-az-send-btn";
-  sendBtn.style.cssText = "font-size:10px;padding:3px 10px;";
   sendBtn.textContent = "→ Raw CSS";
-  sendBtn.title = "Send replacement CSS to Raw tab";
   sendBtn.addEventListener("click", () => {
-    const replacement = replaceInput.value.trim();
-    const finalUrl = replacement || asset.url;
-    asset.strategyId = replaceInput.dataset.strategy;
-    asset.isGlobal = replaceInput.dataset.global === "1";
-    asset.insetFallback = replaceInput.dataset.insetFallback;
-    const css = generateReplacementCSS(asset, finalUrl);
-    appendCssToRaw(css);
+    const rep = replaceInput.value.trim();
+    if (!rep) return;
+    const finalAsset = {
+      ...asset,
+      selector: selSelect.value,
+      strategyId: methodSelect.value
+    };
+    appendCssToRaw(generateReplacementCSS(finalAsset, rep));
     switchTab("raw");
   });
 
-  const flashEl = document.createElement("span");
-  flashEl.className = "ci-flash";
+  btnRow.append(downloadBtn, sendBtn);
 
-  btnRow.appendChild(downloadBtn);
-  btnRow.appendChild(copyUrlBtn);
-  btnRow.appendChild(sendBtn);
-  btnRow.appendChild(flashEl);
-
-  main.appendChild(meta);
-  main.appendChild(urlEl);
-  main.appendChild(strategyRow);
-  main.appendChild(replaceRow);
-  main.appendChild(btnRow);
-
-  row.appendChild(thumb);
-  row.appendChild(main);
-
+  // Build the main content
+  main.append(meta, urlEl, selRow, methodRow, replaceRow, btnRow);
+  row.append(thumb, main);
   return row;
 }
+
 /**
  * Returns a compact, inline DOM row for an asset, suitable for the Builder's property list.
  */
@@ -810,127 +739,32 @@ export function getCssStrategy(asset) {
 
 export function generateReplacementCSS(asset, replacementUrl) {
   const strategy = getCssStrategy(asset);
-  const sel = asset.selector;
   const origUrl = asset.url;
-  const rep = replacementUrl.startsWith("url(")
-    ? replacementUrl
-    : `url('${replacementUrl}')`;
-
+  const rep = replacementUrl.startsWith("url(") ? replacementUrl : `url('${replacementUrl}')`;
   const type = strategy.type;
-  const strategyId = asset.strategyId || strategy.options?.find(o => o.default)?.id || "default";
-  const isGlobal = asset.isGlobal;
-  
-  const baseSel = isGlobal 
-    ? (asset.genericSelector || asset.domNode?.tagName?.toLowerCase() || 'img')
-    : (asset.selector && asset.selector !== "unknown" ? asset.selector : (asset.domNode?.tagName?.toLowerCase() || 'img'));
-  const escAttr = (v) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const method = asset.strategyId || "default";
+  const sel = asset.selector;
 
-  switch (type) {
-    case "img-src": {
-      const isSrcset = asset.prop === "srcset";
-      const attrMatch = isSrcset ? "srcset*" : asset.prop;
-      const matchVal = isSrcset ? origUrl.split(/\s+/)[0] : origUrl;
-      const tag = asset.domNode?.tagName?.toLowerCase() || 'img';
-      
-      let specificSel = `${baseSel !== tag && !baseSel.includes('[') ? baseSel : tag}[${attrMatch}="${escAttr(matchVal)}"]`;
-      const attrSel = isGlobal ? baseSel : specificSel;
+  // 1. Handle HTML Attributes (src, poster)
+  if (type === "img-src" || type === "video-src" || type === "uikit-video-src") {
+    const videoSuffix = (type.includes("video")) ? " video" : "";
+    const target = sel + videoSuffix;
 
-      if (strategyId === "parent-after") {
-        const pSel = asset.parentSelector || "*";
-        return (
-          `/* Asset replacement: ${origUrl} (Parent ::after mode) */\n` +
-          `${pSel}:has(> ${attrSel}) {\n` +
-          `\tposition: relative !important;\n` +
-          `}\n` +
-          `${pSel}:has(> ${attrSel}) > ${attrSel} {\n` +
-          `\topacity: 0 !important;\n` +
-          `}\n` +
-          `${pSel}:has(> ${attrSel})::after {\n` +
-          `\tcontent: '';\n` +
-          `\tposition: absolute;\n` +
-          `\tinset: ${asset.insetFallback || '0'}; /* Auto-measured from DOM original bounds */\n` +
-          `\tbackground: ${rep} center/cover no-repeat;\n` +
-          `\tpointer-events: none;\n` +
-          `}\n`
-        );
-      } else if (strategyId === "bg-direct") {
-        return (
-          `/* Asset replacement: ${origUrl} (Direct Background mode) */\n` +
-          `${attrSel} {\n` +
-          `\tobject-position: -9999px !important;\n` +
-          `\tbackground: ${rep} center/contain no-repeat !important;\n` +
-          `\topacity: 1 !important;\n` +
-          `}\n`
-        );
-      } else {
-        // Content mode
-        return (
-          `/* Asset replacement: ${origUrl} (Content mode) */\n` +
-          `${attrSel} {\n` +
-          `\tcontent: ${rep} !important;\n` +
-          `}\n`
-        );
-      }
-    }
-
-    case "video-src": {
-      const tag = asset.domNode?.tagName?.toLowerCase() || "lol-uikit-video";
-      const specificTagSel = `${baseSel !== tag && !baseSel.includes('[') ? baseSel : tag}[src="${escAttr(origUrl)}"]`;
-      const attrSel = isGlobal ? `${baseSel} video` : `${specificTagSel} video`;
-      
-      return (
-        `/* Asset replacement: ${origUrl} */\n` +
-        `${attrSel} {\n` +
-        `\tobject-position: -9999px !important;\n` +
-        `\tbackground: ${rep} center/cover no-repeat !important;\n` +
-        `\topacity: 1 !important;\n` +
-        `}\n`
-      );
-    }
-
-    case "uikit-video-src": {
-      const tag = asset.domNode?.tagName?.toLowerCase() || "lol-uikit-video";
-      const specificTagSel = `${baseSel !== tag && !baseSel.includes('[') ? baseSel : tag}[src="${CSS.escape(origUrl)}"]`;
-      const attrSel = isGlobal ? `${baseSel} video` : `${specificTagSel} video`;
-      
-      return (
-        `/* Asset replacement: ${origUrl} */\n` +
-        `${attrSel} {\n` +
-        `\tobject-position: -9999px !important;\n` +
-        `\tbackground: ${rep} center/cover no-repeat !important;\n` +
-        `\topacity: 1 !important;\n` +
-        `}\n`
-      );
-    }
-
-    case "css-prop":
-    default: {
-      let finalSel = isGlobal ? (asset.genericSelector || baseSel) : (asset.exactSelector || baseSel);
-      
-      // Sniper logic for dynamically applied inline CSS (Highest Confidence Target)
-      if (!isGlobal && asset.domNode) {
-        try {
-          const inlineStyle = asset.domNode.getAttribute("style") || "";
-          const urlObj = new URL(origUrl, "http://localhost"); 
-          const parts = urlObj.pathname.split('/');
-          let filename = parts.pop() || parts.pop();
-          if (filename && filename.length > 3 && inlineStyle.includes(filename)) {
-            finalSel = `${baseSel !== tag && !baseSel.includes('[') ? baseSel : tag}[style*="${escAttr(filename)}"]`;
-          }
-        } catch {}
-      }
-      
-      return (
-        `/* Asset replacement: ${origUrl} */\n` +
-        `${finalSel} {\n` +
-        `\t${asset.prop}: ${rep} !important;\n` +
-        `}\n`
-      );
+    if (method === "bg-direct") {
+      return `/* Asset: ${origUrl} (Background Trick) */\n${target} {\n\tobject-position: -9999px !important;\n\tbackground: ${rep} center/contain no-repeat !important;\n}\n`;
+    } else if (method === "parent-after") {
+        return `/* Asset: ${origUrl} (Parent ::after) */\n${sel}:has(img) {\n\tposition: relative !important;\n}\n${sel} img {\n\topacity: 0 !important;\n}\n${sel}::after {\n\tcontent: ''; position: absolute; inset: 0;\n\tbackground: ${rep} center/cover no-repeat;\n}\n`;
+    } else {
+      // Content mode (Default)
+      return `/* Asset: ${origUrl} (Content Swap) */\n${target} {\n\tcontent: ${rep} !important;\n}\n`;
     }
   }
+
+  // 2. Handle Standard CSS Properties (background-image, mask, etc.)
+  return `/* Asset: ${origUrl} */\n${sel} {\n\t${asset.prop}: ${rep} !important;\n}\n`;
 }
 
-// ─── SEND ALL ────────────────────────────────────────────────────────────────
+// SEND ALL 
 
 function sendAllToRaw(content) {
   const inputs = [...content.querySelectorAll("input[data-original-url]")];
@@ -945,11 +779,15 @@ function sendAllToRaw(content) {
       prop: input.dataset.prop,
       url: input.dataset.originalUrl,
       isAttr: input.dataset.isAttr === "1",
-      domNode: { tagName: input.dataset.nodeTag },
+      domNode: { 
+        tagName: input.dataset.nodeTag,
+        getAttribute: (attr) => attr === "style" ? (input.dataset.inlineStyle || "") : ""
+      },
       parentSelector: input.dataset.parentSelector,
       strategyId: input.dataset.strategy,
       isGlobal: input.dataset.global === "1",
       exactSelector: input.dataset.exactSelector,
+      genericSelector: input.dataset.genericSelector,
       insetFallback: input.dataset.insetFallback
     };
     return { asset, finalUrl };
@@ -965,7 +803,7 @@ function sendAllToRaw(content) {
   switchTab("raw");
 }
 
-// ─── DOWNLOAD ────────────────────────────────────────────────────────────────
+// DOWNLOAD 
 
 async function downloadAsset(url) {
   try {
@@ -998,7 +836,7 @@ async function downloadAsset(url) {
   }
 }
 
-// ─── FILE PICKER ─────────────────────────────────────────────────────────────
+// FILE PICKER 
 
 export function attachAssetPicker(inputEl) {
   const hidden = document.createElement("input");
@@ -1014,7 +852,7 @@ export function attachAssetPicker(inputEl) {
   hidden.click();
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
+// HELPERS 
 
 function piercingQuerySelectorAll(selector) {
   if (!selector || /^\d+$/.test(selector)) return [];

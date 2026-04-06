@@ -4,6 +4,12 @@ import { makeSection, makeToggle } from "./utils.js";
 import { CATALOG } from "./catalog.js";
 
 const SETTINGS_KEY = "Snooze-CSS-settings";
+let CURRENT_VERSION = "1.0.0"; //Fallback
+const GITHUB_RELEASES_API = "https://api.github.com/repos/ReformedDoge/Snooze-CSS/releases/latest";
+
+let _latestRelease = null; // { version, url, name, body } or null
+let _updateCheckPending = false;
+let _updateBadgeCallback = null; // called when update state changes
 
 const defaults = {
   autoMonitor: true,
@@ -17,6 +23,7 @@ const defaults = {
     climbing: false,
   },
   lastGlobalToggle: false,
+  checkUpdates: true,
 };
 
 let state = { ...defaults };
@@ -30,7 +37,26 @@ const SENTINEL_SELECTORS = [
   "rcp-fe-viewport-persistent",
 ];
 
+async function syncVersionWithMetadata() {
+  try {
+    // Determine path to index.js relative to this file
+    const indexUrl = new URL('../index.js', import.meta.url);
+    const response = await fetch(indexUrl);
+    const text = await response.text();
+    
+    // Regex to find @version x.x.x
+    const match = text.match(/@version\s+([\d.]+)/);
+    if (match && match[1]) {
+      CURRENT_VERSION = match[1];
+      console.log(`[Snooze-CSS] Logic synced to version ${CURRENT_VERSION}`);
+    }
+  } catch (err) {
+    console.warn("[Snooze-CSS] Failed to sync version from metadata:", err);
+  }
+}
+
 export async function loadSettings() {
+  await syncVersionWithMetadata(); // Run this once on startup
   const saved = await Storage.get(SETTINGS_KEY, null);
   if (saved) state = { ...defaults, ...saved };
   return state;
@@ -90,6 +116,67 @@ export function stopMonitor() {
   }
 }
 
+export function setUpdateBadgeCallback(fn) {
+  _updateBadgeCallback = fn;
+}
+
+export function getLatestRelease() {
+  return _latestRelease;
+}
+
+export function getCurrentVersion() {
+  return CURRENT_VERSION;
+}
+
+function parseVersion(v) {
+  return (v || "").replace(/^v/, "").trim();
+}
+
+function isNewerVersion(latest, current) {
+  const latestParts = parseVersion(latest).split(".").map(Number);
+  const currentParts = parseVersion(current).split(".").map(Number);
+  for (let i = 0; i < Math.max(latestParts.length, currentParts.length); i++) {
+    const l = latestParts[i] || 0;
+    const c = currentParts[i] || 0;
+    if (l > c) return true;
+    if (l < c) return false;
+  }
+  return false;
+}
+
+export async function checkForUpdates(force = false) {
+  if (!state.checkUpdates && !force) return;
+  if (_updateCheckPending) return;
+
+  _updateCheckPending = true;
+  try {
+    const resp = await fetch(GITHUB_RELEASES_API);
+    if (!resp.ok) return;
+    
+    const data = await resp.json();
+    const latestVersion = parseVersion(data.tag_name || data.name || "");
+
+    if (latestVersion && isNewerVersion(latestVersion, CURRENT_VERSION)) {
+      _latestRelease = {
+        version: latestVersion,
+        url: data.html_url || "https://github.com/ReformedDoge/Snooze-CSS/releases",
+        name: data.name || `v${latestVersion}`,
+        body: (data.body || "").slice(0, 500),
+      };
+    } else {
+      _latestRelease = null;
+    }
+
+    // Update the UI badge if the modal is open
+    if (_updateBadgeCallback) _updateBadgeCallback(_latestRelease);
+    
+  } catch (err) {
+    console.warn("[Snooze-CSS] Update check failed:", err);
+  } finally {
+    _updateCheckPending = false;
+  }
+}
+
 export function buildSettingsTab(container) {
   container.innerHTML = "";
 
@@ -136,46 +223,106 @@ export function buildSettingsTab(container) {
   monSection.appendChild(note);
 
   wrap.appendChild(monSection);
-  
-  // SELECTOR STRATEGY
-  const selSection = makeSection(
-    "Selector Strategy",
-    "Configure the 'Sniper' heuristics used by the Inspector and Assets Tab. Disabling tiers will force the engine to find more categorical/generic selectors.",
+
+  // UPDATE CHECKER
+  const updateSection = makeSection(
+    "Updates",
+    "Check GitHub for new Snooze-CSS releases. Checks automatically every 6 hours when enabled.",
   );
 
-  const selRows = [
-    { key: "ids", label: "Prioritize Unique IDs", desc: "Use specific IDs (excluding auto-generated ones)" },
-    { key: "attrs", label: "Prioritize Attributes", desc: "Use data-screen-name, data-testid, etc." },
-    { key: "media", label: "Media Sniper [src]", desc: "Directly target images/videos by their URL" },
-    { key: "classes", label: "Use Semantic Classes", desc: "Target elements by their category identity" },
-    { key: "climbing", label: "Automated Parent Climbing", desc: "Crawl up the DOM if the target isn't unique" },
-  ];
+  // Toggle row
+  const updateToggleRow = document.createElement("div");
+  updateToggleRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
+  const updateToggleLabel = document.createElement("span");
+  updateToggleLabel.style.cssText = "font-size:11px;color:#8a9aaa;";
+  updateToggleLabel.textContent = "Auto-check for updates on startup";
+  const updateToggle = makeToggle(state.checkUpdates !== false, async (val) => {
+    state.checkUpdates = val;
+    await saveSettings();
+  });
+  updateToggleRow.appendChild(updateToggleLabel);
+  updateToggleRow.appendChild(updateToggle);
+  updateSection.appendChild(updateToggleRow);
 
-  selRows.forEach((row) => {
-    const r = document.createElement("div");
-    r.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:8px;";
-    
-    const info = document.createElement("div");
-    const t = document.createElement("div");
-    t.style.cssText = "font-size:11px;color:#8a9aaa;";
-    t.textContent = row.label;
-    const d = document.createElement("div");
-    d.style.cssText = "font-size:9px;color:#3a5060;";
-    d.textContent = row.desc;
-    info.appendChild(t);
-    info.appendChild(d);
+  // Status area
+  const updateStatusEl = document.createElement("div");
+  updateStatusEl.style.cssText = "margin-top:10px;padding:8px 10px;background:rgba(0,0,0,0.2);border:1px solid #1a2535;font-size:10px;line-height:1.6;";
 
-    const toggle = makeToggle(state.selectorConfig[row.key], async (val) => {
-      state.selectorConfig[row.key] = val;
-      await saveSettings();
-    });
+  function renderUpdateStatus() {
+    updateStatusEl.innerHTML = "";
+    if (_latestRelease) {
+      updateStatusEl.style.borderColor = "#785a28";
+      updateStatusEl.style.background = "rgba(200,170,110,0.06)";
 
-    r.appendChild(info);
-    r.appendChild(toggle);
-    selSection.appendChild(r);
+      const title = document.createElement("div");
+      title.style.cssText = "font-size:11px;font-weight:600;color:#c8aa6e;margin-bottom:4px;";
+      title.textContent = `Update available: v${_latestRelease.version}`;
+
+      const relName = document.createElement("div");
+      relName.style.cssText = "font-size:10px;color:#8a9aaa;margin-bottom:6px;";
+      relName.textContent = _latestRelease.name;
+
+      if (_latestRelease.body) {
+        const notes = document.createElement("div");
+        notes.style.cssText = "font-size:9px;color:#4a6070;margin-bottom:8px;white-space:pre-wrap;max-height:80px;overflow:hidden;";
+        notes.textContent = _latestRelease.body;
+        updateStatusEl.appendChild(title);
+        updateStatusEl.appendChild(relName);
+        updateStatusEl.appendChild(notes);
+      } else {
+        updateStatusEl.appendChild(title);
+        updateStatusEl.appendChild(relName);
+      }
+
+      const linkRow = document.createElement("div");
+      linkRow.style.cssText = "display:flex;gap:8px;align-items:center;";
+      const link = document.createElement("a");
+      link.href = _latestRelease.url;
+      link.target = "_blank";
+      link.style.cssText = "font-size:10px;color:#785a28;text-decoration:underline;cursor:pointer;";
+      link.textContent = "View release on GitHub";
+      linkRow.appendChild(link);
+      updateStatusEl.appendChild(linkRow);
+    } else {
+      updateStatusEl.style.borderColor = "#1a2535";
+      updateStatusEl.style.background = "rgba(0,0,0,0.2)";
+      const span = document.createElement("span");
+      span.style.color = "#3a5060";
+      span.textContent = `Current version: v${CURRENT_VERSION} — up to date`;
+      updateStatusEl.appendChild(span);
+    }
+  }
+
+  renderUpdateStatus();
+  updateSection.appendChild(updateStatusEl);
+
+  // Manual check button
+  const checkBtnRow = document.createElement("div");
+  checkBtnRow.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:8px;";
+  const checkBtn = document.createElement("button");
+  checkBtn.className = "ci-btn-secondary";
+  checkBtn.style.cssText = "font-size:10px;padding:5px 12px;";
+  checkBtn.textContent = "Check now";
+  const checkStatus = document.createElement("span");
+  checkStatus.style.cssText = "font-size:10px;color:#4a6070;";
+
+  checkBtn.addEventListener("click", async () => {
+    checkBtn.disabled = true;
+    checkBtn.textContent = "Checking...";
+    checkStatus.textContent = "";
+    await checkForUpdates(true);
+    renderUpdateStatus();
+    checkBtn.disabled = false;
+    checkBtn.textContent = "Check now";
+    checkStatus.textContent = _latestRelease ? "" : "Already up to date";
+    setTimeout(() => { checkStatus.textContent = ""; }, 3000);
   });
 
-  wrap.appendChild(selSection);
+  checkBtnRow.appendChild(checkBtn);
+  checkBtnRow.appendChild(checkStatus);
+  updateSection.appendChild(checkBtnRow);
+
+  wrap.appendChild(updateSection);
 
   // DATA MANAGEMENT
   const dangerSection = makeSection("Data", "");
