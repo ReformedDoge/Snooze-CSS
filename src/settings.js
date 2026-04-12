@@ -15,6 +15,14 @@ const defaults = {
   autoMonitor: true,
   blurEnabled: false,
   blurColor: "#ff000010",
+  windowEffect: {
+    enabled: false,
+    name: "blurbehind",
+    colorBase: "#ff0000",
+    alpha: "10",
+    color: "#ff000010",
+    material: "none",
+  },
   selectorConfig: {
     ids: true,
     attrs: true,
@@ -29,6 +37,81 @@ const defaults = {
 let state = { ...defaults };
 let observer = null;
 let refreshCallback = null;
+
+const EFFECTS_WITH_COLOR = new Set([
+  "transparent",
+  "blurbehind",
+  "acrylic",
+  "unified",
+]);
+
+export function normalizeWindowEffect(effect = {}, legacy = {}) {
+  const legacyColor = legacy.blurColor || defaults.blurColor;
+  const legacyEnabled = legacy.blurEnabled === true;
+  const color = effect.color || legacyColor || defaults.windowEffect.color;
+  const normalizedColor =
+    /^#[0-9a-f]{8}$/i.test(color)
+      ? color
+      : /^#[0-9a-f]{4}$/i.test(color)
+        ? color
+        : defaults.windowEffect.color;
+
+  const colorBase =
+    effect.colorBase ||
+    (normalizedColor.length === 9
+      ? normalizedColor.slice(0, 7)
+      : normalizedColor.length === 5
+        ? "#" + normalizedColor[1] + normalizedColor[1] + normalizedColor[2] + normalizedColor[2] + normalizedColor[3] + normalizedColor[3]
+        : defaults.windowEffect.colorBase);
+  const alpha =
+    effect.alpha ||
+    (normalizedColor.length === 9
+      ? normalizedColor.slice(7, 9)
+      : normalizedColor.length === 5
+        ? normalizedColor.slice(4, 5).repeat(2)
+        : defaults.windowEffect.alpha);
+
+  return {
+    enabled:
+      effect.enabled !== undefined ? effect.enabled : legacyEnabled,
+    name: effect.name || "blurbehind",
+    colorBase,
+    alpha: alpha.toUpperCase(),
+    color: `${colorBase}${alpha.toUpperCase()}`,
+    material: effect.material || "none",
+  };
+}
+
+export function buildWindowEffectOptions(effect = {}) {
+  const normalized = normalizeWindowEffect(effect);
+  const options = {};
+  if (EFFECTS_WITH_COLOR.has(normalized.name)) {
+    options.color = normalized.color;
+  }
+  if (
+    (normalized.name === "mica" || normalized.name === "vibrancy") &&
+    normalized.material &&
+    normalized.material !== "none"
+  ) {
+    options.material = normalized.material;
+  }
+  return options;
+}
+
+export function applyWindowEffect(effect = state.windowEffect) {
+  if (!window.Effect) return;
+  const normalized = normalizeWindowEffect(effect, state);
+  if (!normalized.enabled) {
+    window.Effect.clear();
+    return;
+  }
+  const options = buildWindowEffectOptions(normalized);
+  if (Object.keys(options).length > 0) {
+    window.Effect.apply(normalized.name, options);
+  } else {
+    window.Effect.apply(normalized.name);
+  }
+}
 
 const SENTINEL_SELECTORS = [
   "rcp-fe-lol-champ-select",
@@ -58,7 +141,10 @@ async function syncVersionWithMetadata() {
 export async function loadSettings() {
   await syncVersionWithMetadata(); // Run this once on startup
   const saved = await Storage.get(SETTINGS_KEY, null);
-  if (saved) state = { ...defaults, ...saved };
+  if (saved) {
+    state = { ...defaults, ...saved };
+  }
+  state.windowEffect = normalizeWindowEffect(saved?.windowEffect, state);
   return state;
 }
 

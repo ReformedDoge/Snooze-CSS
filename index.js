@@ -1,6 +1,6 @@
 /**
  * @name Snooze-CSS
- * @version 1.1.0
+ * @version 1.1.1
  * @author SnoozeFest - github@ReformedDoge
  */
 import { createModal } from "./src/modal.js";
@@ -9,7 +9,7 @@ import {
   initShadowRootManager,
   applyCSSToAllRoots,
 } from "./src/shadow-manager.js";
-import { loadSettings } from "./src/settings.js";
+import { loadSettings, applyWindowEffect } from "./src/settings.js";
 import { checkForUpdates } from "./src/settings.js";
 import { getActiveProfileCSS } from "./src/storage.js";
 
@@ -17,9 +17,7 @@ export function init() {
   console.log("[Snooze-CSS] init");
   // Apply settings
   loadSettings().then((settings) => {
-    if (settings.blurEnabled && window.Effect) {
-      window.Effect.apply("blurbehind", { color: settings.blurColor || "#ff000010" });
-    }
+    applyWindowEffect(settings.windowEffect);
   });
   // Check for updates if enabled by the user
   checkForUpdates(); 

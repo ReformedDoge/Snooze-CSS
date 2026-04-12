@@ -209,6 +209,7 @@ export const STYLES = `
     /* SEARCH */
     .ci-search {
       width: 100%;
+      box-sizing: border-box;
       background: rgba(0,0,0,0.35);
       border: 1px solid #1e2d3d;
       border-bottom-color: #785a28;
@@ -422,6 +423,7 @@ export const STYLES = `
 
     .ci-input, .ci-select {
       width: 100%;
+      box-sizing: border-box;
       background: rgba(0,0,0,0.35);
       border: 1px solid #1e2d3d;
       color: #a0b4c8;
@@ -451,6 +453,7 @@ export const STYLES = `
 
     .ci-color-input {
       width: 32px;
+      box-sizing: border-box;
       height: 28px;
       padding: 2px 3px;
       background: rgba(0,0,0,0.35);
@@ -507,6 +510,7 @@ export const STYLES = `
 
     .ci-textarea {
       width: 100%;
+      box-sizing: border-box;
       height: 260px;
       resize: vertical;
       font-family: 'Fira Code', 'Consolas', monospace;

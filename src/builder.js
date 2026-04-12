@@ -1,7 +1,12 @@
 import { CATALOG } from "./catalog.js";
 import { walkDOM } from "./analyzer.js";
 import { setCssProperty, setCssBatch, sendToRaw, replaceOrAppendBlock, appendToRaw } from "./raw.js";
-import { setRefreshCallback, getSettings, saveSettings } from "./settings.js";
+import {
+  setRefreshCallback,
+  getSettings,
+  saveSettings,
+  applyWindowEffect,
+} from "./settings.js";
 import { rgbToHex, escHtml, flashMessage, buildStrategicSelector } from "./utils.js";
 import { getBackdrop } from "./modal.js";
 import { getShadowRoots } from "./shadow-manager.js";
@@ -22,6 +27,21 @@ let _allUniqueScreens = [];
 let _allUniqueElements = [];
 let _deepScanCache = null;
 let _searchRenderToken = 0; // Cancels old renders if typing fast
+let _localPuuid = null;
+let _localSummonerId = null;
+
+// Fetch local identity info for accurate targeting (hovercards, lobby, profile)
+async function fetchLocalIdentity() {
+  try {
+    const r = await fetch("/lol-summoner/v1/current-summoner");
+    const data = await r.json();
+    if (data && data.puuid) {
+      _localPuuid = data.puuid;
+      _localSummonerId = data.summonerId || data.id;
+    }
+  } catch (e) {}
+}
+fetchLocalIdentity();
 
 // Visible row observer
 const _rowObserver = new IntersectionObserver(
@@ -1045,27 +1065,561 @@ function buildSubGroup(title, contentBuilders) {
   return wrap;
 }
 
+function composeEffectColor(base, alpha) {
+  const safeBase = /^#[0-9a-f]{6}$/i.test(base) ? base : "#ff0000";
+  const safeAlpha = /^[0-9a-f]{2}$/i.test(alpha) ? alpha.toUpperCase() : "10";
+  return `${safeBase}${safeAlpha}`;
+}
+
+function hexToRgbaString(hex, opacity) {
+  const safeHex = /^#[0-9a-f]{6}$/i.test(hex) ? hex : "#000000";
+  const safeOpacity = Number.isFinite(parseFloat(opacity))
+    ? Math.max(0, Math.min(1, parseFloat(opacity)))
+    : 0.45;
+  const r = parseInt(safeHex.slice(1, 3), 16);
+  const g = parseInt(safeHex.slice(3, 5), 16);
+  const b = parseInt(safeHex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${safeOpacity})`;
+}
+
+function getWindowEffectHint(name) {
+  const hints = {
+    transparent: "Transparent window background with tint color.",
+    blurbehind: "Glossy aero-style blur. Default for this theme.",
+    acrylic: "Textured translucent blur. Best on newer Windows.",
+    unified: "Windows 11 style acrylic/blur hybrid.",
+    mica: "Wallpaper-reactive material. Supports optional material.",
+    vibrancy: "macOS-style vibrancy. Material options available.",
+  };
+  return hints[name] || "";
+}
+
 function buildGenericTools(body) {
   body.appendChild(buildSubGroup("Omni Inspector", [buildOmniRow]));
   body.appendChild(buildSubGroup("Hide Any Element", [buildHideRow]));
   body.appendChild(
-    buildSubGroup("Background Customization", [
+    buildSubGroup("Backgrounds & Transparency", [
       buildBackgroundCustomizationRow,
+      buildGlobalDimRow,
     ]),
   );
+  body.appendChild(buildSubGroup("Navbar", [buildNavbarRow, buildNavbarPlayButtonRow]));
   body.appendChild(
     buildSubGroup("Home / Activity Center", [buildActivityCenterRow]),
   );
-  body.appendChild(buildSubGroup("Friends List / Social", [buildSocialRow]));
-  body.appendChild(buildSubGroup("Navbar", [buildCleanNavbarRow]));
+  body.appendChild(buildSubGroup("Social / Chat", [buildSocialRow]));
   body.appendChild(buildSubGroup("Player Identity", [buildPlayerIdentityRow]));
   body.appendChild(buildSubGroup("Champion Select", [buildChampSelectRow]));
   body.appendChild(
     buildSubGroup("Player Hover Card", [buildPlayerHoverCardRow]),
   );
-  body.appendChild(buildSubGroup("Font Override", [buildFontRow]));
+  body.appendChild(buildSubGroup("Fonts", [buildFontRow]));
   body.appendChild(buildSubGroup("Scrollbar Style", [buildScrollbarRow]));
-  body.appendChild(buildSubGroup("Others", [buildOthersRow]));
+  body.appendChild(buildSubGroup("Other Enhancements", [buildOthersRow]));
+}
+
+function buildGlobalDimRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Dim & Readability</div>
+    <div class="ci-generic-desc" style="margin-bottom: 10px;">Controls visibility and text contrast for transparent/replaced backgrounds. The two modes work independently — use both if needed.</div>
+
+    <!-- MODE 1: Replace BG dim (via CSS var) -->
+    <div style="margin-bottom:14px;border:1px solid rgba(200,170,110,0.25);padding:10px;background:rgba(0,0,0,0.15);">
+      <div style="font-size:11px;font-weight:bold;color:#c8aa6e;margin-bottom:6px;">1. Replace BG Dim <span style="font-size:9px;font-weight:normal;color:#4a6070;">(for &quot;Apply Custom Background&quot; above)</span></div>
+      <div style="font-size:9px;color:#3a5060;margin-bottom:8px;">Sets CSS variables consumed by the ::before overlay layer on replaced backgrounds. Has no effect if you only removed backgrounds.</div>
+
+      <div class="ci-inline-row">
+        <div class="ci-field"><div class="ci-label">Overlay Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="dim-picker" type="color" value="#000000">
+            <input class="ci-input" id="dim-text" type="text" value="#000000" style="width:70px;">
+          </div>
+        </div>
+        <div class="ci-field"><div class="ci-label">Overlay Opacity</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="dim-overlay-slider" class="ci-slider" min="0" max="0.95" step="0.05" value="0.45" style="width:60px;">
+            <input class="ci-input" id="dim-overlay-text" type="text" value="0.45" style="width:45px;">
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-bottom:4px;">
+        <div class="ci-field"><div class="ci-label">Background Blur (px)</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="dim-blur-slider" class="ci-slider" min="0" max="30" step="1" value="0" style="width:60px;">
+            <input class="ci-input" id="dim-blur-text" type="text" value="0" style="width:45px;">
+          </div>
+        </div>
+      </div>
+      <button class="ci-btn-primary" id="dim-apply-btn" style="width:100%;font-size:11px;margin-top:8px;">Apply Replace-BG Dim</button>
+    </div>
+
+    <!-- MODE 2: Transparent theme readability overlay -->
+    <div style="margin-bottom:14px;border:1px solid rgba(100,150,200,0.25);padding:10px;background:rgba(0,0,0,0.15);">
+      <div style="font-size:11px;font-weight:bold;color:#a0b4c8;margin-bottom:6px;">2. Transparent Theme Dim <span style="font-size:9px;font-weight:normal;color:#4a6070;">(for &quot;Remove / Transparent&quot; above)</span></div>
+      <div style="font-size:9px;color:#3a5060;margin-bottom:8px;">Adds a semi-transparent overlay directly on the viewport so the OS wallpaper/window behind the client is dimmed. Fixes readability when no background image is set.</div>
+
+      <div class="ci-inline-row">
+        <div class="ci-field"><div class="ci-label">Overlay Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="tdim-picker" type="color" value="#000000">
+            <input class="ci-input" id="tdim-text" type="text" value="#000000" style="width:70px;">
+          </div>
+        </div>
+        <div class="ci-field"><div class="ci-label">Overlay Opacity</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="tdim-slider" class="ci-slider" min="0" max="0.85" step="0.05" value="0.35" style="width:60px;">
+            <input class="ci-input" id="tdim-opacity-text" type="text" value="0.35" style="width:45px;">
+          </div>
+        </div>
+      </div>
+      <button class="ci-btn-primary" id="tdim-apply-btn" style="width:100%;font-size:11px;margin-top:8px;border-color:rgba(100,150,200,0.6);background:linear-gradient(180deg,#2a4a6a,#1a3050);">Apply Transparent Dim</button>
+    </div>
+
+    <!-- TEXT READABILITY -->
+    <div style="border:1px solid rgba(150,200,100,0.2);padding:10px;background:rgba(0,0,0,0.15);">
+      <div style="font-size:11px;font-weight:bold;color:#8ab870;margin-bottom:6px;">3. Text Readability Helpers</div>
+      <div style="font-size:9px;color:#3a5060;margin-bottom:8px;">Works regardless of whether you replaced or removed backgrounds. Adds shadows and fallback colors to critical UI text.</div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="read-text-shadow" checked style="accent-color:#c8aa6e;cursor:pointer;">
+          <span style="font-size:11px;color:#a0b4c8;">Text shadow on headers & names</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="read-nav-contrast" checked style="accent-color:#c8aa6e;cursor:pointer;">
+          <span style="font-size:11px;color:#a0b4c8;">Boost nav item & currency contrast</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="read-panel-tint" style="accent-color:#c8aa6e;cursor:pointer;">
+          <span style="font-size:11px;color:#a0b4c8;">Semi-transparent tint behind UI panels</span>
+        </label>
+        <div class="ci-inline-row" style="margin-top:4px;">
+          <div class="ci-field"><div class="ci-label">Panel tint color</div>
+            <div class="ci-color-pair">
+              <input class="ci-color-input" id="read-panel-picker" type="color" value="#000000">
+              <input class="ci-input" id="read-panel-text" type="text" value="#000000" style="width:70px;">
+            </div>
+          </div>
+          <div class="ci-field"><div class="ci-label">Panel tint opacity</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input type="range" id="read-panel-slider" class="ci-slider" min="0" max="0.8" step="0.05" value="0.3" style="width:60px;">
+              <input class="ci-input" id="read-panel-opacity" type="text" value="0.3" style="width:45px;">
+            </div>
+          </div>
+        </div>
+      </div>
+      <button class="ci-btn-primary" id="read-apply-btn" style="width:100%;font-size:11px;background:linear-gradient(180deg,#3a5a2a,#253a18);border-color:rgba(150,200,100,0.5);">Apply Readability CSS</button>
+    </div>
+
+    <div style="text-align:center;margin-top:8px;"><span class="ci-flash" id="dim-flash"></span></div>
+  `;
+
+  // Replace BG dim (mode 1)
+  const picker = row.querySelector("#dim-picker");
+  const text = row.querySelector("#dim-text");
+  const overlaySlider = row.querySelector("#dim-overlay-slider");
+  const overlayText = row.querySelector("#dim-overlay-text");
+  const blurSlider = row.querySelector("#dim-blur-slider");
+  const blurText = row.querySelector("#dim-blur-text");
+
+  picker.addEventListener("input", () => (text.value = picker.value));
+  text.addEventListener("input", () => { if (/^#[0-9a-f]{6}$/i.test(text.value)) picker.value = text.value; });
+  overlaySlider.addEventListener("input", () => (overlayText.value = overlaySlider.value));
+  overlayText.addEventListener("input", () => { const v = parseFloat(overlayText.value); if (!Number.isNaN(v)) overlaySlider.value = v; });
+  blurSlider.addEventListener("input", () => (blurText.value = blurSlider.value));
+  blurText.addEventListener("input", () => { const v = parseInt(blurText.value); if (!Number.isNaN(v)) blurSlider.value = v; });
+
+  row.querySelector("#dim-apply-btn").addEventListener("click", () => {
+    const color = text.value.trim() || "#000000";
+    const overlayOp = overlayText.value.trim() || "0.45";
+    const blurPx = blurText.value.trim() || "0";
+    const overlay = hexToRgbaString(color, overlayOp);
+
+    const START_MARKER = "/* === GLOBAL DIM CONTROLLER === */";
+    const END_MARKER = "/* === END GLOBAL DIM CONTROLLER === */";
+    const lines = [
+      START_MARKER,
+      `:root {`,
+      `  --sc-dim-color: ${color};`,
+      `  --sc-dim-overlay: ${overlay};`,
+      `  --sc-bg-blur: ${blurPx}px;`,
+      `}`,
+      END_MARKER,
+    ];
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(row.querySelector("#dim-flash"), "Replace BG Dim Applied!", "#4caf82");
+  });
+
+  // Transparent theme dim (mode 2)
+  const tdimPicker = row.querySelector("#tdim-picker");
+  const tdimText = row.querySelector("#tdim-text");
+  const tdimSlider = row.querySelector("#tdim-slider");
+  const tdimOpText = row.querySelector("#tdim-opacity-text");
+
+  tdimPicker.addEventListener("input", () => (tdimText.value = tdimPicker.value));
+  tdimText.addEventListener("input", () => { if (/^#[0-9a-f]{6}$/i.test(tdimText.value)) tdimPicker.value = tdimText.value; });
+  tdimSlider.addEventListener("input", () => (tdimOpText.value = tdimSlider.value));
+  tdimOpText.addEventListener("input", () => { const v = parseFloat(tdimOpText.value); if (!Number.isNaN(v)) tdimSlider.value = v; });
+
+  row.querySelector("#tdim-apply-btn").addEventListener("click", () => {
+    const color = tdimText.value.trim() || "#000000";
+    const opacity = tdimOpText.value.trim() || "0.35";
+    const rgba = hexToRgbaString(color, opacity);
+
+    const START_MARKER = "/* === TRANSPARENT THEME DIM === */";
+    const END_MARKER = "/* === END TRANSPARENT THEME DIM === */";
+    const lines = [
+      START_MARKER,
+      `/* Dim overlay for transparent theme — sits behind all UI, above OS window */`,
+      `#rcp-fe-viewport-root {`,
+      `  position: relative !important;`,
+      `  isolation: isolate !important;`,
+      `}`,
+      `#rcp-fe-viewport-root::before {`,
+      `  content: '' !important;`,
+      `  position: absolute !important;`,
+      `  inset: 0 !important;`,
+      `  background: ${rgba} !important;`,
+      `  z-index: -1 !important;`,
+      `  pointer-events: none !important;`,
+      `}`,
+      END_MARKER,
+    ];
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(row.querySelector("#dim-flash"), "Transparent Dim Applied!", "#4caf82");
+  });
+
+  // Text readability (mode 3)
+  const panelPicker = row.querySelector("#read-panel-picker");
+  const panelText = row.querySelector("#read-panel-text");
+  const panelSlider = row.querySelector("#read-panel-slider");
+  const panelOpacity = row.querySelector("#read-panel-opacity");
+
+  panelPicker.addEventListener("input", () => (panelText.value = panelPicker.value));
+  panelText.addEventListener("input", () => { if (/^#[0-9a-f]{6}$/i.test(panelText.value)) panelPicker.value = panelText.value; });
+  panelSlider.addEventListener("input", () => (panelOpacity.value = panelSlider.value));
+  panelOpacity.addEventListener("input", () => { const v = parseFloat(panelOpacity.value); if (!Number.isNaN(v)) panelSlider.value = v; });
+
+  row.querySelector("#read-apply-btn").addEventListener("click", () => {
+    const doTextShadow = row.querySelector("#read-text-shadow").checked;
+    const doNavContrast = row.querySelector("#read-nav-contrast").checked;
+    const doPanelTint = row.querySelector("#read-panel-tint").checked;
+    const pColor = panelText.value.trim() || "#000000";
+    const pOp = panelOpacity.value.trim() || "0.3";
+    const pRgba = hexToRgbaString(pColor, pOp);
+
+    const START_MARKER = "/* === TEXT READABILITY === */";
+    const END_MARKER = "/* === END TEXT READABILITY === */";
+    const lines = [START_MARKER];
+
+    if (doTextShadow) {
+      lines.push(
+        `/* Text shadow on readability-critical elements */`,
+        `.player-name, .section-text, .activity-center__header_title,`,
+        `.parties-game-type-card-name, .champion-name, .style-profile-summoner-name,`,
+        `.champion-title, .lobby-header-content, .challenge-banner-title-container,`,
+        `.player-name-component, .lol-regalia-rank-division-text, .level-text,`,
+        `.category-name, .heading, .tournament-name {`,
+        `  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 2px 12px rgba(0,0,0,0.7) !important;`,
+        `}`,
+      );
+    }
+
+    if (doNavContrast) {
+      lines.push(
+        `/* Nav items & currency — boost visibility on transparent backgrounds */`,
+        `.section-text, .navigation-bar .section { color: #f0e6d3 !important; }`,
+        `.currency-be-text, .currency-rp-top-up { text-shadow: 0 1px 4px rgba(0,0,0,0.8) !important; }`,
+        `.menu-item-icon { filter: drop-shadow(0 1px 3px rgba(0,0,0,0.8)) !important; }`,
+      );
+    }
+
+    if (doPanelTint) {
+      lines.push(
+        `/* Semi-transparent tint behind key UI panels for legibility */`,
+        `.v2-lobby-root-component, .v2-footer-component, .v2-header-component,`,
+        `.party-members-container, .invite-info-panel-container,`,
+        `.lol-social-identity, .alpha-version-panel,`,
+        `.parties-game-select-wrapper {`,
+        `  background-color: ${pRgba} !important;`,
+        `  backdrop-filter: blur(4px) !important;`,
+        `}`,
+      );
+    }
+
+    if (lines.length === 1) lines.push("/* No options selected */");
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(row.querySelector("#dim-flash"), "Readability Applied!", "#4caf82");
+  });
+
+  return row;
+}
+
+function buildNavbarRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Transparent Navbar</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Align the navbar cleanup with your transparent theme instead of the older minimal sweep.</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="nav-backdrop" checked style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Transparent navbar backdrop</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="nav-top-border" checked style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Keep top border tweak for navigation screen</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="nav-root-border" checked style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Remove navigation root bottom border</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="nav-hide-dividers" checked style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hide right vertical rule and ambient background</span>
+      </label>
+    </div>
+    <button class="ci-btn-primary" id="nav-apply-btn" style="width:100%;font-size:11px;margin-top:12px;">Update Navbar CSS</button>
+    <div style="text-align:center; margin-top:6px;"><span class="ci-flash" id="nav-flash"></span></div>
+  `;
+
+  row.querySelector("#nav-apply-btn").addEventListener("click", () => {
+    const START_MARKER = "/* === NAVBAR === */";
+    const END_MARKER = "/* === END NAVBAR === */";
+    const lines = [START_MARKER];
+    if (row.querySelector("#nav-backdrop").checked) {
+      lines.push(`.navbar_backdrop {`);
+      lines.push(`  backdrop-filter: none !important;`);
+      lines.push(`  background: transparent !important;`);
+      lines.push(`}`);
+    }
+    if (row.querySelector("#nav-top-border").checked) {
+      lines.push(`div[data-screen-name="rcp-fe-lol-navigation-screen"] {`);
+      lines.push(`  border-top-width: 1px;`);
+      lines.push(`}`);
+    }
+    if (row.querySelector("#nav-root-border").checked) {
+      lines.push(`.navigation-root-component {`);
+      lines.push(`  border-bottom: none !important;`);
+      lines.push(`}`);
+    }
+    if (row.querySelector("#nav-hide-dividers").checked) {
+      lines.push(`.right-nav-vertical-rule, #background-ambient {`);
+      lines.push(`  display: none !important;`);
+      lines.push(`}`);
+    }
+    if (lines.length === 1) lines.push(`/* No options selected */`);
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+    flashMessage(row.querySelector("#nav-flash"), "Navbar CSS Updated!", "#4caf82");
+  });
+
+  return row;
+}
+
+function buildNavbarPlayButtonRow() {
+  const row = document.createElement("div");
+  row.className = "ci-generic-row";
+  row.style.padding = "16px 14px";
+
+  row.innerHTML = `
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Navbar Play Button</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Customize the play button glass card and its navbar placement. Moving it can require offsetting the left nav.</div>
+    <div class="ci-inline-row">
+      <div class="ci-field"><div class="ci-label">Left</div><input class="ci-input" id="pb-left" type="text" value="30vw"></div>
+      <div class="ci-field"><div class="ci-label">Top</div><input class="ci-input" id="pb-top" type="text" value="12px"></div>
+    </div>
+    <div class="ci-inline-row">
+      <div class="ci-field"><div class="ci-label">Width</div><input class="ci-input" id="pb-width" type="text" value="180px"></div>
+      <div class="ci-field"><div class="ci-label">Height</div><input class="ci-input" id="pb-height" type="text" value="34px"></div>
+    </div>
+    <div class="ci-inline-row">
+      <div class="ci-field"><div class="ci-label">Label</div><input class="ci-input" id="pb-label" type="text" value="Play"></div>
+      <div class="ci-field"><div class="ci-label">Letter spacing</div><input class="ci-input" id="pb-spacing" type="text" value="5px"></div>
+    </div>
+    <div class="ci-inline-row">
+      <div class="ci-field"><div class="ci-label">Hover spacing</div><input class="ci-input" id="pb-hover-spacing" type="text" value="7px"></div>
+      <div class="ci-field"><div class="ci-label">Blur</div><input class="ci-input" id="pb-blur" type="text" value="15px"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="pb-hide-promo" checked style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hide deep links promo</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="pb-nav-offset" checked style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Apply linked left-nav offset</span>
+      </label>
+    </div>
+    <div class="ci-inline-row" style="margin-top:8px;">
+      <div class="ci-field"><div class="ci-label">Nav offset</div><input class="ci-input" id="pb-nav-offset-value" type="text" value="-200px"></div>
+      <div class="ci-field">
+        <div class="ci-label">Text color</div>
+        <div class="ci-color-pair">
+          <input class="ci-color-input" id="pb-text-color-picker" type="color" value="#ffffff">
+          <input class="ci-input" id="pb-text-color" type="text" value="#ffffff" style="width:70px;">
+        </div>
+      </div>
+    </div>
+    <button class="ci-btn-primary" id="pb-apply-btn" style="width:100%;font-size:11px;margin-top:12px;">Update Play Button CSS</button>
+    <div style="text-align:center; margin-top:6px;"><span class="ci-flash" id="pb-flash"></span></div>
+  `;
+
+  const pbTextPicker = row.querySelector("#pb-text-color-picker");
+  const pbTextInput = row.querySelector("#pb-text-color");
+  pbTextPicker.addEventListener("input", () => {
+    pbTextInput.value = pbTextPicker.value;
+  });
+  pbTextInput.addEventListener("input", () => {
+    if (/^#[0-9a-f]{6}$/i.test(pbTextInput.value)) {
+      pbTextPicker.value = pbTextInput.value;
+    }
+  });
+
+  row.querySelector("#pb-apply-btn").addEventListener("click", () => {
+    const left = row.querySelector("#pb-left").value.trim() || "30vw";
+    const top = row.querySelector("#pb-top").value.trim() || "12px";
+    const width = row.querySelector("#pb-width").value.trim() || "180px";
+    const height = row.querySelector("#pb-height").value.trim() || "34px";
+    const label = row.querySelector("#pb-label").value.trim() || "Play";
+    const spacing = row.querySelector("#pb-spacing").value.trim() || "5px";
+    const hoverSpacing = row.querySelector("#pb-hover-spacing").value.trim() || "7px";
+    const blur = row.querySelector("#pb-blur").value.trim() || "15px";
+    const navOffset = row.querySelector("#pb-nav-offset-value").value.trim() || "-200px";
+    const textColor = row.querySelector("#pb-text-color").value.trim() || "#ffffff";
+
+    const START_MARKER = "/* === NAVBAR PLAY BUTTON === */";
+    const END_MARKER = "/* === END NAVBAR PLAY BUTTON === */";
+    const lines = [
+      START_MARKER,
+      `.basic-button {`,
+      `  left: ${left} !important;`,
+      `  top: ${top} !important;`,
+      `}`,
+      ``,
+      `.play-button-frame,`,
+      `lol-uikit-video-state-machine {`,
+      `  display: none !important;`,
+      `}`,
+      ``,
+      `.play-button-container {`,
+      `  background: rgba(255, 255, 255, 0.05) !important;`,
+      `  backdrop-filter: blur(${blur}) brightness(1.2) !important;`,
+      `  border-radius: 2px !important;`,
+      `  border: 1px solid rgba(255, 255, 255, 0.2) !important;`,
+      `  width: ${width} !important;`,
+      `  height: ${height} !important;`,
+      `  transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) !important;`,
+      `  cursor: pointer;`,
+      `  overflow: hidden !important;`,
+      `  box-shadow: 0 0 0 rgba(255, 255, 255, 0) !important;`,
+      `}`,
+      `.play-button-container:hover {`,
+      `  background: rgba(255, 255, 255, 0.1) !important;`,
+      `  border-color: rgba(255, 255, 255, 0.8) !important;`,
+      `  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1) !important;`,
+      `  transform: translateY(-1px) !important;`,
+      `}`,
+      `.play-button-container::after {`,
+      `  content: "";`,
+      `  position: absolute;`,
+      `  top: 0;`,
+      `  left: -150%;`,
+      `  width: 100%;`,
+      `  height: 100%;`,
+      `  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);`,
+      `  transition: 0.8s;`,
+      `}`,
+      `.play-button-container:hover::after {`,
+      `  left: 150%;`,
+      `}`,
+      `.play-button-content {`,
+      `  left: 0 !important;`,
+      `  width: 100% !important;`,
+      `  display: flex !important;`,
+      `  justify-content: center !important;`,
+      `  align-items: center !important;`,
+      `}`,
+      `.play-button-text {`,
+      `  visibility: hidden !important;`,
+      `}`,
+      `.play-button-text:after {`,
+      `  content: '${label.replace(/'/g, "\\'")}';`,
+      `  visibility: visible !important;`,
+      `  display: block !important;`,
+      `  position: absolute;`,
+      `  width: 100%;`,
+      `  left: 0;`,
+      `  text-align: center;`,
+      `  font-family: 'Nova Cut', sans-serif !important;`,
+      `  font-size: 14px !important;`,
+      `  font-weight: 300 !important;`,
+      `  letter-spacing: ${spacing} !important;`,
+      `  text-indent: ${spacing} !important;`,
+      `  color: ${textColor} !important;`,
+      `  transition: all 0.3s ease !important;`,
+      `  text-shadow: 0 0 8px rgba(255, 255, 255, 0.2) !important;`,
+      `}`,
+      `.play-button-container:hover .play-button-text:after {`,
+      `  color: #ffffff !important;`,
+      `  letter-spacing: ${hoverSpacing} !important;`,
+      `  text-indent: ${hoverSpacing} !important;`,
+      `  text-shadow: 0 0 12px rgba(255, 255, 255, 0.6) !important;`,
+      `}`,
+      `.play-button-container:active {`,
+      `  transform: scale(0.96) !important;`,
+      `  filter: brightness(0.8) !important;`,
+      `}`,
+      `#rcp-fe-viewport-root > .rcp-fe-viewport-overlay > .screen-root[style*="visibility: hidden;"] ~ .play-button-text:after,`,
+      `.play-button-component[style*="visibility: hidden;"] ~ .play-button-text:after,`,
+      `.play-button-component[style*="visibility: hidden;"] + .play-button-text:after,`,
+      `.play-button-component[style*="visibility: hidden;"] .play-button-text:after,`,
+      `.screen-root[style*="visibility: hidden;"] .play-button-text:after,`,
+      `.screen-root[style*="visibility: hidden;"] ~ .play-button-text:after,`,
+      `.screen-root[style*="visibility: hidden;"] + .play-button-text:after {`,
+      `  visibility: hidden !important;`,
+      `}`,
+      `.champion-select-main-container:not(:hidden) ~ .play-button-text:after {`,
+      `  display: none !important;`,
+      `  visibility: hidden !important;`,
+      `}`,
+      `.champion-select-main-container:visible .play-button-text:after {`,
+      `  display: none !important;`,
+      `}`,
+    ];
+    if (row.querySelector("#pb-hide-promo").checked) {
+      lines.push(`.deep-links-promo {`);
+      lines.push(`  display: none !important;`);
+      lines.push(`}`);
+    }
+    lines.push(END_MARKER);
+    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
+
+    const offsetStart = "/* === NAVBAR PLAY BUTTON OFFSET === */";
+    const offsetEnd = "/* === END NAVBAR PLAY BUTTON OFFSET === */";
+    const offsetLines = [offsetStart];
+    if (row.querySelector("#pb-nav-offset").checked) {
+      offsetLines.push(`.left-nav-menu {`);
+      offsetLines.push(`  position: relative !important;`);
+      offsetLines.push(`  margin-left: ${navOffset} !important;`);
+      offsetLines.push(`}`);
+    } else {
+      offsetLines.push(`/* Offset disabled */`);
+    }
+    offsetLines.push(offsetEnd);
+    replaceOrAppendBlock(offsetLines.join("\n"), offsetStart, offsetEnd);
+
+    flashMessage(row.querySelector("#pb-flash"), "Play Button CSS Updated!", "#4caf82");
+  });
+
+  return row;
 }
 
 function buildOthersRow() {
@@ -1075,7 +1629,7 @@ function buildOthersRow() {
 
   row.innerHTML = `
     <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Other Enhancements</div>
-    <div class="ci-generic-desc" style="margin-bottom: 12px;">Customize Loot, Settings, Dropdowns, and Startup Screens.</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Builder version of the pasted theme refinements for settings, dropdowns, loot, event pass, and startup screens.</div>
     
     <div style="display:flex;flex-direction:column;gap:8px;">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -1187,7 +1741,8 @@ lol-uikit-dialog-frame.lol-settings-container,
         `
 /* Modernize text inputs (Search boxes) */
 .ember-text-field, 
-lol-uikit-flat-input input {
+lol-uikit-flat-input input,
+.search-box .player-name-input__split-inputs-wrapper {
     background-color: rgba(0, 0, 0, 0.4) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-radius: 6px !important;
@@ -1249,9 +1804,9 @@ img.border.border-hover {
 
 /* Clean up Loot Quantities text */
 .quantity-text-container {
-    background: rgba(0, 0, 0, 0.8) !important;
+    background: rgba(0, 0, 0, 0.50) !important;
     border: none !important;
-    border-radius: 4px !important;
+    border-radius: 8px !important;
     color: white !important;
 }
 .quantity-background { display: none !important; }
@@ -1412,10 +1967,15 @@ function buildBackgroundCustomizationRow() {
   row.style.background = "rgba(200, 170, 110, 0.05)";
   row.style.padding = "16px 14px";
 
-  // Settings state
   const currentSettings = getSettings();
-  const initBlur = currentSettings.blurEnabled;
-  const initColor = currentSettings.blurColor || "#ff000010";
+  const initEffect = currentSettings.windowEffect || {
+    enabled: currentSettings.blurEnabled === true,
+    name: "blurbehind",
+    colorBase: "#ff0000",
+    alpha: "10",
+    color: currentSettings.blurColor || "#ff000010",
+    material: "none",
+  };
 
   row.innerHTML = `
     <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Background Editor</div>
@@ -1435,15 +1995,7 @@ function buildBackgroundCustomizationRow() {
         </div>
       </div>
       
-      <div class="ci-inline-row" style="margin-bottom: 10px;">
-        <div class="ci-field">
-          <div class="ci-label">Darken Overlay</div>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <input type="range" id="bc-dim-slider" class="ci-slider" min="0" max="0.9" step="0.05" value="0.3" style="flex:1;">
-            <input class="ci-input" id="bc-dim-text" type="text" value="0.3" style="width:40px;" readonly>
-          </div>
-        </div>
-      </div>
+      <div style="font-size:9px;color:#3a5060;margin-bottom:10px;">Use the dedicated Global Dim Controller section for theme-wide darkening. This background tool now focuses on image replacement only.</div>
 
       <div class="ci-label" style="margin-bottom:4px;">Screens to Replace:</div>
       <div id="bc-replace-screens" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
@@ -1457,38 +2009,80 @@ function buildBackgroundCustomizationRow() {
       
       <div class="ci-label" style="margin-bottom:4px;">Screens to Make Transparent:</div>
       <div id="bc-remove-screens" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px;">
+        <input type="checkbox" id="bc-reconnect" checked style="accent-color:#80a0c0;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Also keep game progress / reconnect states transparent</span>
+      </label>
 
       <button class="ci-btn-secondary" id="bc-remove-btn" style="width:100%;font-size:11px;">Apply Transparency</button>
     </div>
 
-    <!-- FROSTED GLASS SECTION -->
+    <!-- WINDOW EFFECT SECTION -->
     <div style="margin-bottom: 16px; border: 1px solid rgba(100,200,150,0.3); padding: 10px; background: rgba(0,0,0,0.2);">
-      <div style="font-size:11px; font-weight:bold; color:#80c8a0; margin-bottom: 4px;">3. Frosted Glass Effect (UI Panels)</div>
-      <div style="font-size:9px;color:#3a5060;margin-bottom:10px;">Applies backdrop-blur to lobby panels, ready-check, social sidebar and more. Works standalone or combined with section 2.</div>
+      <div style="font-size:11px; font-weight:bold; color:#80c8a0; margin-bottom: 4px;">3. Live Window Effect</div>
+      <div id="bc-effect-hint" style="font-size:9px;color:#3a5060;margin-bottom:10px;">${getWindowEffectHint(initEffect.name)}</div>
 
       <div class="ci-inline-row" style="margin-bottom: 10px;">
         <div class="ci-field">
-          <div class="ci-label">Blur Intensity</div>
-          <select class="ci-select" id="bc-glass-blur">
-            <option value="none">None</option>
-            <option value="4px">Light (4px)</option>
-            <option value="12px" selected>Medium (12px)</option>
-            <option value="20px">Heavy (20px)</option>
+          <div class="ci-label">Effect</div>
+          <select class="ci-select" id="bc-effect-name">
+            <option value="blurbehind"${initEffect.name === "blurbehind" ? " selected" : ""}>Blurbehind (Default)</option>
+            <option value="transparent"${initEffect.name === "transparent" ? " selected" : ""}>Transparent</option>
+            <option value="acrylic"${initEffect.name === "acrylic" ? " selected" : ""}>Acrylic</option>
+            <option value="unified"${initEffect.name === "unified" ? " selected" : ""}>Unified</option>
+            <option value="mica"${initEffect.name === "mica" ? " selected" : ""}>Mica</option>
+            <option value="vibrancy"${initEffect.name === "vibrancy" ? " selected" : ""}>Vibrancy</option>
           </select>
         </div>
         
         <div class="ci-field" style="display:flex;flex-direction:column;justify-content:center;">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="bc-effect-blur" ${initBlur ? "checked" : ""} style="accent-color:#c8aa6e;cursor:pointer;">
-            <span style="font-size:11px;color:#a0b4c8;">Live Window Blur</span>
+            <input type="checkbox" id="bc-effect-enabled" ${initEffect.enabled ? "checked" : ""} style="accent-color:#c8aa6e;cursor:pointer;">
+            <span style="font-size:11px;color:#a0b4c8;">Enable Live Window Effect</span>
           </label>
-          <div style="display:flex;gap:4px;margin-top:4px;">
-             <input type="text" id="bc-effect-color" class="ci-input" value="${initColor}" style="width:60px;font-size:10px;">
-          </div>
         </div>
       </div>
 
-      <button class="ci-btn-secondary" id="bc-glass-btn" style="width:100%;font-size:11px;border-color:rgba(100,200,150,0.5);color:#80c8a0;">Apply Frosted Glass</button>
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Tint Base Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="bc-effect-base-picker" type="color" value="${initEffect.colorBase || "#ff0000"}">
+            <input class="ci-input" id="bc-effect-base-text" type="text" value="${initEffect.colorBase || "#ff0000"}" style="width:70px;">
+          </div>
+        </div>
+        <div class="ci-field">
+          <div class="ci-label">Intensity</div>
+          <select class="ci-select" id="bc-effect-alpha">
+            <option value="10"${initEffect.alpha === "10" ? " selected" : ""}>Soft Default (10)</option>
+            <option value="00"${initEffect.alpha === "00" ? " selected" : ""}>None (00)</option>
+            <option value="20"${initEffect.alpha === "20" ? " selected" : ""}>Light (20)</option>
+            <option value="80"${initEffect.alpha === "80" ? " selected" : ""}>Medium (80)</option>
+            <option value="CC"${initEffect.alpha === "CC" ? " selected" : ""}>Strong (CC)</option>
+            <option value="FF"${initEffect.alpha === "FF" ? " selected" : ""}>Heavy (FF)</option>
+          </select>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Material</div>
+          <select class="ci-select" id="bc-effect-material">
+            <option value="none"${(initEffect.material || "none") === "none" ? " selected" : ""}>None</option>
+            <option value="mica"${initEffect.material === "mica" ? " selected" : ""}>Mica</option>
+            <option value="acrylic"${initEffect.material === "acrylic" ? " selected" : ""}>Acrylic</option>
+            <option value="tabbed"${initEffect.material === "tabbed" ? " selected" : ""}>Tabbed</option>
+            <option value="HudWindow"${initEffect.material === "HudWindow" ? " selected" : ""}>HudWindow</option>
+            <option value="Popover"${initEffect.material === "Popover" ? " selected" : ""}>Popover</option>
+            <option value="HeaderView"${initEffect.material === "HeaderView" ? " selected" : ""}>HeaderView</option>
+          </select>
+        </div>
+        <div class="ci-field">
+          <div class="ci-label">Computed Tint</div>
+          <input type="text" id="bc-effect-color" class="ci-input" value="${initEffect.color}" readonly>
+        </div>
+      </div>
+
+      <button class="ci-btn-secondary" id="bc-effect-apply-btn" style="width:100%;font-size:11px;border-color:rgba(100,200,150,0.5);color:#80c8a0;">Apply Window Effect</button>
     </div>
 
     <div style="text-align:center; margin-top:6px;">
@@ -1496,16 +2090,25 @@ function buildBackgroundCustomizationRow() {
     </div>
   `;
 
-  // UI event listeners
-  const dimSlider = row.querySelector("#bc-dim-slider");
-  const dimText = row.querySelector("#bc-dim-text");
-  dimSlider.addEventListener("input", () => (dimText.value = dimSlider.value));
-
   row.querySelector("#bc-bg-browse").addEventListener("click", () => {
     attachFilePickerToInput(row.querySelector("#bc-bg-url"));
   });
 
-  const screens = [
+  const replaceScreens = [
+    { id: "all", label: "ALL (Global)", excl: true },
+    { id: "home", label: "Home / Parties" },
+    { id: "lobby", label: "Lobby" },
+    { id: "profile", label: "Profile" },
+    { id: "collection", label: "Collection" },
+    { id: "loot", label: "Loot" },
+    { id: "store", label: "Store" },
+    { id: "champselect", label: "Champ Select" },
+    { id: "yourshop", label: "Your Shop" },
+    { id: "postgame", label: "Postgame" },
+    { id: "loading", label: "Loading / Startup" },
+    { id: "reconnect", label: "Reconnect / In Progress" },
+  ];
+  const removeScreens = [
     { id: "all", label: "ALL (Global)", excl: true },
     { id: "lobby", label: "Lobby" },
     { id: "profile", label: "Profile" },
@@ -1514,109 +2117,141 @@ function buildBackgroundCustomizationRow() {
     { id: "store", label: "Store" },
     { id: "matchhistory", label: "Match History" },
     { id: "champselect", label: "Champ Select" },
+    { id: "home", label: "Home / Parties" },
+    { id: "social", label: "Social Sidebar" },
+    { id: "yourshop", label: "Your Shop" },
+    { id: "clash", label: "Clash" },
+    { id: "eventshop", label: "Event Shop" },
+    { id: "postgame", label: "Postgame" },
+    { id: "tft", label: "TFT" },
+    { id: "loading", label: "Loading / Startup" },
+    { id: "reconnect", label: "Reconnect / In Progress" },
   ];
-
-  // Selector map
+  // Selector map used for both replace (::before host) and remove (transparency targets)
+  // Each entry lists the specific containers to target per screen.
   const scopeMap = {
-    lobby: ".lobby-header-overlay", // Or #rcp-fe-viewport-main when lobby is active
-    profile: ".style-profile-background-image",
+    home: ".parties-view, .parties-background, .parties-content, .parties-lower-section",
+    lobby: ".lobby-header-overlay, .v2-lobby-root-component",
+    profile: ".style-profile-background-image, .style-profile-masked-image",
     collection: ".collections-application",
-    loot: ".loot-backdrop",
-    store: ".__rcp-fe-lol-store",
+    loot: ".loot-backdrop, .loot-content-wrapper",
+    store: ".store-backdrop, .__rcp-fe-lol-store",
     matchhistory: ".match-details-root",
     champselect: ".champion-select",
+    social: ".lol-social-sidebar, .rcp-fe-viewport-sidebar",
+    yourshop: ".yourshop-root, .personalized-offers-root",
+    clash: ".clash-root-background, .clash-root-background-landing, .clash-social-persistent",
+    eventshop:
+      ".rcp-fe-lol-event-shop-application, .event-shop-index, .event-shop-page-header, .event-shop-progression, .event-shop-progression-info",
+    postgame: ".postgame-header-section, .postgame-champion-background-wrapper",
+    tft: ".rcp-fe-lol-tft-application-background",
+    loading: ".lol-loading-screen-container",
+    reconnect:
+      ".rcp-fe-lol-game-in-progress, .rcp-fe-lol-pre-end-of-game, .rcp-fe-lol-reconnect, .rcp-fe-lol-waiting-for-stats, .reconnect-container",
   };
 
-  // Checkbox builder
-  function buildChecks(containerId, prefix) {
+  // Checkbox builder — non-ALL items are permanently disabled/struck-through
+  // since per-screen targeting is fragile and ALL is the reliable path
+  function buildChecks(containerId, prefix, screenDefs) {
     const container = row.querySelector("#" + containerId);
-    screens.forEach((sc, i) => {
+
+    // ALL checkbox
+    const allDef = screenDefs[0];
+    const allLbl = document.createElement("label");
+    allLbl.style.cssText = "display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer;color:#c8aa6e;font-weight:bold;margin-bottom:4px;";
+    const allChk = document.createElement("input");
+    allChk.type = "checkbox";
+    allChk.id = prefix + allDef.id;
+    allChk.checked = true;
+    allChk.style.accentColor = prefix === "rep-" ? "#c8aa6e" : "#80a0c0";
+    allLbl.appendChild(allChk);
+    allLbl.appendChild(document.createTextNode(allDef.label));
+    container.appendChild(allLbl);
+
+    // Note explaining why others are disabled
+    const note = document.createElement("div");
+    note.style.cssText = "font-size:9px;color:#3a5060;margin-bottom:6px;padding:3px 6px;border-left:2px solid #1a2535;";
+    note.textContent = "Per-screen targeting has limited reliability — use ALL for consistent results.";
+    container.appendChild(note);
+
+    // Remaining items — always disabled with strikethrough
+    const restWrap = document.createElement("div");
+    restWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:4px 10px;opacity:0.32;pointer-events:none;";
+    screenDefs.slice(1).forEach((sc) => {
       const lbl = document.createElement("label");
-      lbl.style.cssText =
-        "display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer;color:#a0b4c8;";
+      lbl.style.cssText = "display:flex;align-items:center;gap:3px;font-size:10px;color:#4a6070;text-decoration:line-through;cursor:not-allowed;";
       const chk = document.createElement("input");
       chk.type = "checkbox";
       chk.id = prefix + sc.id;
-      chk.style.accentColor = prefix === "rep-" ? "#c8aa6e" : "#80a0c0";
-      if (sc.excl) chk.checked = true;
-
-      chk.addEventListener("change", (e) => {
-        if (sc.excl && chk.checked) {
-          screens
-            .slice(1)
-            .forEach(
-              (s) =>
-                (container.querySelector("#" + prefix + s.id).checked = false),
-            );
-        } else if (!sc.excl && chk.checked) {
-          container.querySelector("#" + prefix + "all").checked = false;
-        }
-      });
+      chk.disabled = true;
       lbl.appendChild(chk);
       lbl.appendChild(document.createTextNode(sc.label));
-      container.appendChild(lbl);
+      restWrap.appendChild(lbl);
     });
+    container.appendChild(restWrap);
   }
 
-  buildChecks("bc-replace-screens", "rep-");
-  buildChecks("bc-remove-screens", "rem-");
+  buildChecks("bc-replace-screens", "rep-", replaceScreens);
+  buildChecks("bc-remove-screens", "rem-", removeScreens);
 
-  // Window.Effect toggle
-  const effChk = row.querySelector("#bc-effect-blur");
-  const effCol = row.querySelector("#bc-effect-color");
-  effChk.addEventListener("change", async () => {
-    const s = getSettings();
-    s.blurEnabled = effChk.checked;
-    s.blurColor = effCol.value;
-    await saveSettings();
-    if (s.blurEnabled && window.Effect) {
-      window.Effect.apply("blurbehind", { color: s.blurColor });
-    } else if (!s.blurEnabled && window.Effect) {
-      window.Effect.clear();
-    }
+  const effName = row.querySelector("#bc-effect-name");
+  const effEnabled = row.querySelector("#bc-effect-enabled");
+  const effBasePicker = row.querySelector("#bc-effect-base-picker");
+  const effBaseText = row.querySelector("#bc-effect-base-text");
+  const effAlpha = row.querySelector("#bc-effect-alpha");
+  const effColor = row.querySelector("#bc-effect-color");
+  const effMaterial = row.querySelector("#bc-effect-material");
+  const effHint = row.querySelector("#bc-effect-hint");
+  const syncEffectColor = () => {
+    const base = effBaseText.value.trim() || effBasePicker.value || "#ff0000";
+    if (/^#[0-9a-f]{6}$/i.test(base)) effBasePicker.value = base;
+    effColor.value = composeEffectColor(base, effAlpha.value);
+    effHint.textContent = getWindowEffectHint(effName.value);
+  };
+  effBasePicker.addEventListener("input", () => {
+    effBaseText.value = effBasePicker.value;
+    syncEffectColor();
   });
+  effBaseText.addEventListener("input", syncEffectColor);
+  effAlpha.addEventListener("change", syncEffectColor);
+  effName.addEventListener("change", syncEffectColor);
+  syncEffectColor();
 
-  effCol.addEventListener("change", async () => {
+  row.querySelector("#bc-effect-apply-btn").addEventListener("click", async () => {
     const s = getSettings();
-    s.blurColor = effCol.value;
+    s.windowEffect = {
+      enabled: effEnabled.checked,
+      name: effName.value,
+      colorBase: effBaseText.value.trim() || effBasePicker.value || "#ff0000",
+      alpha: effAlpha.value,
+      color: effColor.value,
+      material: effMaterial.value,
+    };
+    s.blurEnabled = s.windowEffect.enabled && s.windowEffect.name === "blurbehind";
+    s.blurColor = s.windowEffect.color;
     await saveSettings();
-    if (effChk.checked && window.Effect) {
-      window.Effect.apply("blurbehind", { color: s.blurColor });
-    }
+    applyWindowEffect(s.windowEffect);
+    flashMessage(row.querySelector("#bc-flash"), "Window Effect Updated!", "#4caf82");
   });
 
   // Action: Replace
   row.querySelector("#bc-replace-btn").addEventListener("click", () => {
     const bgUrl = row.querySelector("#bc-bg-url").value.trim();
     if (!bgUrl) {
-      flashMessage(
-        row.querySelector("#bc-flash"),
-        "Enter Image URL",
-        "#c84b4b",
-      );
+      flashMessage(row.querySelector("#bc-flash"), "Enter Image URL", "#c84b4b");
       return;
     }
 
     const isAll = row.querySelector("#rep-all").checked;
-    const targets = [];
-    if (isAll) {
-      targets.push(
-        "#rcp-fe-viewport-root, .rcp-fe-lol-game-in-progress, .rcp-fe-lol-pre-end-of-game, .rcp-fe-lol-reconnect, .rcp-fe-lol-waiting-for-stats, .champion-select, .lol-loading-screen-container.lol-loading-screen-default-state, .reconnect-container",
-      );
-    } else {
-      screens.slice(1).forEach((s) => {
-        if (row.querySelector("#rep-" + s.id).checked && scopeMap[s.id]) {
-          targets.push(scopeMap[s.id]);
-        }
-      });
-    }
+    const selectedReplaceIds = isAll
+      ? replaceScreens.slice(1).map((s) => s.id)
+      : replaceScreens
+          .slice(1)
+          .filter((s) => row.querySelector("#rep-" + s.id).checked)
+          .map((s) => s.id);
 
-    if (targets.length === 0) {
-      flashMessage(
-        row.querySelector("#bc-flash"),
-        "Select a screen",
-        "#c84b4b",
-      );
+    if (!isAll && selectedReplaceIds.length === 0) {
+      flashMessage(row.querySelector("#bc-flash"), "Select a screen", "#c84b4b");
       return;
     }
 
@@ -1624,122 +2259,155 @@ function buildBackgroundCustomizationRow() {
     const END_MARKER = "/* === END BC: BACKGROUND REPLACEMENT === */";
     const lines = [START_MARKER];
     lines.push(`:root { --bc-custom-bg: url('${bgUrl}'); }`);
+    lines.push(`body { overflow: hidden !important; }`);
 
-    // Core injection
-    const selectors = targets.join(", ");
+    const hideList = [
+      ".store-loading", ".loot-to-store-button", ".clash-root-action-timeline-background-gradient",
+      ".clash-aram-intro-modal", ".event-shop-xp-vertical-divider", ".event-shop-page-header-vertical-divider",
+      ".tft-home-footer-bg", ".tft-hub-footer-bg", ".lol-loading-screen-spinner",
+      ".lol-loading-screen-status-container", ".summoner-level-ring", ".rcp-fe-lol-home-loading-spinner",
+      ".style-profile-loading-spinner", ".spinner", ".parties-background img",
+      ".postgame-background-image img", ".style-profile-background-image img", ".style-profile-masked-image img",
+      ".background-edge-backlight", "#background-ambient", ".lobby-intro-animation-container",
+      ".activity-center__background-component__blend", ".challenges-collection-component .background",
+      ".leagues-root-component .ranked-intro-background", 'img[src*="map-south.png"]', 'img[src*="map-north.png"]',
+      'img[src*="champ-select-planning-intro.jpg"]', 'img[src*="gameflow-background.jpg"]',
+      'img[src*="ready-check-background.png"]', ".parties-background-mask", ".loot-backdrop.background-static",
+      ".clash-root-background-landing", ".activity-center__tabs_footer_divider", ".loading-tab:after"
+    ];
+
     if (isAll) {
+      // ALL mode: apply ::before to the broad viewport roots correctly
+      const allTargets = [
+        "#rcp-fe-viewport-root", 
+        ".champion-select", 
+        ".lol-loading-screen-container",
+        ".rcp-fe-lol-game-in-progress", 
+        ".rcp-fe-lol-pre-end-of-game", 
+        ".rcp-fe-lol-reconnect", 
+        ".rcp-fe-lol-waiting-for-stats", 
+        ".reconnect-container"
+      ];
+      
+      const selectors = allTargets.join(",\n");
+      const beforeSelectors = allTargets.map(sel => sel + "::before").join(",\n");
+
       lines.push(`${selectors} {`);
-      lines.push(`  background-image: var(--bc-custom-bg) !important;`);
+      lines.push(`  position: relative !important;`);
+      lines.push(`  isolation: isolate !important;`);
+      lines.push(`  overflow: hidden !important;`); // Vital to contain the blurred/expanded inset
+      lines.push(`}`);
+      
+      lines.push(`${beforeSelectors} {`);
+      lines.push(`  content: '' !important;`);
+      lines.push(`  background-image: linear-gradient(var(--sc-dim-overlay, rgba(0, 0, 0, 0.45)), var(--sc-dim-overlay, rgba(0, 0, 0, 0.45))), var(--bc-custom-bg) !important;`);
       lines.push(`  background-size: cover !important;`);
       lines.push(`  background-position: center center !important;`);
       lines.push(`  background-repeat: no-repeat !important;`);
-      lines.push(`  isolation: isolate;`);
+      lines.push(`  position: absolute !important;`);
+      lines.push(`  inset: calc(var(--sc-bg-blur, 0px) * -2) !important;`); 
+      lines.push(`  z-index: -1 !important;`);
+      lines.push(`  opacity: 1 !important;`);
+      lines.push(`  visibility: visible !important;`);
+      lines.push(`  pointer-events: none !important;`);
+      lines.push(`  filter: blur(var(--sc-bg-blur, 0px)) !important;`);
       lines.push(`}`);
-
-      const hideList = [
-        ".store-loading",
-        ".loot-to-store-button",
-        ".clash-root-action-timeline-background-gradient",
-        ".clash-aram-intro-modal",
-        ".event-shop-xp-vertical-divider",
-        ".event-shop-page-header-vertical-divider",
-        ".tft-home-footer-bg",
-        ".tft-hub-footer-bg",
-        ".lol-loading-screen-spinner",
-        ".lol-loading-screen-status-container",
-        ".summoner-level-ring",
-        ".rcp-fe-lol-home-loading-spinner",
-        ".style-profile-loading-spinner",
-        ".spinner",
-        //".bg-current img",
-        ".parties-background img",
-        ".postgame-background-image img",
-        ".style-profile-background-image img",
-        ".style-profile-masked-image img",
-        ".background-edge-backlight",
-        "#background-ambient",
-        ".lobby-intro-animation-container",
-        ".activity-center__background-component__blend",
-        ".challenges-collection-component .background",
-        ".leagues-root-component .ranked-intro-background",
-        'img[src*="map-south.png"]',
-        'img[src*="map-north.png"]',
-        'img[src*="champ-select-planning-intro.jpg"]',
-        'img[src*="gameflow-background.jpg"]',
-        'img[src*="ready-check-background.png"]',
-        ".parties-background-mask",
-        ".loot-backdrop.background-static",
-        ".clash-root-background-landing",
-        ".activity-center__tabs_footer_divider",
-        ".loading-tab:after",
+      lines.push(``);
+      
+      // Also clear native backgrounds so they don't show through
+      const allTransparent = [
+        "body", "html", ".parties-view", ".parties-background", ".parties-background-mask",
+        ".parties-content", ".parties-lower-section", ".lol-social-sidebar", ".rcp-fe-viewport-sidebar",
+        ".store-backdrop", ".__rcp-fe-lol-store", ".loot-backdrop", ".loot-backdrop.background-static", ".loot-loading-screen",
+        ".collections-application", ".collections-routes", ".yourshop-root", ".personalized-offers-root",
+        ".clash-root-background", ".clash-root-background-landing", ".clash-social-persistent",
+        ".champ-select-bg-darken", ".stats-backdrop", ".match-details-root", ".cdp-backdrop-component",
+        ".rcp-fe-lol-event-shop-application", ".event-shop-index", ".event-shop-page-header", ".event-shop-progression", ".event-shop-progression-info",
+        ".postgame-header-section", ".postgame-champion-background-wrapper", ".rcp-fe-lol-tft-application-background",
+        ".lobby-header-overlay", ".navbar-blur", ".navbar_backdrop"
       ];
+      lines.push(`${allTransparent.join(",\n")} {`);
+      lines.push(`  background: transparent !important;`);
+      lines.push(`  background-image: none !important;`);
+      lines.push(`  filter: none !important;`);
+      lines.push(`}`);
       lines.push(``);
-      lines.push(
-        `.bg-current .lol-uikit-background-switcher-image {display:none !important;}`,
-      );
-      lines.push(``);
+      lines.push(`.bg-current .lol-uikit-background-switcher-image {display:none !important;}`);
       lines.push(`.store-backdrop { background-image: none; }`);
+      lines.push(`.lol-uikit-background-switcher-image.fade {display:none !important;}`);
       lines.push(``);
-      lines.push(
-        `.lol-uikit-background-switcher-image.fade {display:none !important;}`,
-      );
-      lines.push(``);
-      lines.push(
-        `/* Hide generic loading spinners and explicit background graphics */`,
-      );
       lines.push(`${hideList.join(",\n")} {`);
       lines.push(`  display: none !important;`);
       lines.push(`}`);
       lines.push(``);
       lines.push(`.clash-arurf-intro-modal {`);
-      lines.push(
-        `  display: none !important; opacity: 1 !important; transform: scale(1) !important; border-radius: 0px !important;`,
-      );
+      lines.push(`  display: none !important; opacity: 1 !important; transform: scale(1) !important; border-radius: 0px !important;`);
       lines.push(`  background-color: #15171e !important;`);
-      lines.push(
-        `  background-image: url("https://127.0.0.1:58895/fe/lol-clash/assets/images/arurf-modal/clash-arurf-modal-bg.png") !important;`,
-      );
-      lines.push(
-        `  background-size: cover !important; background-position: center !important; background-repeat: repeat !important;`,
-      );
-      lines.push(
-        `  font-family: Times New Roman !important; width: 828px !important; height: 508px !important;`,
-      );
+      lines.push(`  background-size: cover !important; background-position: center !important; background-repeat: repeat !important;`);
+      lines.push(`  font-family: Times New Roman !important; width: 828px !important; height: 508px !important;`);
       lines.push(`}`);
     } else {
-      // Fixed background mode
-      lines.push(`${selectors}::before, ${selectors} img {`);
-      lines.push(`  content: '' !important;`);
-      lines.push(
-        `  background: var(--bc-custom-bg) center/cover no-repeat !important;`,
-      );
-      lines.push(`  position: fixed !important;`);
-      lines.push(`  top: 0 !important; left: 0 !important;`);
-      lines.push(`  width: 100vw !important; height: 100vh !important;`);
-      lines.push(`  z-index: -1 !important;`);
-      lines.push(`  opacity: 1 !important; visibility: visible !important;`);
-      lines.push(`  pointer-events: none !important;`);
-      lines.push(
-      );
-      lines.push(`}`);
+      // Per-screen mode
+      selectedReplaceIds.forEach((id) => {
+        const sel = scopeMap[id];
+        if (!sel) return;
+        const parts = sel.split(",").map((s) => s.trim()).filter(Boolean);
+        parts.forEach((part) => {
+          lines.push(`${part} {`);
+          lines.push(`  position: relative !important;`);
+          lines.push(`  isolation: isolate !important;`);
+          lines.push(`  overflow: hidden !important;`);
+          lines.push(`}`);
+          lines.push(`${part}::before {`);
+          lines.push(`  content: '' !important;`);
+          lines.push(`  background-image: linear-gradient(var(--sc-dim-overlay, rgba(0, 0, 0, 0.45)), var(--sc-dim-overlay, rgba(0, 0, 0, 0.45))), var(--bc-custom-bg) !important;`);
+          lines.push(`  background-size: cover !important;`);
+          lines.push(`  background-position: center center !important;`);
+          lines.push(`  background-repeat: no-repeat !important;`);
+          lines.push(`  position: absolute !important;`);
+          lines.push(`  inset: calc(var(--sc-bg-blur, 0px) * -2) !important;`);
+          lines.push(`  z-index: -1 !important;`);
+          lines.push(`  opacity: 1 !important;`);
+          lines.push(`  visibility: visible !important;`);
+          lines.push(`  pointer-events: none !important;`);
+          lines.push(`  filter: blur(var(--sc-bg-blur, 0px)) !important;`);
+          lines.push(`}`);
+        });
+        
+        if (id === "profile") {
+          lines.push(`.style-profile-background-image, .style-profile-masked-image { background: transparent !important; }`);
+          lines.push(`.style-profile-background-image img, .style-profile-masked-image img { display: none !important; }`);
+        }
+        if (id === "loot") {
+          lines.push(`.loot-content-wrapper .loot-backdrop, .loot-backdrop { background-image: none !important; }`);
+        }
+        if (id === "store") {
+          lines.push(`.store-backdrop { background-image: none !important; }`);
+          lines.push(`.bg-current .lol-uikit-background-switcher-image { display: none !important; }`);
+        }
+        if (id === "home") {
+          lines.push(`.bg-current .lol-uikit-background-switcher-image { display: none !important; }`);
+          lines.push(`.lol-uikit-background-switcher-image.fade { display: none !important; }`);
+          lines.push(`.parties-background img { display: none !important; }`);
+        }
+        if (id === "champselect") {
+          lines.push(`img[src*="map-south.png"], img[src*="map-north.png"], img[src*="champ-select-planning-intro.jpg"], img[src*="gameflow-background.jpg"], img[src*="ready-check-background.png"] { display: none !important; }`);
+          lines.push(`.champ-select-bg-darken { background: transparent !important; }`);
+        }
+        if (id === "postgame") {
+          lines.push(`.postgame-background-image img { display: none !important; }`);
+        }
+      });
     }
 
-    const dim = parseFloat(dimSlider.value);
-    if (dim > 0) {
-      lines.push(
-        `${isAll ? "#rcp-fe-viewport-root::before" : selectors + "::after"} {`,
-      );
-      lines.push(`  content: ''; position: fixed; inset: 0;`);
-      lines.push(`  background: rgba(0, 0, 0, ${dim}) !important;`);
-      lines.push(`  pointer-events: none; z-index: -1;`);
-      lines.push(`}`);
-    }
+    lines.push(`.rcp-fe-viewport-sidebar, .lol-social-sidebar { background: transparent !important; }`);
+    lines.push(`.navbar_backdrop, .navbar-blur { background: transparent !important; backdrop-filter: none !important; }`);
 
     lines.push(END_MARKER);
     replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
     flashMessage(row.querySelector("#bc-flash"), "Background set!", "#4caf82");
   });
-
+  
   // Action: Remove
   row.querySelector("#bc-remove-btn").addEventListener("click", () => {
     const isAll = row.querySelector("#rem-all").checked;
@@ -1795,24 +2463,25 @@ function buildBackgroundCustomizationRow() {
           ".loading-content",
           ".bottom-gradient",
           ".smoke-background-container",
+          ".navbar_backdrop",
         ]
-      : screens
+      : removeScreens
           .slice(1)
           .filter((s) => row.querySelector("#rem-" + s.id).checked)
-          .map((s) => scopeMap[s.id] || "." + s.id);
-
+          .flatMap((s) => (scopeMap[s.id] ? scopeMap[s.id].split(",").map((x) => x.trim()) : ["." + s.id]));
+ 
     if (transScreens.length === 0) return;
-
-    const START_MARKER = "/* === BC: REMOVE BACKGROUNDS === */";
-    const END_MARKER = "/* === END BC: REMOVE BACKGROUNDS === */";
+ 
+    const START_MARKER = "/* === TRANSPARENT THEME FOUNDATIONS === */";
+    const END_MARKER = "/* === END TRANSPARENT THEME FOUNDATIONS === */";
     const lines = [START_MARKER];
-
+ 
     lines.push(`${transScreens.join(",\n")} {`);
-    lines.push(`  background: rgba(0, 0, 0, 0.10) !important;`);
+    lines.push(`  background: transparent !important;`);
     lines.push(`  background-image: none !important;`);
     lines.push(`  filter: none !important;`);
     lines.push(`}`);
-
+ 
     if (isAll) {
       const hideList = [
         ".store-loading",
@@ -1870,23 +2539,26 @@ function buildBackgroundCustomizationRow() {
         `.lol-uikit-background-switcher-image.fade {display:none !important;}`,
       );
       lines.push(``);
+      lines.push(`.parties-status-card-bg-container { display: none !important; }`);
+      lines.push(
+        `.parties-status-card, .parties-invite-info-panel, .v2-parties-invite-info-panel { background-color: transparent !important; }`,
+      );
+      lines.push(``);
       lines.push(`.clash-arurf-intro-modal {`);
       lines.push(
         `  display: none !important; opacity: 1 !important; transform: scale(1) !important; border-radius: 0px !important;`,
       );
-      lines.push(`  background-color: #15171e !important;`);
-      lines.push(
-        `  background-image: url("https://127.0.0.1:58895/fe/lol-clash/assets/images/arurf-modal/clash-arurf-modal-bg.png") !important;`,
-      );
-      lines.push(
-        `  background-size: cover !important; background-position: center !important; background-repeat: repeat !important;`,
-      );
-      lines.push(
-        `  font-family: Times New Roman !important; width: 828px !important; height: 508px !important;`,
-      );
       lines.push(`}`);
     }
-
+ 
+    if (row.querySelector("#bc-reconnect").checked) {
+      lines.push(``);
+      lines.push(`.rcp-fe-lol-game-in-progress, .reconnect-container, .rcp-fe-lol-reconnect {`);
+      lines.push(`  background-image: none !important;`);
+      lines.push(`  background-color: transparent !important;`);
+      lines.push(`}`);
+    }
+ 
     lines.push(END_MARKER);
     replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
     flashMessage(
@@ -1895,54 +2567,7 @@ function buildBackgroundCustomizationRow() {
       "#4caf82",
     );
   });
-
-  // Glass effect handler
-  row.querySelector("#bc-glass-btn").addEventListener("click", () => {
-    const blur = row.querySelector("#bc-glass-blur").value;
-    if (blur === "none") {
-      flashMessage(
-        row.querySelector("#bc-flash"),
-        "Select a blur intensity first",
-        "#c84b4b",
-      );
-      return;
-    }
-
-    const glassPanels = [
-      ".parties-game-info-panel-content",
-      ".v2-parties-invite-info-panel",
-      ".parties-invite-info-panel",
-      ".ready-check-root-element",
-      ".lol-social-sidebar",
-      "#activity-center .activity-center__tabs_scrollable",
-      ".selection-button-image",
-      ".rcp-fe-viewport-sidebar",
-      ".loot-application-container",
-      ".collections-application",
-      ".clash-tab-hub-content",
-      ".clash-tab-winners",
-      ".clash-tab-awards",
-      ".__rcp-fe-lol-store",
-    ];
-
-    const START_MARKER = "/* === BC: FROSTED GLASS === */";
-    const END_MARKER = "/* === END BC: FROSTED GLASS === */";
-    const lines = [START_MARKER];
-    lines.push(`${glassPanels.join(",\n")} {`);
-    lines.push(`  backdrop-filter: blur(${blur}) !important;`);
-    lines.push(`  background: rgba(0, 0, 0, 0.25) !important;`);
-    lines.push(`  border-radius: 6px !important;`);
-    lines.push(`}`);
-    lines.push(END_MARKER);
-
-    replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
-    flashMessage(
-      row.querySelector("#bc-flash"),
-      "Frosted glass applied!",
-      "#4caf82",
-    );
-  });
-
+ 
   return row;
 }
 
@@ -1953,7 +2578,7 @@ function buildActivityCenterRow() {
 
   row.innerHTML = `
     <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Home / Activity Center</div>
-    <div class="ci-generic-desc" style="margin-bottom: 12px;">Controls for the main landing page and activity hub.</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Use the pasted theme behavior by default: transparent activity surfaces, hidden background art, and hover-to-reveal tabs, with full-hide only as an optional extra.</div>
     
     <div style="display:flex;flex-direction:column;gap:8px;">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -1962,7 +2587,7 @@ function buildActivityCenterRow() {
       </label>
       
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="ac-nuke-bg" style="accent-color:#c8aa6e;cursor:pointer;">
+        <input type="checkbox" id="ac-nuke-bg" checked style="accent-color:#c8aa6e;cursor:pointer;">
         <span style="font-size:11px;color:#a0b4c8;">Remove Background Images Only</span>
       </label>
       
@@ -1972,7 +2597,7 @@ function buildActivityCenterRow() {
       </label>
 
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="ac-hover-left" style="accent-color:#c8aa6e;cursor:pointer;">
+        <input type="checkbox" id="ac-hover-left" checked style="accent-color:#c8aa6e;cursor:pointer;">
         <span style="font-size:11px;color:#a0b4c8;">Hover-to-Reveal Left Panel</span>
       </label>
     </div>
@@ -2043,8 +2668,8 @@ function buildSocialRow() {
   row.style.padding = "16px 14px";
 
   row.innerHTML = `
-    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Friends List / Social</div>
-    <div class="ci-generic-desc" style="margin-bottom: 12px;">Controls for the right-side social panel.</div>
+    <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Social / Chat</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Align the right-side social panel with the pasted transparent theme, including chat glass styling and party-card cleanup.</div>
     
     <div style="display:flex;flex-direction:column;gap:8px;">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -2094,8 +2719,12 @@ function buildSocialRow() {
     <div style="font-size:11px; font-weight:bold; color:#a0b4c8; margin-top: 12px; margin-bottom: 8px;">Chat Window Styling:</div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="soc-chat-glass" style="accent-color:#c8aa6e;cursor:pointer;">
-        <span style="font-size:11px;color:#a0b4c8;">Apply Frosted Glass Overlay (Backdrop Blur)</span>
+        <input type="checkbox" id="soc-chat-glass" checked style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Apply frosted chat card styling</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="soc-party-clear" checked style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Transparent party status cards and invite panels</span>
       </label>
     </div>
     
@@ -2118,6 +2747,7 @@ function buildSocialRow() {
     const hideArrows = row.querySelector("#soc-hide-arrows").checked;
 
     const doChatGlass = row.querySelector("#soc-chat-glass").checked;
+    const doPartyClear = row.querySelector("#soc-party-clear").checked;
 
     const START_MARKER = "/* === SOCIAL PANEL MODS === */";
     const END_MARKER = "/* === END SOCIAL MODS === */";
@@ -2165,6 +2795,13 @@ function buildSocialRow() {
         `lol-social-chat-window .conversation:hover, lol-social-chat-window .create-panel-search-match:hover { background: rgba(255,255,255,0.05) !important; }`,
       );
     }
+    if (doPartyClear) {
+      lines.push(`.parties-status-card-bg-container { display: none !important; }`);
+      lines.push(`.parties-status-card { background-color: transparent !important; }`);
+      lines.push(
+        `.parties-invite-info-panel, .v2-parties-invite-info-panel { background-color: transparent !important; }`,
+      );
+    }
 
     const hiddenButtons = [];
     if (hideBug) hiddenButtons.push(".bug-report-button");
@@ -2204,9 +2841,126 @@ function buildPlayerIdentityRow() {
     <div class="ci-generic-desc" style="margin-bottom: 12px;">Customize banners, player name styles, and borders.</div>
     
     <div style="display:flex;flex-direction:column;gap:8px;">
+
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-bottom:2px;">Your Identity <span style="font-size:9px; color:#5b5a56; font-weight:normal;">(Server-Side)</span></div>
+      <div style="font-size:10px; color:#5b5a56; margin-bottom:4px;">Account-level changes visible to everyone.</div>
+      <div style="display:flex; gap:6px; margin-bottom:2px;">
+        <button class="ci-btn-prop" id="pi-srv-remove-banner" style="flex:1; font-size:10px; padding:6px 8px;">Remove My Banner</button>
+        <button class="ci-btn-prop" id="pi-srv-remove-border" style="flex:1; font-size:10px; padding:6px 8px;">Remove My Border</button>
+      </div>
+      <div style="font-size:9px; color:#5b5a56; line-height:1.4;">
+        Banner removal also resets equipped challenges and title.<br>
+        Border removal sets crest to prestige with blank banner.
+      </div>
+      <div style="text-align:center;"><span class="ci-flash" id="pi-srv-flash"></span></div>
+
+      <div style="height:1px; background: linear-gradient(90deg, transparent, #463720, transparent); margin:8px 0;"></div>
+
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-bottom:2px;">Your Identity <span style="font-size:9px; color:#5b5a56; font-weight:normal;">(Client-Side CSS)</span></div>
+      <div style="font-size:10px; color:#5b5a56; margin-bottom:4px;">Replace your banner or border locally (profile &amp; lobby).</div>
+      <div class="ci-inline-row">
+        <div class="ci-field" style="grid-column: span 2;">
+          <div class="ci-label">Custom Banner URL</div>
+          <div style="display:flex;gap:4px;">
+            <input class="ci-input" id="pi-my-banner-url" type="text" placeholder="./assets/my-banner.png" style="font-size:12px; padding:8px 10px;flex:1;">
+            <button class="ci-btn-prop" id="pi-my-banner-browse" title="Browse files">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-top:4px;">
+        <div class="ci-field" style="grid-column: span 2;">
+          <div class="ci-label">Custom Border URL</div>
+          <div style="display:flex;gap:4px;">
+            <input class="ci-input" id="pi-my-border-url" type="text" placeholder="./assets/my-border.png" style="font-size:12px; padding:8px 10px;flex:1;">
+            <button class="ci-btn-prop" id="pi-my-border-browse" title="Browse files">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-top:4px;">
+        <div class="ci-field" style="grid-column: span 2;">
+          <div class="ci-label">Custom Crystal URL</div>
+          <div style="display:flex;gap:4px;">
+            <input class="ci-input" id="pi-my-crystal-url" type="text" placeholder="./assets/my-crystal.png" style="font-size:12px; padding:8px 10px;flex:1;">
+            <button class="ci-btn-prop" id="pi-my-crystal-browse" title="Browse files">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-top:8px; margin-bottom:4px;">My Player Name Style</div>
+      <div class="ci-inline-row" style="margin-bottom: 6px;">
+        <div class="ci-field">
+          <div class="ci-label">Text Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="pi-my-name-color-picker" type="color" value="">
+            <input class="ci-input" id="pi-my-name-color" type="text" value="" style="width:70px;">
+          </div>
+        </div>
+        <div class="ci-field">
+          <div class="ci-label">Glow Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="pi-my-name-glow-color-picker" type="color" value="">
+            <input class="ci-input" id="pi-my-name-glow-color" type="text" value="" style="width:70px;">
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Glow Intensity</div>
+          <select class="ci-select" id="pi-my-name-glow-intensity">
+            <option value="none">None</option>
+            <option value="subtle">Subtle</option>
+            <option value="normal">Normal</option>
+            <option value="strong">Strong</option>
+            <option value="intense">Intense</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-top:8px; margin-bottom:4px;">My Title / Challenge Banner Style</div>
+      <div class="ci-inline-row" style="margin-bottom: 6px;">
+        <div class="ci-field">
+          <div class="ci-label">Text Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="pi-my-title-color-picker" type="color" value="">
+            <input class="ci-input" id="pi-my-title-color" type="text" value="" style="width:70px;">
+          </div>
+        </div>
+        <div class="ci-field">
+          <div class="ci-label">Glow Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="pi-my-title-glow-color-picker" type="color" value="">
+            <input class="ci-input" id="pi-my-title-glow-color" type="text" value="" style="width:70px;">
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row">
+        <div class="ci-field">
+          <div class="ci-label">Glow Intensity</div>
+          <select class="ci-select" id="pi-my-title-glow-intensity">
+            <option value="none" selected>None</option>
+            <option value="subtle">Subtle</option>
+            <option value="normal">Normal</option>
+            <option value="strong">Strong</option>
+            <option value="intense">Intense</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="height:1px; background: linear-gradient(90deg, transparent, #463720, transparent); margin:8px 0;"></div>
+
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-bottom:2px;">All Players <span style="font-size:9px; color:#5b5a56; font-weight:normal;">(Client-Side CSS)</span></div>
+      <div style="font-size:10px; color:#5b5a56; margin-bottom:4px;">Visual overrides applied locally — affects how all players appear to you.</div>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
         <input type="checkbox" id="pi-hide-banners" style="accent-color:#c8aa6e;cursor:pointer;">
-        <span style="font-size:11px;color:#a0b4c8;">Hide Player Banners</span>
+        <span style="font-size:11px;color:#a0b4c8;">Hide All Banners</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="pi-hide-border" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hide All Level Borders</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="pi-hide-crystals" style="accent-color:#c8aa6e;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Hide All Crystals</span>
       </label>
 
       <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-top:8px; margin-bottom:4px;">Player Name Style</div>
@@ -2269,14 +3023,10 @@ function buildPlayerIdentityRow() {
         </div>
       </div>
 
-      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-top:8px; margin-bottom:4px;">Customize Avatar Border</div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
-        <input type="checkbox" id="pi-hide-border" style="accent-color:#c8aa6e;cursor:pointer;">
-        <span style="font-size:11px;color:#a0b4c8;">Hide Level Border Image</span>
-      </label>
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-top:8px; margin-bottom:4px;">Customize All Avatar Borders</div>
       <div class="ci-inline-row">
         <div class="ci-field" style="grid-column: span 2;">
-          <div class="ci-label">Custom Border Image URL</div>
+          <div class="ci-label">Custom Border Image URL (All Players)</div>
           <div style="display:flex;gap:4px;">
             <input class="ci-input" id="pi-border-url" type="text" placeholder="./assets/border.png" style="font-size:12px; padding:8px 10px;flex:1;">
             <button class="ci-btn-prop" id="pi-border-browse" title="Browse files">+</button>
@@ -2306,12 +3056,78 @@ function buildPlayerIdentityRow() {
   syncColor("#pi-title-color-picker", "#pi-title-color");
   syncColor("#pi-title-glow-color-picker", "#pi-title-glow-color");
 
+  syncColor("#pi-my-name-color-picker", "#pi-my-name-color");
+  syncColor("#pi-my-name-glow-color-picker", "#pi-my-name-glow-color");
+  syncColor("#pi-my-title-color-picker", "#pi-my-title-color");
+  syncColor("#pi-my-title-glow-color-picker", "#pi-my-title-glow-color");
+
+  // File picker buttons
   row.querySelector("#pi-border-browse").addEventListener("click", () => {
     attachFilePickerToInput(row.querySelector("#pi-border-url"));
   });
+  row.querySelector("#pi-my-banner-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#pi-my-banner-url"));
+  });
+  row.querySelector("#pi-my-border-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#pi-my-border-url"));
+  });
+  row.querySelector("#pi-my-crystal-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#pi-my-crystal-url"));
+  });
 
+  // Server-side buttons
+  row.querySelector("#pi-srv-remove-banner").addEventListener("click", () => {
+    const flash = row.querySelector("#pi-srv-flash");
+    fetch("/lol-challenges/v1/update-player-preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "accept": "application/json" },
+      body: JSON.stringify({ bannerAccent: "2" }),
+    }).then((r) => {
+      if (r.ok) {
+        flashMessage(flash, "Banner removed!", "#4caf82");
+      } else {
+        flashMessage(flash, `Banner removal failed (${r.status})`, "#e49429");
+      }
+    }).catch(() => {
+      flashMessage(flash, "Banner removal failed (network error)", "#e49429");
+    });
+  });
+
+  row.querySelector("#pi-srv-remove-border").addEventListener("click", () => {
+    const flash = row.querySelector("#pi-srv-flash");
+    fetch("/lol-regalia/v2/current-summoner/regalia", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "accept": "application/json" },
+      body: JSON.stringify({ preferredCrestType: "prestige", preferredBannerType: "blank" }),
+    }).then((r) => {
+      if (r.ok) {
+        flashMessage(flash, "Border removed!", "#4caf82");
+      } else {
+        flashMessage(flash, `Border removal failed (${r.status})`, "#e49429");
+      }
+    }).catch(() => {
+      flashMessage(flash, "Border removal failed (network error)", "#e49429");
+    });
+  });
+
+  // Apply button
   row.querySelector("#pi-apply-btn").addEventListener("click", () => {
+    const myBannerUrl = row.querySelector("#pi-my-banner-url").value.trim();
+    const myBorderUrl = row.querySelector("#pi-my-border-url").value.trim();
+    const myCrystalUrl = row.querySelector("#pi-my-crystal-url").value.trim();
     const hideBanners = row.querySelector("#pi-hide-banners").checked;
+    const hideBorder = row.querySelector("#pi-hide-border").checked;
+    const hideCrystals = row.querySelector("#pi-hide-crystals").checked;
+
+
+    const myNameColor = row.querySelector("#pi-my-name-color").value.trim();
+    const myNameGlowColor = row.querySelector("#pi-my-name-glow-color").value.trim();
+    const myNameGlowIntensity = row.querySelector("#pi-my-name-glow-intensity").value;
+
+
+    const myTitleColor = row.querySelector("#pi-my-title-color").value.trim();
+    const myTitleGlowColor = row.querySelector("#pi-my-title-glow-color").value.trim();
+    const myTitleGlowIntensity = row.querySelector("#pi-my-title-glow-intensity").value;
 
     const nameColor = row.querySelector("#pi-name-color").value.trim();
     const nameGlowColor = row.querySelector("#pi-name-glow-color").value.trim();
@@ -2327,7 +3143,6 @@ function buildPlayerIdentityRow() {
       "#pi-title-glow-intensity",
     ).value;
 
-    const hideBorder = row.querySelector("#pi-hide-border").checked;
     const borderUrl = row.querySelector("#pi-border-url").value.trim();
 
     const START_MARKER = "/* === PLAYER IDENTITY === */";
@@ -2345,6 +3160,94 @@ function buildPlayerIdentityRow() {
       return "";
     };
 
+    // Your Identity (scoped via :host-context)
+    if (myBannerUrl) {
+      lines.push("/* Personal Banner */");
+      lines.push(`:host-context(.local-player) .regalia-banner-asset-static img,`);
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) .regalia-banner-asset-static img {`);
+      lines.push(`  content: url('${myBannerUrl}') !important;`);
+      lines.push(`  object-fit: cover !important;`);
+      lines.push(`  object-position: center top !important;`);
+      lines.push(`}`);
+    }
+
+    if (myBorderUrl) {
+      lines.push("/* Personal Border */");
+      lines.push(`:host-context(.local-player) .theme-ring-border,`);
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) .theme-ring-border,`);
+      lines.push(`:host-context(.local-player) lol-uikit-ranked-ring-v2,`);
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) lol-uikit-ranked-ring-v2,`);
+      lines.push(`:host-context(.local-player) lol-uikit-ranked-ring,`);
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) lol-uikit-ranked-ring,`);
+      lines.push(`:host-context(.local-player) lol-regalia-ranked-ring,`);
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) lol-regalia-ranked-ring,`);
+      lines.push(`:host-context(.local-player) .lol-regalia-ranked-border-container,`);
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) .lol-regalia-ranked-border-container {`);
+      lines.push(`  display: none !important;`);
+      lines.push(`}`);
+
+      lines.push(`:host-context(.local-player) uikit-state-machine.regalia-crest-state-machine::after,`);
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) uikit-state-machine.regalia-crest-state-machine::after {`);
+      lines.push(`  content: '';`);
+      lines.push(`  position: absolute;`);
+      lines.push(`  top: -50%;`);
+      lines.push(`  left: -50%;`);
+      lines.push(`  width: 200%;`);
+      lines.push(`  height: 200%;`);
+      lines.push(`  background-image: url('${myBorderUrl}') !important;`);
+      lines.push(`  background-size: contain !important;`);
+      lines.push(`  background-repeat: no-repeat !important;`);
+      lines.push(`  background-position: center !important;`);
+      lines.push(`  pointer-events: none;`);
+      lines.push(`  z-index: 10;`);
+      lines.push(`}`);
+    }
+
+    if (myCrystalUrl) {
+      lines.push("/* Personal Crystal */");
+      lines.push(`:host-context(.local-player) .challenges-crystal-container,`);
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) .challenges-crystal-container {`);
+      lines.push(`  content: url('${myCrystalUrl}') !important;`);
+      lines.push(`  display: flex !important;`);
+      lines.push(`  object-fit: contain !important;`);
+      lines.push(`}`);
+    }
+
+    const myNameShadow = getGlowString(myNameGlowColor, myNameGlowIntensity);
+    if (myNameColor || myNameShadow) {
+      lines.push("/* Personal Name Style */");
+      let selBase = [
+        `.local-player .player-name-component`,
+        `lol-regalia-profile-v2-element[is-searched="false"] .player-name-component`,
+        `.name .player-name-component`
+      ];
+      if (_localPuuid) selBase.push(`.hover-card:has(lol-regalia-hovercard-v2-element[puuid="${_localPuuid}" i]) .hover-card-name`);
+      if (_localSummonerId) selBase.push(`.hover-card:has(lol-regalia-hovercard-v2-element[summoner-id="${_localSummonerId}"]) .hover-card-name`);
+      
+      lines.push(selBase.join(",\n") + " {");
+      if (myNameColor) lines.push(`  color: ${myNameColor} !important;`);
+      if (myNameShadow) lines.push(`  text-shadow: ${myNameShadow} !important;`);
+      lines.push(`  font-weight: bold !important;`);
+      lines.push(`}`);
+    }
+
+    const myTitleShadow = getGlowString(myTitleGlowColor, myTitleGlowIntensity);
+    if (myTitleColor || myTitleShadow) {
+      lines.push("/* Personal Title Style */");
+      let selTitleBase = [
+        `.local-player .challenge-banner-title-container`,
+        `.style-profile-summoner-info-component:has(lol-regalia-profile-v2-element[is-searched="false"]) .challenge-banner-title-container`
+      ];
+      if (_localPuuid) selTitleBase.push(`.hover-card:has(lol-regalia-hovercard-v2-element[puuid="${_localPuuid}" i]) .hover-card-title`);
+      if (_localSummonerId) selTitleBase.push(`.hover-card:has(lol-regalia-hovercard-v2-element[summoner-id="${_localSummonerId}"]) .hover-card-title`);
+      
+      lines.push(selTitleBase.join(",\n") + " {");
+      if (myTitleColor) lines.push(`  color: ${myTitleColor} !important;`);
+      if (myTitleShadow) lines.push(`  text-shadow: ${myTitleShadow} !important;`);
+      lines.push(`}`);
+    }
+
+    // All Players
     if (hideBanners) {
       lines.push(
         ".regalia-banner-state-machine, .regalia-parties-v2-root .regalia-parties-v2-banner-backdrop, .placeholder-invited-container, .regalia-banner-asset-static-image { display: none !important; }",
@@ -2353,7 +3256,7 @@ function buildPlayerIdentityRow() {
 
     const nameShadow = getGlowString(nameGlowColor, nameGlowIntensity);
     if (nameColor || nameShadow) {
-      lines.push(".player-name-component {");
+      lines.push(".player-name-component, .hover-card-name {");
       if (nameColor) lines.push(`  color: ${nameColor} !important;`);
       if (nameShadow) lines.push(`  text-shadow: ${nameShadow} !important;`);
       lines.push("}");
@@ -2361,20 +3264,36 @@ function buildPlayerIdentityRow() {
 
     const titleShadow = getGlowString(titleGlowColor, titleGlowIntensity);
     if (titleColor || titleShadow) {
-      lines.push(".challenge-banner-title-container {");
+      lines.push(".challenge-banner-title-container, .hover-card-title {");
       if (titleColor) lines.push(`  color: ${titleColor} !important;`);
       if (titleShadow) lines.push(`  text-shadow: ${titleShadow} !important;`);
       lines.push("}");
     }
 
     if (hideBorder) {
-      lines.push(".theme-ring-border { background-image: none !important; }");
+      lines.push(".theme-ring-border, lol-uikit-ranked-ring-v2, lol-uikit-ranked-ring, lol-regalia-ranked-ring, .lol-regalia-ranked-border-container { display: none !important; }");
     } else if (borderUrl) {
-      lines.push(".theme-ring-border {");
-      lines.push(`  background-image: url('${borderUrl}') !important;`);
-      lines.push("  background-size: cover !important;");
-      lines.push("  background-position: center !important;");
+      lines.push(".theme-ring-border, lol-uikit-ranked-ring-v2, lol-uikit-ranked-ring, lol-regalia-ranked-ring, .lol-regalia-ranked-border-container {");
+      lines.push(`  display: none !important;`);
       lines.push("}");
+      lines.push("uikit-state-machine.regalia-crest-state-machine::after {");
+      lines.push(`  content: '';`);
+      lines.push(`  position: absolute;`);
+      lines.push(`  top: -50%;`);
+      lines.push(`  left: -50%;`);
+      lines.push(`  width: 200%;`);
+      lines.push(`  height: 200%;`);
+      lines.push(`  background-image: url('${borderUrl}') !important;`);
+      lines.push("  background-size: contain !important;");
+      lines.push("  background-repeat: no-repeat !important;");
+      lines.push("  background-position: center !important;");
+      lines.push("  pointer-events: none;");
+      lines.push("  z-index: 10;");
+      lines.push("}");
+    }
+
+    if (hideCrystals) {
+      lines.push(".challenges-crystal-container { display: none !important; }");
     }
 
     if (lines.length === 1) lines.push("/* No options selected */");
@@ -3785,7 +4704,7 @@ function buildRootOverlayRow() {
   row.className = "ci-generic-row";
   row.innerHTML = `
     <div class="ci-generic-title">Root Viewport Overlay</div>
-    <div class="ci-generic-desc">Adds a <code style="color:#c8aa6e;font-size:9px;">::before</code> dark tint behind the entire client. Used in every background-image theme to darken the wallpaper without affecting UI elements. Targets <code style="color:#c8aa6e;font-size:9px;">#rcp-fe-viewport-root</code>.</div>
+    <div class="ci-generic-desc">Legacy advanced overlay tool. The transparent theme now prefers the dedicated Global Dim Controller, but this remains available for targeted viewport-level layering.</div>
     <div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Overlay color</div>
         <div class="ci-color-pair">
@@ -3889,6 +4808,11 @@ function buildGlassPanelRow() {
       label: "Ready check popup",
     },
     { id: "gp-social", sel: ".lol-social-sidebar", label: "Social sidebar" },
+    {
+      id: "gp-lootstore",
+      sel: ".loot-application-container, .collections-application, .__rcp-fe-lol-store",
+      label: "Loot / Collections / Store",
+    },
     { id: "gp-custom", sel: "", label: "Custom…" },
   ];
 
@@ -4552,6 +5476,8 @@ function buildFontRow() {
     );
   });
 
+  let lastDetectedFontName = "";
+
   // Auto-detect on paste/input
   row.querySelector("#ci-font-url").addEventListener("input", (e) => {
     const url = e.target.value;
@@ -4563,12 +5489,19 @@ function buildFontRow() {
     }
     if (cleanUrl.includes("family=")) {
       const familyMatch = cleanUrl.match(/[?&]family=([^&:]+)/);
-      if (familyMatch && !nameField.value) {
-        nameField.value = decodeURIComponent(familyMatch[1]).replace(
+      if (familyMatch) {
+        const detectedName = decodeURIComponent(familyMatch[1]).replace(
           /\+/g,
           " ",
         );
+        if (!nameField.value || nameField.value === lastDetectedFontName) {
+          nameField.value = detectedName;
+        }
+        lastDetectedFontName = detectedName;
       }
+    } else if (nameField.value === lastDetectedFontName) {
+      nameField.value = "";
+      lastDetectedFontName = "";
     }
   });
 
