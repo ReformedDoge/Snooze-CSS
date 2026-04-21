@@ -1,6 +1,6 @@
 /**
  * @name Snooze-CSS
- * @version 1.1.1
+ * @version 1.2.0
  * @author SnoozeFest - github@ReformedDoge
  */
 import { createModal } from "./src/modal.js";

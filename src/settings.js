@@ -2,10 +2,12 @@
 import { Storage } from "./storage.js";
 import { makeSection, makeToggle } from "./utils.js";
 import { CATALOG } from "./catalog.js";
+import { syncBridgeState } from "./raw.js";
 
 const SETTINGS_KEY = "Snooze-CSS-settings";
 let CURRENT_VERSION = "1.0.0"; //Fallback
-const GITHUB_RELEASES_API = "https://api.github.com/repos/ReformedDoge/Snooze-CSS/releases/latest";
+const GITHUB_RELEASES_API =
+  "https://api.github.com/repos/ReformedDoge/Snooze-CSS/releases/latest";
 
 let _latestRelease = null; // { version, url, name, body } or null
 let _updateCheckPending = false;
@@ -15,6 +17,8 @@ const defaults = {
   autoMonitor: true,
   blurEnabled: false,
   blurColor: "#ff000010",
+  bridgeEnabled: false,
+  bridgePort: 8765,
   windowEffect: {
     enabled: false,
     name: "blurbehind",
@@ -49,19 +53,24 @@ export function normalizeWindowEffect(effect = {}, legacy = {}) {
   const legacyColor = legacy.blurColor || defaults.blurColor;
   const legacyEnabled = legacy.blurEnabled === true;
   const color = effect.color || legacyColor || defaults.windowEffect.color;
-  const normalizedColor =
-    /^#[0-9a-f]{8}$/i.test(color)
+  const normalizedColor = /^#[0-9a-f]{8}$/i.test(color)
+    ? color
+    : /^#[0-9a-f]{4}$/i.test(color)
       ? color
-      : /^#[0-9a-f]{4}$/i.test(color)
-        ? color
-        : defaults.windowEffect.color;
+      : defaults.windowEffect.color;
 
   const colorBase =
     effect.colorBase ||
     (normalizedColor.length === 9
       ? normalizedColor.slice(0, 7)
       : normalizedColor.length === 5
-        ? "#" + normalizedColor[1] + normalizedColor[1] + normalizedColor[2] + normalizedColor[2] + normalizedColor[3] + normalizedColor[3]
+        ? "#" +
+          normalizedColor[1] +
+          normalizedColor[1] +
+          normalizedColor[2] +
+          normalizedColor[2] +
+          normalizedColor[3] +
+          normalizedColor[3]
         : defaults.windowEffect.colorBase);
   const alpha =
     effect.alpha ||
@@ -72,8 +81,7 @@ export function normalizeWindowEffect(effect = {}, legacy = {}) {
         : defaults.windowEffect.alpha);
 
   return {
-    enabled:
-      effect.enabled !== undefined ? effect.enabled : legacyEnabled,
+    enabled: effect.enabled !== undefined ? effect.enabled : legacyEnabled,
     name: effect.name || "blurbehind",
     colorBase,
     alpha: alpha.toUpperCase(),
@@ -123,10 +131,10 @@ const SENTINEL_SELECTORS = [
 async function syncVersionWithMetadata() {
   try {
     // Determine path to index.js relative to this file
-    const indexUrl = new URL('../index.js', import.meta.url);
+    const indexUrl = new URL("../index.js", import.meta.url);
     const response = await fetch(indexUrl);
     const text = await response.text();
-    
+
     // Regex to find @version x.x.x
     const match = text.match(/@version\s+([\d.]+)/);
     if (match && match[1]) {
@@ -238,14 +246,16 @@ export async function checkForUpdates(force = false) {
   try {
     const resp = await fetch(GITHUB_RELEASES_API);
     if (!resp.ok) return;
-    
+
     const data = await resp.json();
     const latestVersion = parseVersion(data.tag_name || data.name || "");
 
     if (latestVersion && isNewerVersion(latestVersion, CURRENT_VERSION)) {
       _latestRelease = {
         version: latestVersion,
-        url: data.html_url || "https://github.com/ReformedDoge/Snooze-CSS/releases",
+        url:
+          data.html_url ||
+          "https://github.com/ReformedDoge/Snooze-CSS/releases",
         name: data.name || `v${latestVersion}`,
         body: (data.body || "").slice(0, 500),
       };
@@ -255,7 +265,6 @@ export async function checkForUpdates(force = false) {
 
     // Update the UI badge if the modal is open
     if (_updateBadgeCallback) _updateBadgeCallback(_latestRelease);
-    
   } catch (err) {
     console.warn("[Snooze-CSS] Update check failed:", err);
   } finally {
@@ -318,7 +327,8 @@ export function buildSettingsTab(container) {
 
   // Toggle row
   const updateToggleRow = document.createElement("div");
-  updateToggleRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
+  updateToggleRow.style.cssText =
+    "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
   const updateToggleLabel = document.createElement("span");
   updateToggleLabel.style.cssText = "font-size:11px;color:#8a9aaa;";
   updateToggleLabel.textContent = "Auto-check for updates on startup";
@@ -332,7 +342,8 @@ export function buildSettingsTab(container) {
 
   // Status area
   const updateStatusEl = document.createElement("div");
-  updateStatusEl.style.cssText = "margin-top:10px;padding:8px 10px;background:rgba(0,0,0,0.2);border:1px solid #1a2535;font-size:10px;line-height:1.6;";
+  updateStatusEl.style.cssText =
+    "margin-top:10px;padding:8px 10px;background:rgba(0,0,0,0.2);border:1px solid #1a2535;font-size:10px;line-height:1.6;";
 
   function renderUpdateStatus() {
     updateStatusEl.innerHTML = "";
@@ -341,7 +352,8 @@ export function buildSettingsTab(container) {
       updateStatusEl.style.background = "rgba(200,170,110,0.06)";
 
       const title = document.createElement("div");
-      title.style.cssText = "font-size:11px;font-weight:600;color:#c8aa6e;margin-bottom:4px;";
+      title.style.cssText =
+        "font-size:11px;font-weight:600;color:#c8aa6e;margin-bottom:4px;";
       title.textContent = `Update available: v${_latestRelease.version}`;
 
       const relName = document.createElement("div");
@@ -350,7 +362,8 @@ export function buildSettingsTab(container) {
 
       if (_latestRelease.body) {
         const notes = document.createElement("div");
-        notes.style.cssText = "font-size:9px;color:#4a6070;margin-bottom:8px;white-space:pre-wrap;max-height:80px;overflow:hidden;";
+        notes.style.cssText =
+          "font-size:9px;color:#4a6070;margin-bottom:8px;white-space:pre-wrap;max-height:80px;overflow:hidden;";
         notes.textContent = _latestRelease.body;
         updateStatusEl.appendChild(title);
         updateStatusEl.appendChild(relName);
@@ -365,7 +378,8 @@ export function buildSettingsTab(container) {
       const link = document.createElement("a");
       link.href = _latestRelease.url;
       link.target = "_blank";
-      link.style.cssText = "font-size:10px;color:#785a28;text-decoration:underline;cursor:pointer;";
+      link.style.cssText =
+        "font-size:10px;color:#785a28;text-decoration:underline;cursor:pointer;";
       link.textContent = "View release on GitHub";
       linkRow.appendChild(link);
       updateStatusEl.appendChild(linkRow);
@@ -384,7 +398,8 @@ export function buildSettingsTab(container) {
 
   // Manual check button
   const checkBtnRow = document.createElement("div");
-  checkBtnRow.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:8px;";
+  checkBtnRow.style.cssText =
+    "display:flex;gap:8px;align-items:center;margin-top:8px;";
   const checkBtn = document.createElement("button");
   checkBtn.className = "ci-btn-secondary";
   checkBtn.style.cssText = "font-size:10px;padding:5px 12px;";
@@ -401,7 +416,9 @@ export function buildSettingsTab(container) {
     checkBtn.disabled = false;
     checkBtn.textContent = "Check now";
     checkStatus.textContent = _latestRelease ? "" : "Already up to date";
-    setTimeout(() => { checkStatus.textContent = ""; }, 3000);
+    setTimeout(() => {
+      checkStatus.textContent = "";
+    }, 3000);
   });
 
   checkBtnRow.appendChild(checkBtn);
@@ -409,6 +426,57 @@ export function buildSettingsTab(container) {
   updateSection.appendChild(checkBtnRow);
 
   wrap.appendChild(updateSection);
+
+  // VS CODE BRIDGE SETTINGS
+  const devSection = makeSection(
+    "Developer Tools",
+    "Enable external editor integration for advanced CSS live-editing.",
+  );
+
+  // Toggle
+  const toggleRow = document.createElement("div");
+  toggleRow.style.cssText =
+    "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
+  toggleRow.innerHTML = `<span style="font-size:11px;color:#8a9aaa;">Enable WebSocket IDE Bridge</span>`;
+
+  const bridgeToggle = makeToggle(state.bridgeEnabled, async (val) => {
+    state.bridgeEnabled = val;
+    portRow.style.opacity = val ? "1" : "0.25";
+    portRow.style.pointerEvents = val ? "all" : "none";
+    await saveSettings();
+
+    // Update the socket and the profile list tab
+    syncBridgeState();
+  });
+  toggleRow.appendChild(bridgeToggle);
+  devSection.appendChild(toggleRow);
+
+  // Port Configuration (Indented/Sub-setting)
+  const portRow = document.createElement("div");
+  portRow.style.cssText = `display:flex;align-items:center;justify-content:space-between;margin-top:12px; padding-left: 10px; transition: opacity 0.2s ease; ${state.bridgeEnabled ? "" : "opacity:0.3; pointer-events:none;"}`;
+
+  portRow.innerHTML = `<span style="font-size:10px;color:#4a6070;text-transform:uppercase;letter-spacing:0.05em;">Connection Port</span>`;
+
+  const portInput = document.createElement("input");
+  portInput.type = "number";
+  portInput.className = "ci-input";
+  portInput.style.cssText =
+    "width:80px; padding:6px 10px; font-size:11px; text-align:center; border-color: #1e2d3d;";
+  portInput.value = state.bridgePort || 8765;
+
+  portInput.addEventListener("change", async (e) => {
+    let val = parseInt(e.target.value);
+    if (isNaN(val) || val < 1024 || val > 65535) {
+      val = 8765;
+      e.target.value = val;
+    }
+    state.bridgePort = val;
+    await saveSettings();
+  });
+
+  portRow.appendChild(portInput);
+  devSection.appendChild(portRow);
+  wrap.appendChild(devSection);
 
   // DATA MANAGEMENT
   const dangerSection = makeSection("Data", "");
@@ -444,6 +512,8 @@ export function buildSettingsTab(container) {
     if (ok) {
       state = { ...defaults };
       deleteStatus.style.opacity = "1";
+      // Kill socket if it was running before the data wipe
+      syncBridgeState();
       setTimeout(() => {
         deleteStatus.style.opacity = "0";
       }, 2500);
