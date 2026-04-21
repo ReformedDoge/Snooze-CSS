@@ -23,3 +23,11 @@ export function resolveAssetUrls(css) {
   // match things like "my-assets/" or "/assets/".
   return css.replace(/\.\/assets\//g, _base + "assets/");
 }
+
+// Resolve a single relative path (e.g. "./assets/foo.png") to an absolute URL
+// using the same base the CSS injector uses. Returns null if the resolver hasn't
+// been initialized yet.
+export function resolveRelativePath(relPath) {
+  if (!_base) return null;
+  return _base + relPath.replace(/^\.\//, "");
+}

@@ -2,7 +2,7 @@
 
 import { getShadowRoots } from "./shadow-manager.js";
 import { appendToRaw } from "./raw.js";
-import { flashMessage, buildStrategicSelector } from "./utils.js";
+import { flashMessage, buildStrategicSelector, attachFilePicker } from "./utils.js";
 
 // State
 let _switchTab = null;
@@ -836,20 +836,10 @@ async function downloadAsset(url) {
   }
 }
 
-// FILE PICKER 
+// FILE PICKER
 
 export function attachAssetPicker(inputEl) {
-  const hidden = document.createElement("input");
-  hidden.type = "file";
-  hidden.accept = "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm";
-  hidden.style.display = "none";
-  document.body.appendChild(hidden);
-  hidden.addEventListener("change", (e) => {
-    const file = e.target.files?.[0];
-    if (file) inputEl.value = `./assets/${file.name}`;
-    document.body.removeChild(hidden);
-  });
-  hidden.click();
+  attachFilePicker(inputEl);
 }
 
 // HELPERS 

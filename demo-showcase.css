@@ -1,26 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Nova+Cut&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Nabla&display=swap');
-/* =========================================== */
-/* MINIMAL SWEEP                               */
-/* =========================================== */
-.navbar-blur,
-.play-button-frame,
-.navigation-root-component,
-.lobby-header-overlay {
-background: transparent !important;
-border: none !important;
-backdrop-filter: none !important;
+@import url('https://fonts.googleapis.com/css2?family=Goldman:wght@400;700&display=swap');
+.navbar_backdrop {
+	backdrop-filter: none !important;
+	background: transparent !important;
 }
-.right-nav-vertical-rule,
-.lobby-header-overlay,
-#background-ambient {
-  display: none !important;
+
+div[data-screen-name="rcp-fe-lol-navigation-screen"] {
+	border-top-width: 1px;
 }
-/* =========================================== */
-/* END OF MINIMAL SWEEP                        */
-/* =========================================== */
+
+.navigation-root-component {
+	border-bottom: none !important;
+}
+
+.right-nav-vertical-rule, #background-ambient {
+	display: none !important;
+}
+
 /* === BC: REMOVE BACKGROUNDS === */
-body,
 html,
 .parties-view,
 .activity-center__tabs_section-divider,
@@ -69,12 +66,13 @@ html,
 .loading-content,
 .bottom-gradient,
 .smoke-background-container {
-  background: rgba(0, 0, 0, 0.10) !important;
-  background-image: none !important;
-  filter: none !important;
+	background: transparent !important;
+	background-image: none !important;
+	filter: none !important;
 }
 
 /* Hide generic loading spinners and explicit background graphics */
+
 .store-loading,
 .activity-center__tabs_section-divider,
 .loot-to-store-button,
@@ -111,299 +109,46 @@ img[src*="ready-check-background.png"],
 .clash-root-background-landing,
 .activity-center__tabs_footer_divider,
 .loading-tab:after {
-  display: none !important;
+	display: none !important;
 }
 
-.bg-current .lol-uikit-background-switcher-image {display:none !important;}
+.bg-current .lol-uikit-background-switcher-image {
+	display: none !important;
+}
 
-.store-backdrop { background-image: none; }
+.store-backdrop {
+	background-image: none;
+}
 
-.lol-uikit-background-switcher-image.fade {display:none !important;}
+.lol-uikit-background-switcher-image.fade {
+	display: none !important;
+}
 
 .clash-arurf-intro-modal {
-  display: none !important; opacity: 1 !important; transform: scale(1) !important; border-radius: 0px !important;
-  background-color: #15171e !important;
-  background-image: url("https://127.0.0.1:58895/fe/lol-clash/assets/images/arurf-modal/clash-arurf-modal-bg.png") !important;
-  background-size: cover !important; background-position: center !important; background-repeat: repeat !important;
-  font-family: Times New Roman !important; width: 828px !important; height: 508px !important;
+	display: none !important;
+	opacity: 1 !important;
+	transform: scale(1) !important;
+	border-radius: 0px !important;
+	background-color: #15171e !important;
+	background-image: url("") !important;
+	background-size: cover !important;
+	background-position: center !important;
+	background-repeat: repeat !important;
+	font-family: Times New Roman !important;
+	width: 828px !important;
+	height: 508px !important;
 }
+
 /* === END BC: REMOVE BACKGROUNDS === */
-/* === HOME / ACTIVITY CENTER MODS === */
-.activity-center-skin-activity__background-image, .activity-center__background-component { display: none !important; }
-.activity-center-application, #activity-center, #activity-center .activity-center__template, .activity-center-skin-activity__background-shroud { background: transparent !important; }
-/* === END HOME MODS === */
-/* === SOCIAL PANEL MODS === */
-lol-social-chat-window { margin-right: 5px !important; }
-lol-social-chat-window #chat-window-wrapper {
-  background-color: rgba(10, 10, 15, 0.45) !important;
-  backdrop-filter: blur(12px) !important;
-  border-top-left-radius: 8px !important;
-  border-top-right-radius: 8px !important;
-  border: 1px solid rgba(255,255,255,0.05) !important;
-  border-bottom: none !important;
-}
-lol-social-chat-window .chat-header { background: transparent !important; }
-lol-social-chat-window .chat-area { background: transparent !important; }
-lol-social-chat-window .conversation:hover, lol-social-chat-window .create-panel-search-match:hover { background: rgba(255,255,255,0.05) !important; }
-.bug-report-button, .lol-social-version-bar, lol-parties-comm-button { display: none !important; }
-/* === END SOCIAL MODS === */
-/* === CHAMP SELECT MODS === */
-/* Show splash images just in case hidden by global transparent sweeps */
-img.champion-background-image, div.skin-selection-thumbnail img, div.portrait-icon img {
-  opacity: 1 !important; display: block !important; visibility: visible !important;
-}
 
-/* Frame the splash art in a minimalist glossy glass card */
-.champion-select .champion-splash-background {
-  position: absolute !important;
-  display: block !important;
-  width: 60% !important;
-  height: 75% !important;
-  top: 10% !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(5,5,10,0.4) 100%) !important;
-  backdrop-filter: blur(12px) saturate(110%) !important;
-  border: 1px solid rgba(255,255,255,0.1) !important;
-  border-top: 1px solid rgba(255,255,255,0.2) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.05) !important;
-  z-index: 0 !important;
-  overflow: hidden !important;
-  -webkit-mask-image: none !important;
-}
-
-/* Champion splash positioning inside the card */
-.champion-select, .champion-select .champ-select-bg {
-  position: absolute !important;
-  width: 100% !important;
-  height: 100% !important;
-  inset: 0 !important;
-  background: transparent !important;
-}
-
-.champion-select .champ-select-bg img {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: cover !important;
-  object-position: top center !important;
-  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%) !important;
-}
-img[src*="map-south.png"], img[src*="map-north.png"], img[src*="champ-select-planning-intro.jpg"], img[src*="gameflow-background.jpg"], img[src*="ready-check-background.png"] { display: none !important;}
-
-/* === BC: BACKGROUND REPLACEMENT === */
-:root { --bc-custom-bg: url('./assets/output.webp'); }
-#rcp-fe-viewport-root, .rcp-fe-lol-game-in-progress, .rcp-fe-lol-pre-end-of-game, .rcp-fe-lol-reconnect, .rcp-fe-lol-waiting-for-stats, .champion-select, .lol-loading-screen-container.lol-loading-screen-default-state, .reconnect-container {
-  background-image: var(--bc-custom-bg) !important;
-  background-size: cover !important;
-  background-position: center center !important;
-  background-repeat: no-repeat !important;
-  isolation: isolate;
-}
-
-.bg-current .lol-uikit-background-switcher-image {display:none !important;}
-
-.store-backdrop { background-image: none; }
-
-.lol-uikit-background-switcher-image.fade {display:none !important;}
-
-/* Hide generic loading spinners and explicit background graphics */
-.store-loading,
-.loot-to-store-button,
-.clash-root-action-timeline-background-gradient,
-.clash-aram-intro-modal,
-.event-shop-xp-vertical-divider,
-.event-shop-page-header-vertical-divider,
-.tft-home-footer-bg,
-.tft-hub-footer-bg,
-.lol-loading-screen-spinner,
-.lol-loading-screen-status-container,
-.summoner-level-ring,
-.rcp-fe-lol-home-loading-spinner,
-.style-profile-loading-spinner,
-.spinner,
-.bg-current img,
-.parties-background img,
-.postgame-background-image img,
-.style-profile-background-image img,
-.style-profile-masked-image img,
-.background-edge-backlight,
-#background-ambient,
-.lobby-intro-animation-container,
-.activity-center__background-component__blend,
-.challenges-collection-component .background,
-.leagues-root-component .ranked-intro-background,
-img[src*="map-south.png"],
-img[src*="map-north.png"],
-img[src*="champ-select-planning-intro.jpg"],
-img[src*="gameflow-background.jpg"],
-img[src*="ready-check-background.png"],
-.parties-background-mask,
-.loot-backdrop.background-static,
-.clash-root-background-landing,
-.loading-tab:after {
-  display: none !important;
-}
-
-.clash-arurf-intro-modal {
-  display: none !important; opacity: 1 !important; transform: scale(1) !important; border-radius: 0px !important;
-  background-color: #15171e !important;
-  background-image: url("https://127.0.0.1:58895/fe/lol-clash/assets/images/arurf-modal/clash-arurf-modal-bg.png") !important;
-  background-size: cover !important; background-position: center !important; background-repeat: repeat !important;
-  font-family: Times New Roman !important; width: 828px !important; height: 508px !important;
-}
-#rcp-fe-viewport-root::before {
-  content: ''; position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.3) !important;
-  pointer-events: none; z-index: -1;
-}
-/* === END BC: BACKGROUND REPLACEMENT === */
-/* === CHAMP SELECT MODS === */
-/* Show splash images just in case hidden by global transparent sweeps */
-img.champion-background-image, div.skin-selection-thumbnail img, div.portrait-icon img {
-  opacity: 1 !important; display: block !important; visibility: visible !important;
-}
-
-/* Frame the splash art in a minimalist glossy glass card */
-.champion-select .champion-splash-background {
-  position: absolute !important;
-  display: block !important;
-  width: 60% !important;
-  height: 75% !important;
-  top: 10% !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(5,5,10,0.4) 100%) !important;
-  backdrop-filter: blur(12px) saturate(110%) !important;
-  border: 1px solid rgba(255,255,255,0.1) !important;
-  border-top: 1px solid rgba(255,255,255,0.2) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.05) !important;
-  z-index: 0 !important;
-  overflow: hidden !important;
-  -webkit-mask-image: none !important;
-}
-
-/* Champion splash positioning inside the card */
-.champion-select, .champion-select .champ-select-bg {
-  position: absolute !important;
-  width: 100% !important;
-  height: 100% !important;
-  inset: 0 !important;
-  background: transparent !important;
-}
-
-.champion-select .champ-select-bg img {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: cover !important;
-  object-position: top center !important;
-  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%) !important;
-}
-img[src*="map-south.png"], img[src*="map-north.png"], img[src*="champ-select-planning-intro.jpg"], img[src*="gameflow-background.jpg"], img[src*="ready-check-background.png"] { display: none !important;}
-/* === END CHAMP SELECT MODS === */
-/* === FONT OVERRIDE: DISPLAY === */
-:root {
-  --font-display: 'Nabla', sans-serif !important;
-}
-/* === END FONT: DISPLAY === */
-
-/* === FONT OVERRIDE: BODY === */
-:root {
-  --font-body: 'Nova Cut', sans-serif !important;
-}
-/* === END FONT: BODY === */
-/* Target the main settings dialog */
-lol-uikit-dialog-frame.lol-settings-container,
-.lol-uikit-dialog-frame.default.bottom.bordered {
-    background-color: rgba(10, 15, 20, 0.5) !important;
-    backdrop-filter: blur(16px) !important;
-    border-radius: 12px !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-image: none !important; /* Removes gold borders */
-    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5) !important;
-}
-
-/* Clean up the settings header/footer bars */
-.lol-settings-title-bar,
-.lol-settings-footer {
-    border-bottom: none !important;
-    border-top: none !important;
-    background: transparent !important;
-}
-/* Modernize text inputs (Search boxes) */
-.ember-text-field, 
-lol-uikit-flat-input input {
-    background-color: rgba(0, 0, 0, 0.4) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 6px !important;
-    box-shadow: none !important;
-    color: #fff !important;
-}
-
-/* Modernize Dropdown Menus */
-lol-uikit-framed-dropdown dt.ui-dropdown-current,
-.ui-dropdown dt.ui-dropdown-current, .ui-dropdown-option {
-    background-color: rgba(0, 0, 0, 0.4) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-image: none !important; /* Kills the hextech gradient */
-    border-radius: 6px !important;
-}
-
-/* Dropdown hover state */
-lol-uikit-framed-dropdown dt.ui-dropdown-current:hover {
-    background-color: rgba(255, 255, 255, 0.05) !important;
-}
-/* Hide default gold borders and breaks */
-.vertical-separator {
-    display: none !important;
-    background-image: none !important;
-}
-
-/* Pop out effect on hover */
-.parties-game-type-upper-half:hover {
-    transform: translateY(-1px) !important;
-}
-
-/* LOOT TAB: Remove borders from Loot and Skins */
-.inventory-card-bg, 
-img.border.border-normal, 
-img.border.border-hover {
-    display: none !important;
-}
-
-/* Make the item images clean */
-.loot-item-visual-container, 
-.inventory-item-thumbnail {
-    border-radius: 8px !important;
-    overflow: hidden !important;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5) !important;
-    transition: transform 0.2s ease !important;
-}
-
-/* Hover pop effect */
-.loot-item:hover,
-.inventory-card-wrapper:hover .inventory-item-thumbnail {
-    transform: scale(1.05) !important;
-}
-
-/* Clean up Loot Quantities text */
-.quantity-text-container {
-    background: rgba(0, 0, 0, 0.8) !important;
-    border: none !important;
-    border-radius: 4px !important;
-    color: white !important;
-}
-.quantity-background { display: none !important; }
 /* === BC: FROSTED GLASS === */
+
 .parties-game-info-panel-content,
 .v2-parties-invite-info-panel,
 .parties-invite-info-panel,
 .ready-check-root-element,
 .lol-social-sidebar,
-#activity-center .activity-center__tabs_scrollable,
 .selection-button-image,
-.lol-social-sidebar,
 .rcp-fe-viewport-sidebar,
 .loot-application-container,
 .collections-application,
@@ -411,94 +156,136 @@ img.border.border-hover {
 .clash-tab-winners,
 .clash-tab-awards,
 .__rcp-fe-lol-store {
-  backdrop-filter: blur(4px) !important;
-  background: rgba(0, 0, 0, 0.25) !important;
-  border-radius: 6px !important;
+	/* backdrop-filter: blur(5px) !important;
+	border-radius: 1px !important; */
 }
+
 /* === END BC: FROSTED GLASS === */
+
+/* === HOME / ACTIVITY CENTER MODS === */
+.activity-center__tabs_container { opacity: 0 !important; transition: opacity 0.3s ease !important; }
+.activity-center__tabs_container:hover { opacity: 1 !important; }
+
+.activity-center-skin-activity__background-image, .activity-center__background-component {
+	display: none !important;
+}
+
+.activity-center-application, #activity-center, #activity-center .activity-center__template, .activity-center-skin-activity__background-shroud {
+	background: transparent !important;
+}
+
+/* === END HOME MODS === */
+
+/* === SOCIAL PANEL MODS === */
+
+lol-social-chat-window {
+	margin-right: 5px !important;
+}
+
+lol-social-chat-window #chat-window-wrapper {
+	background-color: rgba(10, 10, 15, 0.45) !important;
+	backdrop-filter: blur(12px) !important;
+	border-top-left-radius: 8px !important;
+	border-top-right-radius: 8px !important;
+	border: 1px solid rgba(255,255,255,0.05) !important;
+	border-bottom: none !important;
+}
+
+lol-social-chat-window .chat-header {
+	background: transparent !important;
+}
+
+lol-social-chat-window .chat-area {
+	background: transparent !important;
+}
+
+lol-social-chat-window .conversation:hover, lol-social-chat-window .create-panel-search-match:hover {
+	background: rgba(255,255,255,0.05) !important;
+}
+
+.bug-report-button, .lol-social-version-bar, lol-parties-comm-button, .arrow-container {
+	display: none !important;
+}
+
+/* === END SOCIAL MODS === */
+
 /* === OTHER ENHANCEMENTS === */
-/* Target the main settings dialog */
+
 lol-uikit-dialog-frame.lol-settings-container,
 .lol-uikit-dialog-frame.default.bottom.bordered {
-    background-color: rgba(10, 15, 20, 0.5) !important;
-    backdrop-filter: blur(16px) !important;
-    border-radius: 12px !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-image: none !important; /* Removes gold borders */
-    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5) !important;
+	background-color: rgba(10, 15, 20, 0.5) !important;
+	backdrop-filter: blur(16px) !important;
+	border-radius: 12px !important;
+	border: 1px solid rgba(255, 255, 255, 0.1) !important;
+	border-image: none !important;
 }
 
-/* Clean up the settings header/footer bars */
 .lol-settings-title-bar,
 .lol-settings-footer {
-    border-bottom: none !important;
-    border-top: none !important;
-    background: transparent !important;
+	border-bottom: none !important;
+	border-top: none !important;
+	background: transparent !important;
 }
-/* Modernize text inputs (Search boxes) */
+
 .ember-text-field, 
 lol-uikit-flat-input input {
-    background-color: rgba(0, 0, 0, 0.4) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 6px !important;
-    box-shadow: none !important;
-    color: #fff !important;
+	background-color: rgba(0, 0, 0, 0.4) !important;
+	border: 1px solid rgba(255, 255, 255, 0.1) !important;
+	border-radius: 6px !important;
+	box-shadow: none !important;
+	color: #fff !important;
 }
 
-/* Modernize Dropdown Menus */
 lol-uikit-framed-dropdown dt.ui-dropdown-current,
 .ui-dropdown dt.ui-dropdown-current, .ui-dropdown-option {
-    background-color: rgba(0, 0, 0, 0.4) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-image: none !important; /* Kills the hextech gradient */
-    border-radius: 6px !important;
+	background-color: rgba(0, 0, 0, 0.4) !important;
+	border: 1px solid rgba(255, 255, 255, 0.1) !important;
+	border-image: none !important;
 }
 
-/* Dropdown hover state */
 lol-uikit-framed-dropdown dt.ui-dropdown-current:hover {
-    background-color: rgba(255, 255, 255, 0.05) !important;
-}
-/* Hide default gold borders and breaks */
-.vertical-separator {
-    display: none !important;
-    background-image: none !important;
+	background-color: rgba(255, 255, 255, 0.05) !important;
 }
 
-/* Pop out effect on hover */
-.parties-game-type-upper-half:hover {
-    transform: translateY(-1px) !important;
+.vertical-separator {
+	display: none !important;
+	background-image: none !important;
 }
-/* LOOT TAB: Remove borders from Loot and Skins */
+
+.parties-game-type-upper-half:hover {
+	transform: translateY(-1px) !important;
+}
+
 .inventory-card-bg, 
 img.border.border-normal, 
 img.border.border-hover {
-    display: none !important;
+	display: none !important;
 }
 
-/* Make the item images clean */
 .loot-item-visual-container, 
 .inventory-item-thumbnail {
-    border-radius: 8px !important;
-    overflow: hidden !important;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5) !important;
-    transition: transform 0.2s ease !important;
+	border-radius: 8px !important;
+	overflow: hidden !important;
+	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5) !important;
+	transition: transform 0.2s ease !important;
 }
 
-/* Hover pop effect */
 .loot-item:hover,
 .inventory-card-wrapper:hover .inventory-item-thumbnail {
-    transform: scale(1.05) !important;
+	transform: scale(1.05) !important;
 }
 
-/* Clean up Loot Quantities text */
 .quantity-text-container {
-    background: rgba(0, 0, 0, 0.8) !important;
-    border: none !important;
-    border-radius: 4px !important;
-    color: white !important;
+	background: rgba(0, 0, 0, 0.50) !important;
+	border: none !important;
+	border-radius: 8px !important;
+	color: white !important;
 }
-.quantity-background { display: none !important; }
-/* Clean Event Pass Page */
+
+.quantity-background {
+	display: none !important;
+}
+
 .season-pass-background-shroud {
 	display: none !important;
 }
@@ -534,8 +321,522 @@ img.border.border-hover {
 .season-pass-header-background {
 	display: none !important;
 }
+
 /* === END OTHER ENHANCEMENTS === */
 
-.match-details-team-list .player-history-lv, .match-details-team-list .player-history-stats, .match-details-team-list .player-history-stats-no-minions, .player-history-result-text {
-	letter-spacing: -.075em !important;
+/* === CHAMP SELECT MODS === */
+
+img.champion-background-image, div.skin-selection-thumbnail img, div.portrait-icon img {
+	opacity: 1 !important;
+	display: block !important;
+	visibility: visible !important;
 }
+
+.champion-select .champion-splash-background {
+	position: absolute !important;
+	display: block !important;
+	width: 60% !important;
+	height: 75% !important;
+	top: 10% !important;
+	left: 50% !important;
+	transform: translateX(-50%) !important;
+	background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(5,5,10,0.4) 100%) !important;
+	backdrop-filter: blur(12px) saturate(110%) !important;
+	border: 1px solid rgba(255,255,255,0.1) !important;
+	border-top: 1px solid rgba(255,255,255,0.2) !important;
+	border-radius: 12px !important;
+	box-shadow: 0 24px 48px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.05) !important;
+	z-index: 0 !important;
+	overflow: hidden !important;
+	-webkit-mask-image: none !important;
+}
+
+.champion-select, .champion-select .champ-select-bg {
+	position: absolute !important;
+	width: 100% !important;
+	height: 100% !important;
+	inset: 0 !important;
+	background: transparent !important;
+}
+
+.champion-select .champ-select-bg img {
+	width: 100% !important;
+	height: 100% !important;
+	object-fit: cover !important;
+	object-position: top center !important;
+	-webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%) !important;
+}
+
+img[src*="map-south.png"], img[src*="map-north.png"], img[src*="champ-select-planning-intro.jpg"], img[src*="gameflow-background.jpg"], img[src*="ready-check-background.png"] {
+	display: none !important;
+}
+
+/* === END CHAMP SELECT MODS === */
+
+/* === NEW: TRANSPARENT GAME PROGRESS VIEW === */
+
+.rcp-fe-lol-game-in-progress, .reconnect-container, .rcp-fe-lol-reconnect {
+	background-image: none !important;
+	background-color: transparent;
+}
+
+/* === END TRANSPARENT GAME PROGRESS VIEW === */
+
+/* =========================
+   PLAY BUTTON
+========================= */
+.basic-button {
+    left: 30vw !important;
+    top: 12px !important;
+}
+
+.play-button-frame, 
+lol-uikit-video-state-machine {
+    display: none !important;
+}
+
+.play-button-container {
+    background: rgba(255, 255, 255, 0.05) !important;
+    backdrop-filter: blur(15px) brightness(1.2) !important;
+    border-radius: 2px !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    width: 180px !important;
+    height: 34px !important;
+    transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) !important;
+    cursor: pointer;
+    overflow: hidden !important;
+    box-shadow: 0 0 0 rgba(255, 255, 255, 0) !important;
+}
+
+/* Hover State: The button "wakes up" */
+.play-button-container:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.8) !important;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.1) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Shimmer Animation */
+.play-button-container::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -150%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.2),
+        transparent
+    );
+    transition: 0.8s;
+}
+
+.play-button-container:hover::after {
+    left: 150%;
+}
+
+.play-button-content {
+    left: 0 !important;
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+}
+
+.play-button-text {
+    visibility: hidden !important;
+}
+
+/* New Label */
+.play-button-text:after {
+    content: 'Play';
+    visibility: visible !important;
+    display: block !important;
+    position: absolute;
+    width: 100%;
+    left: 0;
+    text-align: center;
+    font-family: 'Nova Cut', sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 300 !important;
+    letter-spacing: 5px !important;
+    color: rgba(255, 255, 255, 0.8) !important;
+    transition: all 0.3s ease !important;
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Text effect on hover */
+.play-button-container:hover .play-button-text:after {
+    color: #ffffff !important;
+    letter-spacing: 7px !important; /* Text expands slightly on hover */
+    text-shadow: 0 0 12px rgba(255, 255, 255, 0.6) !important;
+}
+
+.play-button-container:active {
+    transform: scale(0.96) !important;
+    filter: brightness(0.8) !important;
+}
+
+.left-nav-menu {
+	position: relative !important;
+	margin-left: -200px !important;
+}
+/** ===END OF Play Button=== */
+
+#rcp-fe-viewport-root > .rcp-fe-viewport-overlay > .screen-root[style*="visibility: hidden;"] ~ .play-button-text:after,
+.play-button-component[style*="visibility: hidden;"] ~ .play-button-text:after,
+.play-button-component[style*="visibility: hidden;"] + .play-button-text:after,
+.play-button-component[style*="visibility: hidden;"] .play-button-text:after,
+.screen-root[style*="visibility: hidden;"] .play-button-text:after,
+.screen-root[style*="visibility: hidden;"] ~ .play-button-text:after,
+.screen-root[style*="visibility: hidden;"] + .play-button-text:after {
+	visibility: hidden !important;
+}
+
+.champion-select-main-container:not(:hidden) ~ .play-button-text:after {
+	display: none !important;
+	visibility: hidden !important;
+}
+
+.champion-select-main-container:visible .play-button-text:after {
+	display: none !important;
+}
+
+.deep-links-promo {
+	display: none !important;
+}
+
+/* Dim controller */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Turn social party background transparent */
+.parties-status-card-bg-container{
+	display: none	!important;
+}
+.parties-status-card {
+	background-color:transparent !important;
+}
+
+.parties-invite-info-panel, .v2-parties-invite-info-panel
+{
+	background-color: transparent !important;
+}
+/* === NAVBAR PLAY BUTTON === */
+.basic-button.patcher-lobby-button {
+  left: 30vw !important;
+  top: 12px !important;
+}
+
+.play-button-frame,
+lol-uikit-video-state-machine {
+  display: none !important;
+}
+
+.play-button-container {
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(15px) brightness(1.2) !important;
+  border-radius: 2px !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  width: 180px !important;
+  height: 34px !important;
+  transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) !important;
+  cursor: pointer;
+  overflow: hidden !important;
+  box-shadow: 0 0 0 rgba(255, 255, 255, 0) !important;
+}
+.play-button-container:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.8) !important;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-1px) !important;
+}
+.play-button-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: 0.8s;
+}
+.play-button-container:hover::after {
+  left: 150%;
+}
+.play-button-content {
+  left: 0 !important;
+  width: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+.play-button-text {
+  visibility: hidden !important;
+}
+.play-button-text:after {
+  content: 'Play';
+  visibility: visible !important;
+  display: block !important;
+  position: absolute;
+  width: 100%;
+  left: 0;
+  text-align: center;
+  font-family: 'Nova Cut', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 300 !important;
+  letter-spacing: 5px !important;
+  text-indent: 5px !important; /* <--- PERFECT CENTERING FIX */
+  color: #ffffff !important;
+  transition: all 0.3s ease !important;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.2) !important;
+}
+.play-button-container:hover .play-button-text:after {
+  color: #ffffff !important;
+  letter-spacing: 7px !important;
+  text-indent: 7px !important; /* <--- FIX HOVER STATE TOO */
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.6) !important;
+}
+.play-button-container:active {
+  transform: scale(0.96) !important;
+  filter: brightness(0.8) !important;
+}
+#rcp-fe-viewport-root > .rcp-fe-viewport-overlay > .screen-root[style*="visibility: hidden;"] ~ .play-button-text:after,
+.play-button-component[style*="visibility: hidden;"] ~ .play-button-text:after,
+.play-button-component[style*="visibility: hidden;"] + .play-button-text:after,
+.play-button-component[style*="visibility: hidden;"] .play-button-text:after,
+.screen-root[style*="visibility: hidden;"] .play-button-text:after,
+.screen-root[style*="visibility: hidden;"] ~ .play-button-text:after,
+.screen-root[style*="visibility: hidden;"] + .play-button-text:after {
+  visibility: hidden !important;
+}
+.champion-select-main-container:not(:hidden) ~ .play-button-text:after {
+  display: none !important;
+  visibility: hidden !important;
+}
+.champion-select-main-container:visible .play-button-text:after {
+  display: none !important;
+}
+.deep-links-promo {
+  display: none !important;
+}
+/* === END NAVBAR PLAY BUTTON === */
+/* === NAVBAR PLAY BUTTON OFFSET === */
+.left-nav-menu {
+  position: relative !important;
+  margin-left: -200px !important;
+}
+/* === END NAVBAR PLAY BUTTON OFFSET === */
+:host-context(lol-uikit-navigation-bar[type=nav-bar]) .section.active::before {
+	background-image: none;
+}
+/* === FONT OVERRIDE: DISPLAY === */
+:root {
+  --font-display: 'Goldman', sans-serif !important;
+}
+/* === END FONT: DISPLAY === */
+/* === FONT OVERRIDE: BODY === */
+:root {
+  --font-body: 'Nova Cut', sans-serif !important;
+}
+/* === END FONT: BODY === */
+/* === FULL-PAGE MODAL GLASS === */
+.lol-uikit-full-page-modal-bg .lol-uikit-full-page-modal {
+  background: rgba(15, 15, 20, 0.65) !important;
+  backdrop-filter: blur(16px) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(120%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+.match-details-root { background: none !important; }
+.lol-uikit-full-page-modal-frame-left,
+.lol-uikit-full-page-modal-frame-right {
+  display: none !important;
+}
+.lol-uikit-full-page-modal-close-button-outer,
+.lol-uikit-full-page-modal-close-button-inner {
+  background: none !important;
+  border-image: none !important;
+}
+/* === END FULL-PAGE MODAL GLASS === */
+
+/* === PLAYER HOVER CARD === */.hover-card { padding-right: 10px; }#border-container { display: none !important; }.hover-card-container {
+  position: relative;
+  border-radius: 16px;
+  background: rgba(20, 20, 28, 0.35) !important;
+  backdrop-filter: blur(18px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(140%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), inset 0 1px 2px rgba(255, 255, 255, 0.1) !important;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.3s ease !important;
+}.hover-card-container:hover {
+  transform: translateY(-4px) scale(1.01) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7), 0 0 20px rgba(122, 162, 255, 0.35) !important;
+}.hover-card-container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: linear-gradient(120deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 30%, transparent 60%) !important;
+  pointer-events: none;
+  z-index: 5;
+}
+#hover-card-backdrop {
+  filter: brightness(0.45) saturate(1.1) !important;
+  transform: scale(1.02) !important;
+  transition: filter 0.2s ease !important;
+}
+.hover-card:hover #hover-card-backdrop {
+  filter: brightness(0.55) saturate(1.15) !important;
+}
+.hover-card-name {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 18px !important;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6) !important;
+}
+.hover-card-game-tag { color: rgba(255, 255, 255, 0.7) !important; }
+.hover-card-title { color: #7aa2ff !important; }
+.hover-card-info-container {
+  background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(10,12,18,0.7) 60%) !important;
+}
+.hover-card-footer {
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(10px) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+.hover-card-mastery-score,
+.hover-card-rank-image,
+.hover-card-crystal-image {
+  filter: drop-shadow(0 0 6px rgba(122, 162, 255, 0.6)) !important;
+}
+.open-party-occupancy {
+  color: #4cffc6 !important;
+  text-shadow: 0 0 6px rgba(76,255,198,0.6) !important;
+}
+.open-party-string { color: #7aa2ff !important; }/* === END PLAYER HOVER CARD === */
+/* === SCROLLBAR STYLE === */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #2f2e3e !important;
+  border-radius: 6px !important;
+  min-height: 32px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #3fa36a !important;
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: #1f4d36 !important;
+}
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+/* === END SCROLLBAR STYLE === */
+/* === SCROLLBAR STYLE === */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #2f2e3e !important;
+  border-radius: 6px !important;
+  min-height: 32px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #2d2f2e !important;
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: #686e6b !important;
+}
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+/* === END SCROLLBAR STYLE === */
+/* === SCROLLBAR STYLE === */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #7d7d82 !important;
+  border-radius: 6px !important;
+  min-height: 32px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #2d2f2e !important;
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: #686e6b !important;
+}
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+/* === END SCROLLBAR STYLE === */
+/* === SCROLLBAR STYLE === */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #7d7d82 !important;
+  border-radius: 6px !important;
+  min-height: 32px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #2d2f2e !important;
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: #eff0f0 !important;
+}
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+/* === END SCROLLBAR STYLE === */
+/* === SCROLLBAR STYLE === */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #7d7d82 !important;
+  border-radius: 6px !important;
+  min-height: 32px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #ffffff !important;
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: #eff0f0 !important;
+}
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+/* === END SCROLLBAR STYLE === */

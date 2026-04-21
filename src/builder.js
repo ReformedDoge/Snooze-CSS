@@ -7,7 +7,7 @@ import {
   saveSettings,
   applyWindowEffect,
 } from "./settings.js";
-import { rgbToHex, escHtml, flashMessage, buildStrategicSelector } from "./utils.js";
+import { rgbToHex, escHtml, flashMessage, buildStrategicSelector, attachFilePicker } from "./utils.js";
 import { getBackdrop } from "./modal.js";
 import { getShadowRoots } from "./shadow-manager.js";
 import { extractAndNavigate, collectFromNode, buildCompactAssetRow } from "./assets.js";
@@ -981,48 +981,8 @@ function buildGroupElements(group, body) {
 
 // GENERIC TOOLS
 
-// File picker helper
 function attachFilePickerToInput(inputElement) {
-  if (!inputElement) return;
-
-  // Hidden file input
-  const hiddenFileInput = document.createElement("input");
-  hiddenFileInput.type = "file";
-  hiddenFileInput.accept =
-    "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm";
-  hiddenFileInput.style.display = "none";
-  document.body.appendChild(hiddenFileInput);
-
-  hiddenFileInput.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      document.body.removeChild(hiddenFileInput);
-      return;
-    }
-
-    const filename = file.name;
-
-    // Set relative path
-    const relPath = `./assets/${filename}`;
-    inputElement.value = relPath;
-
-    // Resource validation
-    try {
-      const testUrl = new URL(relPath, import.meta.url).href;
-      const testFetch = await fetch(testUrl, { method: "HEAD" });
-      if (testFetch.ok) {
-        console.log(`Asset resolved: ${relPath}`);
-      } else if (testFetch.status === 404) {
-        alert(`⚠ Not found: ${relPath}\nMake sure file is in assets/!`);
-      }
-    } catch (err) {
-      console.warn("[Snooze-CSS] Asset validation:", err);
-    }
-
-    document.body.removeChild(hiddenFileInput);
-  });
-
-  hiddenFileInput.click();
+  attachFilePicker(inputElement);
 }
 
 function buildSubGroup(title, contentBuilders) {

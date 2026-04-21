@@ -1,4 +1,5 @@
 import { getSettings } from "./settings.js";
+import { resolveRelativePath } from "./resolver.js";
 
 // FLASH MESSAGE
 export function flashMessage(target, msg = "Added", duration = 1800) {
@@ -233,4 +234,84 @@ export function buildStrategicSelector(el, mode = 'specific') {
   }
 
   return selector; // Return the best we could do
+}
+
+// FILE PICKER
+
+/**
+ * Opens a file picker and writes a ./assets/<filename> path into inputElement.
+ * After selection, validates the file is reachable within the plugin's assets/ folder.
+ * If it isn't (e.g. file was picked from an arbitrary location on disk), shows an
+ * inline warning pointing the user to the correct directory.
+ */
+export function attachFilePicker(inputElement) {
+  if (!inputElement) return;
+
+  const hidden = document.createElement("input");
+  hidden.type = "file";
+  hidden.accept = "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm";
+  hidden.style.display = "none";
+  document.body.appendChild(hidden);
+
+  // cleanup up
+  const cleanup = () => {
+    if (hidden.parentNode) hidden.parentNode.removeChild(hidden);
+  };
+
+  hidden.addEventListener("cancel", cleanup, { once: true });
+
+  hidden.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    cleanup();
+    if (!file) return;
+
+    const relPath = `./assets/${file.name}`;
+    inputElement.value = relPath;
+
+    // Validate the asset is reachable via the plugin's own file resolver.
+    const resolvedUrl = resolveRelativePath(relPath);
+    if (!resolvedUrl) return;
+    try {
+      const res = await fetch(resolvedUrl, { method: "HEAD" });
+      if (!res.ok) {
+        showFilePickerWarning(
+          inputElement,
+          `"${file.name}" was not found in assets/.\n` +
+          `Place the file in your Snooze-CSS/assets/ folder first.`,
+        );
+      }
+    } catch {
+      showFilePickerWarning(
+        inputElement,
+        `Could not verify "${file.name}".\n` +
+        `Only files inside the Snooze-CSS/assets/ folder are accessible.`,
+      );
+    }
+  }, { once: true });
+
+  hidden.click();
+}
+
+/**
+ * Shows a self-dismissing amber warning div directly below inputElement.
+ * Replaces any existing warning on that input to prevent stacking.
+ */
+export function showFilePickerWarning(inputElement, message) {
+  const existing = inputElement._fileWarnEl;
+  if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+  const warn = document.createElement("div");
+  warn.style.cssText =
+    "margin-top:4px;padding:5px 8px;font-size:10px;line-height:1.4;color:#ff9a3c;" +
+    "background:rgba(255,90,0,0.1);border:1px solid rgba(255,90,0,0.3);" +
+    "border-radius:4px;white-space:pre-line;";
+  warn.textContent = message;
+
+  inputElement._fileWarnEl = warn;
+  inputElement.parentNode?.insertAdjacentElement("afterend", warn);
+
+  setTimeout(() => {
+    if (warn.parentNode) warn.parentNode.removeChild(warn);
+    if (inputElement._fileWarnEl === warn) inputElement._fileWarnEl = null;
+  }, 6000);
 }
