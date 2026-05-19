@@ -108,7 +108,8 @@ img[src*="ready-check-background.png"],
 .loot-backdrop.background-static,
 .clash-root-background-landing,
 .activity-center__tabs_footer_divider,
-.loading-tab:after {
+.loading-tab:after,
+ {
 	display: none !important;
 }
 
@@ -120,9 +121,6 @@ img[src*="ready-check-background.png"],
 	background-image: none;
 }
 
-.lol-uikit-background-switcher-image.fade {
-	display: none !important;
-}
 
 .clash-arurf-intro-modal {
 	display: none !important;
@@ -166,8 +164,11 @@ img[src*="ready-check-background.png"],
 .activity-center__tabs_container { opacity: 0 !important; transition: opacity 0.3s ease !important; }
 .activity-center__tabs_container:hover { opacity: 1 !important; }
 
-.activity-center-skin-activity__background-image, .activity-center__background-component {
+.activity-center__background-component {
 	display: none !important;
+}
+.activity-center-skin-activity__background-image {
+
 }
 
 .activity-center-application, #activity-center, #activity-center .activity-center__template, .activity-center-skin-activity__background-shroud {
@@ -531,9 +532,9 @@ body::before {
 	background-color: transparent !important;
 }
 /* === NAVBAR PLAY BUTTON === */
-.basic-button.patcher-lobby-button {
-  left: 30vw !important;
-  top: 12px !important;
+.basic-button {
+  left: 18vw !important;
+  top: 19px !important;
 }
 
 .play-button-frame,
@@ -546,7 +547,7 @@ lol-uikit-video-state-machine {
   backdrop-filter: blur(15px) brightness(1.2) !important;
   border-radius: 2px !important;
   border: 1px solid rgba(255, 255, 255, 0.2) !important;
-  width: 180px !important;
+  width: 290px !important;
   height: 34px !important;
   transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) !important;
   cursor: pointer;
@@ -583,7 +584,7 @@ lol-uikit-video-state-machine {
   visibility: hidden !important;
 }
 .play-button-text:after {
-  content: 'Play';
+  content: 'Start the Suffering';
   visibility: visible !important;
   display: block !important;
   position: absolute;
@@ -594,7 +595,7 @@ lol-uikit-video-state-machine {
   font-size: 14px !important;
   font-weight: 300 !important;
   letter-spacing: 5px !important;
-  text-indent: 5px !important; /* <--- PERFECT CENTERING FIX */
+  text-indent: 5px !important;
   color: #ffffff !important;
   transition: all 0.3s ease !important;
   text-shadow: 0 0 8px rgba(255, 255, 255, 0.2) !important;
@@ -602,7 +603,7 @@ lol-uikit-video-state-machine {
 .play-button-container:hover .play-button-text:after {
   color: #ffffff !important;
   letter-spacing: 7px !important;
-  text-indent: 7px !important; /* <--- FIX HOVER STATE TOO */
+  text-indent: 7px !important;
   text-shadow: 0 0 12px rgba(255, 255, 255, 0.6) !important;
 }
 .play-button-container:active {
@@ -840,3 +841,251 @@ lol-uikit-video-state-machine {
   background: transparent !important;
 }
 /* === END SCROLLBAR STYLE === */
+
+
+
+/* == == */
+
+.lol-uikit-flyout-frame-wrapper {
+    position: relative !important;
+}
+
+/* =========================
+   MAIN GLASS SURFACE
+========================= */
+.lol-uikit-flyout-frame-wrapper .border {
+    position: absolute !important;
+    inset: 0 !important;
+
+    background: rgba(15, 15, 20, 0.30) !important;
+
+    backdrop-filter: blur(18px) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(140%) !important;
+
+    border-radius: 12px !important;
+
+    box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.65),
+        inset 0 1px 2px rgba(255, 255, 255, 0.08),
+        0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+
+    overflow: hidden !important;
+    transition: all 250ms cubic-bezier(0.02, 0.85, 0.08, 0.99) !important;
+}
+
+/* =========================
+   GLOSS LAYER (WHITE SHEEN)
+========================= */
+.lol-uikit-flyout-frame-wrapper .border::before {
+    content: "" !important;
+    position: absolute !important;
+    inset: 0 !important;
+    pointer-events: none !important;
+
+    background: linear-gradient(
+        120deg,
+        rgba(255, 255, 255, 0.14) 0%,
+        rgba(255, 255, 255, 0.06) 30%,
+        transparent 65%
+    ) !important;
+
+    opacity: 0.75 !important;
+}
+
+/* =========================
+   ACCENT GLOW (BLUE TINT)
+========================= */
+.lol-uikit-flyout-frame-wrapper .border::after {
+    content: "" !important;
+    position: absolute !important;
+    inset: 0 !important;
+    pointer-events: none !important;
+
+    background: radial-gradient(
+        circle at 30% 10%,
+        rgba(122, 162, 255, 0.14),
+        transparent 60%
+    ) !important;
+
+    opacity: 0.6 !important;
+}
+
+/* =========================
+   REMOVE RIOT EXTRA LAYERS
+========================= */
+.lol-uikit-flyout-frame-wrapper .sub-border {
+    display: none !important;
+}
+
+/* optional cleanup if caret feels too heavy */
+.lol-uikit-flyout-frame-wrapper .caret {
+    opacity: 0.6 !important;
+    filter: drop-shadow(0 0 6px rgba(122, 162, 255, 0.35)) !important;
+}
+
+/* ensure content layer stays clean */
+.lol-uikit-flyout-frame {
+    background: transparent !important;
+}
+
+/* fix */
+.ShowcaseComponent .uikit-background-switcher img,
+.ShowcaseComponent .lol-uikit-background-switcher-image {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+.sub-border, .lol-uikit-dialog-frame-sub-border {
+	display:none !important;
+}
+
+/* == == */
+
+/* === TRANSPARENT THEME FOUNDATIONS === */
+.lol-social-sidebar .alpha-version-panel { border-top: none !important; }
+body,
+html,
+.parties-view,
+.activity-center__tabs_section-divider,
+.lol-loading-screen-container,
+.parties-background,
+.parties-background-mask,
+.parties-content,
+.parties-lower-section,
+.lol-social-sidebar,
+.rcp-fe-viewport-sidebar,
+.store-backdrop,
+.__rcp-fe-lol-store,
+.loot-backdrop,
+.loot-backdrop.background-static,
+.loot-loading-screen,
+.collections-application,
+.collections-routes,
+.yourshop-root,
+.clash-root-background,
+.clash-root-background-landing,
+.personalized-offers-root,
+.champ-select-bg-darken,
+.stats-backdrop,
+.match-details-root,
+.cdp-backdrop-component,
+.cdp-backdrop:after,
+.cdp-backdrop.progression:after,
+.rcp-fe-lol-event-shop-application,
+.event-shop-index,
+.event-shop-page-header,
+.event-shop-progression,
+.event-shop-progression-info,
+.postgame-header-section,
+.postgame-champion-background-wrapper,
+.ranked-rewards-component,
+.style-profile-emblem-wrapper,
+.mission-tray-header,
+.chat-box,
+.clash-social-persistent,
+.mythic-shop-backdrop,
+.moon-skin-backdrop,
+.ranked-intro-background,
+.rcp-fe-lol-tft-application-background,
+.lobby-header-overlay,
+.navbar-blur,
+.loading-content,
+.bottom-gradient,
+.smoke-background-container,
+.navbar_backdrop {
+  background: transparent !important;
+  background-image: none !important;
+  filter: none !important;
+}
+.ShowcaseComponent .uikit-background-switcher img, .ShowcaseComponent .lol-uikit-background-switcher-image { display: block !important; visibility: visible !important; opacity: 1 !important; }
+
+/* Hide generic loading spinners and explicit background graphics */
+.store-loading,
+.activity-center__tabs_section-divider,
+.loot-to-store-button,
+.clash-root-action-timeline-background-gradient,
+.clash-aram-intro-modal,
+.event-shop-xp-vertical-divider,
+.event-shop-page-header-vertical-divider,
+.tft-home-footer-bg,
+.tft-hub-footer-bg,
+.lol-loading-screen-spinner,
+.lol-loading-screen-status-container,
+.summoner-level-ring,
+.rcp-fe-lol-home-loading-spinner,
+.style-profile-loading-spinner,
+.spinner,
+.bg-current img,
+.parties-background img,
+.postgame-background-image,
+.style-profile-background-image img,
+.style-profile-masked-image img,
+.background-edge-backlight,
+#background-ambient,
+.lobby-intro-animation-container,
+.activity-center__background-component__blend,
+.challenges-collection-component .background,
+.leagues-root-component .ranked-intro-background,
+img[src*="map-south.png"],
+img[src*="map-north.png"],
+img[src*="champ-select-planning-intro.jpg"],
+img[src*="gameflow-background.jpg"],
+img[src*="ready-check-background.png"],
+.parties-background-mask,
+.loot-backdrop.background-static,
+.clash-root-background-landing,
+.activity-center__tabs_footer_divider,
+.loading-tab:after,
+.sub-border,
+.lol-uikit-dialog-frame-sub-border {
+  display: none !important;
+}
+
+.bg-current .lol-uikit-background-switcher-image {display:none !important;}
+
+.store-backdrop { background-image: none; }
+
+.parties-status-card-bg-container { display: none !important; }
+.parties-status-card, .parties-invite-info-panel, .v2-parties-invite-info-panel { background-color: transparent !important; }
+
+.clash-arurf-intro-modal {
+  display: none !important; opacity: 1 !important; transform: scale(1) !important; border-radius: 0px !important;
+}
+
+.rcp-fe-lol-game-in-progress, .reconnect-container, .rcp-fe-lol-reconnect {
+  background-image: none !important;
+  background-color: transparent !important;
+}
+/* === END TRANSPARENT THEME FOUNDATIONS === */
+
+
+/* == NEW  == */
+/* Buttons Sepia Effect */
+.clash-generic-button.match-h.match-w, .find-match-button-container  {
+  filter: sepia(100%) !important;
+}
+
+/* == END OF NEW == */
+
+.parties-game-invite-heading-text{display:none;}
+
+.middle-border-bg, .right-border-bg, .left-border-bg {
+	display:none ;
+}
+.confirm-button-container {
+	filter: sepia(100%) !important;
+}
+.currency-rp-container-top-up-enabled { background: none; border: none !important }
+
+div[action="support"] {
+	display: none !important;
+}
+
+/* Sepia Effect */
+.tft-find-match-button-container .generic-button-primary-img-container img {
+  filter: sepia(100%) !important;
+}
+.navbar-blur{ display:none; }
+/*
+.player-name-wrapper, span.player-name-component, .chat-box, .pregame-chat-box {display: none}
+*/
