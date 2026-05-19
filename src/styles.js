@@ -449,7 +449,49 @@ export const STYLES = `
       padding-right: 26px;
     }
 
-    option { background: #091220; }
+    .ci-select optgroup {
+      background-color: #1a2535 !important;
+      color: #c8aa6e !important;
+      font-weight: 700 !important;
+      font-style: normal !important;
+      font-size: 10px !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.12em !important;
+      padding: 10px 6px !important;
+    }
+
+    .ci-select option {
+      background-color: #060e1a !important;
+      color: #a0b4c8 !important;
+      padding: 10px 14px !important;
+      font-size: 11px !important;
+      line-height: 1.5 !important;
+    }
+
+    .ci-select option:hover, .ci-select option:focus {
+      background-color: #1a2535 !important;
+      color: #f0e6d3 !important;
+    }
+
+    .ci-select option:checked {
+      background-color: #785a28 !important;
+      color: #ffffff !important;
+    }
+
+    /* Scrollbar for select elements (CEF specific) */
+    .ci-select::-webkit-scrollbar {
+      width: 6px;
+    }
+    .ci-select::-webkit-scrollbar-track {
+      background: #060e1a;
+    }
+    .ci-select::-webkit-scrollbar-thumb {
+      background: #3a5060;
+      border-radius: 4px;
+    }
+    .ci-select::-webkit-scrollbar-thumb:hover {
+      background: #785a28;
+    }
 
     .ci-color-input {
       width: 32px;

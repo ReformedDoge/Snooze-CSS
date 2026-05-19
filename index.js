@@ -2,6 +2,8 @@
  * @name Snooze-CSS
  * @version 1.2.0
  * @author SnoozeFest - github@ReformedDoge
+ * @description ?!
+ * @link https://github.com/ReformedDoge
  */
 import { createModal } from "./src/modal.js";
 import { initResolver, resolveAssetUrls } from "./src/resolver.js";
@@ -29,7 +31,7 @@ export function init() {
   injectSavedCSS();
 
   document.addEventListener("keydown", (e) => {
-    if (e.altKey && e.key === "c") {
+    if (e.altKey && e.key.toLowerCase() === "c") {
       e.preventDefault();
       createModal();
     }

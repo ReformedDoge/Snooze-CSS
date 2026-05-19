@@ -2,7 +2,7 @@
 
 import { getShadowRoots } from "./shadow-manager.js";
 import { appendToRaw } from "./raw.js";
-import { flashMessage, buildStrategicSelector, attachFilePicker } from "./utils.js";
+import { flashMessage, copyText, buildStrategicSelector, attachFilePicker } from "./utils.js";
 
 // State
 let _switchTab = null;
@@ -164,7 +164,7 @@ function runExtraction(selector, targetNode = null) {
   for (const domNode of domNodes) {
     const nodeSelf = collectFromNode(domNode, selector);
     for (const a of nodeSelf) {
-      const fp = `${a.prop}|${a.url}|${a.selector}`;
+      const fp = `${a.prop}|${a.url}`;
       if (!seenAssets.has(fp)) {
         seenAssets.add(fp);
         selfAssets.push(a);
@@ -199,14 +199,8 @@ function runExtraction(selector, targetNode = null) {
   summary.style.cssText =
     "padding:6px 14px;font-size:10px;color:#4a6070;border-bottom:1px solid #1a2535;" +
     "display:flex;align-items:center;justify-content:space-between;";
-  summary.innerHTML =
-    `<span>${totalCount} asset${totalCount !== 1 ? "s" : ""} found</span>` +
-    `<button id="ax-send-all" class="ci-btn-primary" style="font-size:10px;padding:4px 14px;">→ Send All to Raw CSS</button>`;
+  summary.innerHTML = `<span>${totalCount} asset${totalCount !== 1 ? "s" : ""} found</span>`;
   content.appendChild(summary);
-
-  content
-    .querySelector("#ax-send-all")
-    .addEventListener("click", () => sendAllToRaw(content));
 
   // Build the three groups
   if (selfAssets.length > 0) {
@@ -340,7 +334,7 @@ function collectFromAncestors(node, _rootSelector, seenAssets) {
     const sel = buildStrategicSelector(current, 'categorical');
     const assets = collectFromNode(current, sel);
     for (const asset of assets) {
-      const fp = `${asset.prop}|${asset.url}|${asset.selector}`;
+      const fp = `${asset.prop}|${asset.url}`;
       if (!seenAssets.has(fp)) {
         seenAssets.add(fp);
         results.push(asset);
@@ -365,7 +359,7 @@ function walkForAssets(node, _parentSelector, results, seenAssets, includeSelf) 
     }
     const assets = collectFromNode(node, combinedSel);
     for (const asset of assets) {
-      const fp = `${asset.prop}|${asset.url}|${asset.selector}`;
+      const fp = `${asset.prop}|${asset.url}`;
       if (!seenAssets.has(fp)) {
         seenAssets.add(fp);
         results.push(asset);
@@ -375,7 +369,7 @@ function walkForAssets(node, _parentSelector, results, seenAssets, includeSelf) 
 
   // Light DOM children
   for (const child of node.children) {
-    walkForAssets(child, "", results, seenAssets, true);
+    walkForAssets(child, _parentSelector, results, seenAssets, true);
   }
 
   // Shadow DOM walk
@@ -383,8 +377,15 @@ function walkForAssets(node, _parentSelector, results, seenAssets, includeSelf) 
   const tracked = trackedRoots.find((r) => r.host === node);
   const shadowRoot = tracked?.shadowRoot || node.shadowRoot;
   if (shadowRoot) {
+    // When crossing a shadow boundary, standard descendant combinators break.
+    // We wrap the parent context in :host-context() so it can still match ancestors outside the shadow root!
+    let shadowParentSel = _parentSelector;
+    if (shadowParentSel && shadowParentSel !== "unknown" && !shadowParentSel.startsWith(":host-context")) {
+      shadowParentSel = `:host-context(${shadowParentSel})`;
+    }
+    
     for (const child of shadowRoot.children) {
-      walkForAssets(child, "", results, seenAssets, true);
+      walkForAssets(child, shadowParentSel, results, seenAssets, true);
     }
   }
 }
@@ -473,7 +474,7 @@ function buildAssetRow(asset) {
   const ext = asset.url.split("?")[0].split(".").pop().toLowerCase();
   if (["webm", "mp4", "ogg"].includes(ext)) {
     const v = document.createElement("video"); v.src = asset.url; v.style.cssText = "max-width:100%;max-height:100%;";
-    v.muted = true; v.addEventListener("loadedmetadata", () => { v.currentTime = 0.1; });
+    v.muted = true; v.autoplay = true; v.loop = true;
     thumb.appendChild(v);
   } else {
     const i = document.createElement("img"); i.src = asset.url; i.style.cssText = "max-width:100%;max-height:100%;object-fit:contain;";
@@ -501,26 +502,44 @@ function buildAssetRow(asset) {
   selLabel.style.cssText = "font-size:9px;color:#4a6070;width:50px;flex-shrink:0;";
   selLabel.textContent = "Target:";
   const selSelect = document.createElement("select");
-  selSelect.className = "ci-input";
-  selSelect.style.cssText = "font-size:9px;padding:2px;height:22px;flex:1;min-width:0;";
+  selSelect.className = "ci-select";
+  selSelect.style.cssText = "font-size:10px;height:24px;flex:1;min-width:0;";
 
-  const pNode = asset.domNode.parentElement || asset.domNode.parentNode;
-  const parentSel = (pNode && pNode.nodeType === 1) ? buildStrategicSelector(pNode, 'categorical') : "";
-  const childSel  = buildStrategicSelector(asset.domNode, 'categorical');
   const fileName  = asset.url.split('/').pop().split('?')[0]; 
-  const sniper    = asset.isAttr ? `[src*="${fileName}"]` : `[style*="${fileName}"]`;
+  const sniper    = asset.isAttr ? `[src*="${fileName}"]` : "";
 
-  const scenarios = [
-    { label: "1. Specific + Screen", val: `${parentSel} ${childSel}${sniper}`.trim() },
-    { label: "2. Specific + Global", val: `${childSel}${sniper}` },
-    { label: "3. Any + Screen",      val: `${parentSel} ${childSel}`.trim() },
-    { label: "4. Any + Global",       val: `${childSel}` },
-    { label: "5. Universal URL",     val: `${sniper}` }
+  const baseScenarios = [
+    { label: "1. Contextual", val: asset.selector },
+    { label: "2. Specific Node", val: asset.exactSelector },
+    { label: "3. Global Node", val: asset.genericSelector }
   ];
-  scenarios.forEach(s => {
-    const o = document.createElement("option"); o.value = s.val; o.textContent = `${s.label}: ${s.val}`;
-    selSelect.appendChild(o);
+
+  const seenScenarios = new Set();
+  baseScenarios.forEach(s => {
+    if (!s.val) return;
+    
+    // For attributes, offer both with and without sniper
+    const optionsToAdd = [];
+    if (asset.isAttr) {
+       optionsToAdd.push({ label: s.label + " + Sniper", val: `${s.val}${sniper}`.trim() });
+       optionsToAdd.push({ label: s.label, val: s.val.trim() });
+    } else {
+       optionsToAdd.push({ label: s.label, val: s.val.trim() });
+    }
+
+    optionsToAdd.forEach(opt => {
+      if (opt.val && !seenScenarios.has(opt.val)) {
+        seenScenarios.add(opt.val);
+        const o = document.createElement("option"); o.value = opt.val; o.textContent = `${opt.label}: ${opt.val}`;
+        selSelect.appendChild(o);
+      }
+    });
   });
+  
+  if (asset.isAttr && sniper && !seenScenarios.has(sniper)) {
+     const o = document.createElement("option"); o.value = sniper; o.textContent = `Universal URL: ${sniper}`;
+     selSelect.appendChild(o);
+  }
   selRow.append(selLabel, selSelect);
 
   // REPLACE STRATEGY
@@ -530,8 +549,8 @@ function buildAssetRow(asset) {
   methodLabel.style.cssText = "font-size:9px;color:#4a6070;width:50px;flex-shrink:0;";
   methodLabel.textContent = "Method:";
   const methodSelect = document.createElement("select");
-  methodSelect.className = "ci-input";
-  methodSelect.style.cssText = "font-size:9px;padding:2px;height:22px;flex:1;min-width:0;";
+  methodSelect.className = "ci-select";
+  methodSelect.style.cssText = "font-size:10px;height:24px;flex:1;min-width:0;";
 
   const sInfo = getCssStrategy(asset);
   if (sInfo.options) {
@@ -592,6 +611,167 @@ function buildAssetRow(asset) {
 
   // Build the main content
   main.append(meta, urlEl, selRow, methodRow, replaceRow, btnRow);
+
+  // SUGGESTED EFFECTS (LAZY LOADED)
+  const effectWrap = document.createElement("div");
+  effectWrap.style.cssText = "margin-top:2px;border:1px solid rgba(200,170,110,0.2);border-radius:2px;";
+  
+  const effectHeader = document.createElement("div");
+  effectHeader.style.cssText = "font-size:9px;color:#c8aa6e;text-transform:uppercase;padding:4px 8px;cursor:pointer;background:rgba(200,170,110,0.05);display:flex;align-items:center;gap:4px;user-select:none;";
+  effectHeader.innerHTML = `<span style="font-size:8px;transition:transform 0.2s;">▸</span> <span>Suggested Effects</span>`;
+  
+  const effectBody = document.createElement("div");
+  effectBody.style.cssText = "display:none;padding:8px;font-size:9px;color:#7a8a9a;background:rgba(0,0,0,0.2);";
+  
+  effectWrap.appendChild(effectHeader);
+  effectWrap.appendChild(effectBody);
+  main.append(effectWrap);
+
+  let effectLoaded = false;
+  let effectOpen = false;
+
+  effectHeader.addEventListener("click", async () => {
+    effectOpen = !effectOpen;
+    effectBody.style.display = effectOpen ? "block" : "none";
+    effectHeader.querySelector("span").style.transform = effectOpen ? "rotate(90deg)" : "rotate(0deg)";
+    
+    if (effectOpen && !effectLoaded) {
+      effectLoaded = true;
+      effectBody.innerHTML = `<div style="text-align:center;padding:10px;color:#4a6070;">Detecting base color...</div>`;
+      
+      const isVideo = ["webm", "mp4", "ogg"].includes(ext);
+      const baseRgb = await extractDominantColor(asset.url, isVideo);
+      const baseHex = rgbToHexStr(baseRgb.r, baseRgb.g, baseRgb.b);
+      
+      effectBody.innerHTML = "";
+      
+      const controlsRow = document.createElement("div");
+      controlsRow.style.cssText = "display:flex;gap:12px;margin-bottom:8px;align-items:center;flex-wrap:wrap;";
+      
+      const modeWrap = document.createElement("div");
+      modeWrap.style.cssText = "display:flex;align-items:center;gap:4px;";
+      const modeSelect = document.createElement("select");
+      modeSelect.className = "ci-select";
+      modeSelect.style.cssText = "font-size:10px;height:22px;";
+      modeSelect.innerHTML = `
+        <option value="relative">Shift (Preserve Multi-Color)</option>
+        <option value="solid">Solid (Uniform Recolor)</option>
+        <option disabled>──────────</option>
+        <option value="grayscale">Grayscale</option>
+        <option value="sepia">Sepia</option>
+        <option value="invert">Invert Colors</option>
+        <option value="blur">Blur (Soft)</option>
+        <option value="brighten">Brighten</option>
+        <option value="darken">Darken</option>
+        <option value="contrast">High Contrast</option>
+      `;
+      modeWrap.innerHTML = `<span>Mode:</span>`;
+      modeWrap.appendChild(modeSelect);
+
+      const baseWrap = document.createElement("div");
+      baseWrap.style.cssText = "display:flex;align-items:center;gap:4px;"; 
+      const baseInput = document.createElement("input");
+      baseInput.type = "color";
+      baseInput.value = baseHex;
+      baseInput.title = "Base Color (Auto-detected. Change if the script guessed the wrong dominant color)";
+      baseInput.style.cssText = "width:20px;height:20px;padding:0;border:none;background:none;cursor:pointer;";
+      baseWrap.innerHTML = `<span>Base:</span>`;
+      baseWrap.appendChild(baseInput);
+      
+      const targetWrap = document.createElement("div");
+      targetWrap.style.cssText = "display:flex;align-items:center;gap:4px;";
+      const targetInput = document.createElement("input");
+      targetInput.type = "color";
+      targetInput.value = "#d44a4a"; // Default target red
+      targetInput.style.cssText = "width:20px;height:20px;padding:0;border:none;background:none;cursor:pointer;";
+      targetWrap.innerHTML = `<span>Target:</span>`;
+      targetWrap.appendChild(targetInput);
+      
+      controlsRow.appendChild(modeWrap);
+      controlsRow.appendChild(targetWrap);
+      controlsRow.appendChild(baseWrap);
+      effectBody.appendChild(controlsRow);
+      
+      const cssOut = document.createElement("textarea");
+      cssOut.spellcheck = false;
+      cssOut.style.cssText = "font-family:monospace;white-space:pre-wrap;line-height:1.4;margin-bottom:6px;width:100%;min-height:56px;background:rgba(0,0,0,0.1);border:1px solid rgba(255,255,255,0.05);color:#7a8a9a;padding:6px;box-sizing:border-box;resize:vertical;font-size:9px;";
+      effectBody.appendChild(cssOut);
+      
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "ci-btn-secondary";
+      copyBtn.style.cssText = "font-size:9px;padding:2px 8px;";
+      copyBtn.textContent = "Copy Filter CSS";
+      copyBtn.addEventListener("click", () => {
+         copyText(cssOut.value);
+         copyBtn.textContent = "Copied!";
+         setTimeout(() => copyBtn.textContent = "Copy Filter CSS", 1500);
+      });
+      effectBody.appendChild(copyBtn);
+      
+      const updateFilter = () => {
+         let filterStr;
+         let comment = "";
+         const mode = modeSelect.value;
+         
+         if (mode === "solid") {
+            filterStr = calculateSolidFilter(targetInput.value);
+            comment = `/* Solid Recolor (→ ${targetInput.value}) */`;
+         } else if (mode === "relative") {
+            const currentBaseRgb = hexToRgb(baseInput.value);
+            filterStr = calculateRelativeFilter(currentBaseRgb, targetInput.value);
+            comment = `/* Relative Color Shift (${baseInput.value} → ${targetInput.value}) */`;
+         } else if (mode === "grayscale") {
+            filterStr = "grayscale(100%)";
+            comment = `/* Grayscale Effect */`;
+         } else if (mode === "sepia") {
+            filterStr = "sepia(100%)";
+            comment = `/* Sepia Effect */`;
+         } else if (mode === "invert") {
+            filterStr = "invert(100%)";
+            comment = `/* Invert Colors */`;
+         } else if (mode === "blur") {
+            filterStr = "blur(4px)";
+            comment = `/* Blur Effect */`;
+         } else if (mode === "brighten") {
+            filterStr = "brightness(1.5)";
+            comment = `/* Brighten Effect */`;
+         } else if (mode === "darken") {
+            filterStr = "brightness(0.5)";
+            comment = `/* Darken Effect */`;
+         } else if (mode === "contrast") {
+            filterStr = "contrast(1.5) saturate(1.2)";
+            comment = `/* High Contrast Effect */`;
+         }
+         
+         // Update UI visibility
+         if (mode === "relative") {
+             baseWrap.style.display = "flex";
+             targetWrap.style.display = "flex";
+         } else if (mode === "solid") {
+             baseWrap.style.display = "none";
+             targetWrap.style.display = "flex";
+         } else {
+             baseWrap.style.display = "none";
+             targetWrap.style.display = "none";
+         }
+         
+         const type = getCssStrategy(asset).type;
+         const tag = asset.domNode?.tagName?.toLowerCase() || "";
+         const videoSuffix = (type.includes("video") && tag !== "video" && tag !== "source") ? " video" : "";
+         const targetSelector = selSelect.value + videoSuffix;
+         
+         cssOut.value = `${comment}\n${targetSelector} {\n  filter: ${filterStr} !important;\n}`;
+      };
+      
+      modeSelect.addEventListener("change", updateFilter);
+      baseInput.addEventListener("input", updateFilter);
+      targetInput.addEventListener("input", updateFilter);
+      selSelect.addEventListener("change", updateFilter);
+      
+      updateFilter();
+    }
+  });
+
   row.append(thumb, main);
   return row;
 }
@@ -615,7 +795,8 @@ export function buildCompactAssetRow(asset, onAdd) {
     v.src = asset.url;
     v.style.cssText = "max-width:100%; max-height:100%;";
     v.muted = true;
-    v.currentTime = 0.1;
+    v.autoplay = true;
+    v.loop = true;
     thumb.appendChild(v);
   } else {
     const i = document.createElement("img");
@@ -634,7 +815,7 @@ export function buildCompactAssetRow(asset, onAdd) {
   if (sInfo.options) {
     sSelect = document.createElement("select");
     sSelect.className = "ci-select";
-    sSelect.style.cssText = "font-size:9px; padding:1px 4px; height:18px; margin-top:2px; width:100%;";
+    sSelect.style.cssText = "font-size:9px; height:22px; margin-top:2px; width:100%;";
     sInfo.options.forEach(opt => {
       const o = document.createElement("option");
       o.value = opt.id;
@@ -744,14 +925,15 @@ export function generateReplacementCSS(asset, replacementUrl) {
   const type = strategy.type;
   const method = asset.strategyId || "default";
   const sel = asset.selector;
+  const tag = asset.domNode?.tagName?.toLowerCase() || "";
 
   // 1. Handle HTML Attributes (src, poster)
   if (type === "img-src" || type === "video-src" || type === "uikit-video-src") {
-    const videoSuffix = (type.includes("video")) ? " video" : "";
+    const videoSuffix = (type.includes("video") && tag !== "video" && tag !== "source") ? " video" : "";
     const target = sel + videoSuffix;
 
     if (method === "bg-direct") {
-      return `/* Asset: ${origUrl} (Background Trick) */\n${target} {\n\tobject-position: -9999px !important;\n\tbackground: ${rep} center/contain no-repeat !important;\n}\n`;
+      return `/* Asset: ${origUrl} (Background Trick) */\n${target} {\n\tobject-position: -9999px !important;\n\tbackground: ${rep} 0 0 / 100% 100% no-repeat !important;\n}\n`;
     } else if (method === "parent-after") {
         return `/* Asset: ${origUrl} (Parent ::after) */\n${sel}:has(img) {\n\tposition: relative !important;\n}\n${sel} img {\n\topacity: 0 !important;\n}\n${sel}::after {\n\tcontent: ''; position: absolute; inset: 0;\n\tbackground: ${rep} center/cover no-repeat;\n}\n`;
     } else {
@@ -762,45 +944,6 @@ export function generateReplacementCSS(asset, replacementUrl) {
 
   // 2. Handle Standard CSS Properties (background-image, mask, etc.)
   return `/* Asset: ${origUrl} */\n${sel} {\n\t${asset.prop}: ${rep} !important;\n}\n`;
-}
-
-// SEND ALL 
-
-function sendAllToRaw(content) {
-  const inputs = [...content.querySelectorAll("input[data-original-url]")];
-
-  // Collect all assets — use replacement URL if filled, original if not
-  const toSend = inputs.map((input) => {
-    const replacement = input.value.trim();
-    const finalUrl = replacement || input.dataset.originalUrl;
-    // Reconstruct a minimal asset object from data attributes
-    const asset = {
-      selector: input.dataset.selector,
-      prop: input.dataset.prop,
-      url: input.dataset.originalUrl,
-      isAttr: input.dataset.isAttr === "1",
-      domNode: { 
-        tagName: input.dataset.nodeTag,
-        getAttribute: (attr) => attr === "style" ? (input.dataset.inlineStyle || "") : ""
-      },
-      parentSelector: input.dataset.parentSelector,
-      strategyId: input.dataset.strategy,
-      isGlobal: input.dataset.global === "1",
-      exactSelector: input.dataset.exactSelector,
-      genericSelector: input.dataset.genericSelector,
-      insetFallback: input.dataset.insetFallback
-    };
-    return { asset, finalUrl };
-  });
-
-  if (toSend.length === 0) return;
-
-  const blocks = toSend.map(({ asset, finalUrl }) =>
-    generateReplacementCSS(asset, finalUrl)
-  );
-
-  appendCssToRaw(blocks.join("\n"));
-  switchTab("raw");
 }
 
 // DOWNLOAD 
@@ -861,6 +1004,154 @@ function piercingQuerySelectorAll(selector) {
     } catch {}
   }
   return Array.from(results);
+}
+
+// SMART COLOR SHIFT MATH & CANVAS
+
+function extractDominantColor(url, isVideo) {
+  return new Promise((resolve) => {
+    const fallback = { r: 10, g: 200, b: 185 }; // Default hextech blue
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    canvas.width = 10;
+    canvas.height = 10;
+    
+    const timer = setTimeout(() => resolve(fallback), 3000); // 3s safeguard
+    
+    const finalize = (el) => {
+       try {
+         ctx.drawImage(el, 0, 0, 10, 10);
+         const data = ctx.getImageData(0, 0, 10, 10).data;
+         const buckets = {};
+         let maxCount = 0;
+         let bestRgb = fallback;
+         let validPixels = 0;
+
+         for (let i = 0; i < data.length; i += 4) {
+           const a = data[i+3];
+           if (a < 128) continue;
+           validPixels++;
+           
+           const r = data[i], g = data[i+1], b = data[i+2];
+           
+           // Calculate saturation to weight vibrant colors higher than grays
+           const max = Math.max(r, g, b), min = Math.min(r, g, b);
+           const s = max === 0 ? 0 : (max - min) / max;
+           const weight = 1 + (s * 3); // Vibrant colors count up to 4x more
+           
+           // Quantize colors into 32-value buckets
+           const qR = Math.floor(r / 32) * 32;
+           const qG = Math.floor(g / 32) * 32;
+           const qB = Math.floor(b / 32) * 32;
+           const key = `${qR},${qG},${qB}`;
+           
+           buckets[key] = (buckets[key] || 0) + weight;
+           if (buckets[key] > maxCount) {
+             maxCount = buckets[key];
+             bestRgb = { r: Math.min(255, qR + 16), g: Math.min(255, qG + 16), b: Math.min(255, qB + 16) };
+           }
+         }
+         clearTimeout(timer);
+         if (validPixels === 0) return resolve(fallback);
+         resolve(bestRgb);
+       } catch (e) {
+         clearTimeout(timer);
+         resolve(fallback);
+       }
+    };
+
+    if (isVideo) {
+      const v = document.createElement("video");
+      v.crossOrigin = "anonymous";
+      v.muted = true;
+      v.src = url;
+      v.onloadeddata = () => { v.currentTime = 0.5; };
+      v.onseeked = () => finalize(v);
+      v.onerror = () => { clearTimeout(timer); resolve(fallback); };
+    } else {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = url;
+      img.onload = () => finalize(img);
+      img.onerror = () => { clearTimeout(timer); resolve(fallback); };
+    }
+  });
+}
+
+function rgbToHexStr(r, g, b) {
+  return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).toLowerCase();
+}
+
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : {r: 0, g: 0, b: 0};
+}
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+
+  if (max === min) {
+    h = s = 0; 
+  } else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h * 360, s * 100, l * 100];
+}
+
+function calculateRelativeFilter(baseRgb, targetHex) {
+  const targetRgb = hexToRgb(targetHex);
+  const [bH, bS, bL] = rgbToHsl(baseRgb.r, baseRgb.g, baseRgb.b);
+  const [tH, tS, tL] = rgbToHsl(targetRgb.r, targetRgb.g, targetRgb.b);
+  
+  let hueDiff = tH - bH;
+  if (hueDiff > 180) hueDiff -= 360;
+  if (hueDiff < -180) hueDiff += 360;
+  
+  // Ignore base lightness. Scale purely based on how light/dark the target color is compared to a 50% midtone.
+  let brightMult = Math.max(0, tL / 50);
+
+  // If base is grayscale, standard hue-rotate does nothing. Force color via sepia.
+  if (bS < 5 && tS > 5) {
+     let sepiaHueDiff = tH - 40; 
+     let sepiaSatMult = (tS / 50) * 2.0; 
+     return `sepia(100%) hue-rotate(${sepiaHueDiff.toFixed(1)}deg) saturate(${sepiaSatMult.toFixed(2)}) brightness(${brightMult.toFixed(2)})`;
+  }
+  
+  let satRatio = bS === 0 ? tS / 100 : tS / bS; 
+  // Slight 20% boost to compensate for CSS saturate() weakness without blowing out the image
+  let satMult = satRatio * 1.2; 
+  
+  return `hue-rotate(${hueDiff.toFixed(1)}deg) saturate(${satMult.toFixed(2)}) brightness(${brightMult.toFixed(2)})`;
+}
+
+function calculateSolidFilter(targetHex) {
+  const targetRgb = hexToRgb(targetHex);
+  const [tH, tS, tL] = rgbToHsl(targetRgb.r, targetRgb.g, targetRgb.b);
+  
+  let hueDiff = tH - 38; // Sepia baseline hue is ~38deg
+  if (hueDiff > 180) hueDiff -= 360;
+  if (hueDiff < -180) hueDiff += 360;
+  
+  // saturate() needs to push sepia's low saturation (~18%) to the target's level
+  const satMult = (tS / 100) * 5.5; 
+  
+  // brightness() scales relative to 50% lightness
+  const brightMult = Math.max(0, tL / 50);
+
+  return `sepia(100%) hue-rotate(${hueDiff.toFixed(1)}deg) saturate(${satMult.toFixed(2)}) brightness(${brightMult.toFixed(2)})`;
 }
 
 export function cleanupAssetsTab() {

@@ -194,26 +194,65 @@ export function buildStrategicSelector(el, mode = 'specific') {
   const isCategorical = (mode === 'categorical');
   let selector = buildNodeSelector(el, isCategorical);
 
+  const getMeaningfulParentSelector = (node) => {
+    let curr = node.parentElement;
+    while (curr) {
+       const pSel = buildNodeSelector(curr, true);
+       if (!/^[a-z0-9-]+$/i.test(pSel)) {
+          return pSel;
+       }
+       curr = curr.parentElement;
+    }
+    return null;
+  };
+
+  const isBareTag = /^[a-z0-9-]+$/i.test(selector);
+
   // For contextual mode, we start with the element's selector and prepend its parent
   if (mode === 'contextual' && el.parentElement) {
     const parentSelector = buildNodeSelector(el.parentElement, true); // Parent is always categorical
     if (parentSelector) {
       selector = `${parentSelector} > ${selector}`;
     }
+  } else if (mode === 'categorical' && isBareTag && el.parentElement) {
+    const parentSelector = getMeaningfulParentSelector(el);
+    if (parentSelector) {
+      selector = `${parentSelector} ${selector}`;
+    }
   }
 
   // Check for uniqueness. If not unique, attempt to climb.
   const root = el.getRootNode();
-  try {
-    if (root.querySelectorAll(selector).length === 1) {
-      return selector;
+  const isUnique = (sel) => {
+    try {
+      return root.querySelectorAll(sel).length === 1;
+    } catch(e) {
+      return false;
     }
-  } catch (e) {
-    // Invalid selector, proceed to climbing
+  };
+
+  if (isUnique(selector)) {
+    return selector;
   }
   
-  // Last resort for specific mode: Nth-child
   if (mode === 'specific') {
+    // ATTEMPT TO CLIMB
+    let currentClimb = el.parentElement;
+    let climbingSelector = selector;
+    let depth = 0;
+    while (currentClimb && depth < 4) {
+      const pSel = buildNodeSelector(currentClimb, true);
+      if (pSel && !/^[a-z0-9-]+$/i.test(pSel)) {
+        climbingSelector = `${pSel} ${climbingSelector}`;
+        if (isUnique(climbingSelector)) {
+          return climbingSelector;
+        }
+      }
+      currentClimb = currentClimb.parentElement;
+      depth++;
+    }
+
+    // Last resort for specific mode: Nth-child
     const parent = el.parentElement;
     if (parent) {
       const index = Array.from(parent.children).indexOf(el) + 1;
@@ -223,13 +262,8 @@ export function buildStrategicSelector(el, mode = 'specific') {
       const parentSelector = buildNodeSelector(parent, true);
       const finalSelector = `${parentSelector} > ${indexedSelector}`;
       
-      try {
-        if (root.querySelectorAll(finalSelector).length === 1) return finalSelector;
-      } catch(e) {}
-      // Fallback if parented version fails
-      try {
-        if (root.querySelectorAll(indexedSelector).length === 1) return indexedSelector;
-      } catch (e) {}
+      if (isUnique(finalSelector)) return finalSelector;
+      if (isUnique(indexedSelector)) return indexedSelector;
     }
   }
 
@@ -249,7 +283,7 @@ export function attachFilePicker(inputElement) {
 
   const hidden = document.createElement("input");
   hidden.type = "file";
-  hidden.accept = "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm";
+  hidden.accept = "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm,.ttf,.otf,.woff,.woff2";
   hidden.style.display = "none";
   document.body.appendChild(hidden);
 
@@ -267,6 +301,7 @@ export function attachFilePicker(inputElement) {
 
     const relPath = `./assets/${file.name}`;
     inputElement.value = relPath;
+    inputElement.dispatchEvent(new Event("input", { bubbles: true }));
 
     // Validate the asset is reachable via the plugin's own file resolver.
     const resolvedUrl = resolveRelativePath(relPath);

@@ -2228,6 +2228,10 @@ function buildBackgroundCustomizationRow() {
         <input type="checkbox" id="bc-reconnect" checked style="accent-color:#80a0c0;cursor:pointer;">
         <span style="font-size:11px;color:#a0b4c8;">Also keep game progress / reconnect states transparent</span>
       </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px;">
+        <input type="checkbox" id="bc-keep-showcase" checked style="accent-color:#80a0c0;cursor:pointer;">
+        <span style="font-size:11px;color:#a0b4c8;">Keep skin showcase background visible</span>
+      </label>
 
       <button class="ci-btn-secondary" id="bc-remove-btn" style="width:100%;font-size:11px;">Apply Transparency</button>
     </div>
@@ -2475,6 +2479,7 @@ function buildBackgroundCustomizationRow() {
     const lines = [START_MARKER];
     lines.push(`:root { --bc-custom-bg: url('${bgUrl}'); }`);
     lines.push(`body { overflow: hidden !important; }`);
+    lines.push(`.lol-social-sidebar .alpha-version-panel { border-top: none !important; }`)
 
     const hideList = [
       ".store-loading", ".loot-to-store-button", ".clash-root-action-timeline-background-gradient",
@@ -2482,14 +2487,20 @@ function buildBackgroundCustomizationRow() {
       ".tft-home-footer-bg", ".tft-hub-footer-bg", ".lol-loading-screen-spinner",
       ".lol-loading-screen-status-container", ".summoner-level-ring", ".rcp-fe-lol-home-loading-spinner",
       ".style-profile-loading-spinner", ".spinner", ".parties-background img",
-      ".postgame-background-image img", ".style-profile-background-image img", ".style-profile-masked-image img",
+      ".postgame-background-image", ".style-profile-background-image img", ".style-profile-masked-image img",
       ".background-edge-backlight", "#background-ambient", ".lobby-intro-animation-container",
       ".activity-center__background-component__blend", ".challenges-collection-component .background",
       ".leagues-root-component .ranked-intro-background", 'img[src*="map-south.png"]', 'img[src*="map-north.png"]',
       'img[src*="champ-select-planning-intro.jpg"]', 'img[src*="gameflow-background.jpg"]',
       'img[src*="ready-check-background.png"]', ".parties-background-mask", ".loot-backdrop.background-static",
-      ".clash-root-background-landing", ".activity-center__tabs_footer_divider", ".loading-tab:after"
+      ".clash-root-background-landing", ".activity-center__tabs_footer_divider", ".loading-tab:after",
+      ".sub-border", ".lol-uikit-dialog-frame-sub-border"
     ];
+
+    const doKeepShowcase = row.querySelector("#bc-keep-showcase").checked;
+    if (doKeepShowcase) {
+      lines.push(`.ShowcaseComponent .uikit-background-switcher img, .ShowcaseComponent .lol-uikit-background-switcher-image { display: block !important; visibility: visible !important; opacity: 1 !important; }`);
+    }
 
     if (isAll) {
       // ALL mode: apply ::before to the broad viewport roots correctly
@@ -2549,7 +2560,6 @@ function buildBackgroundCustomizationRow() {
       lines.push(``);
       lines.push(`.bg-current .lol-uikit-background-switcher-image {display:none !important;}`);
       lines.push(`.store-backdrop { background-image: none; }`);
-      lines.push(`.lol-uikit-background-switcher-image.fade {display:none !important;}`);
       lines.push(``);
       lines.push(`${hideList.join(",\n")} {`);
       lines.push(`  display: none !important;`);
@@ -2602,7 +2612,6 @@ function buildBackgroundCustomizationRow() {
         }
         if (id === "home") {
           lines.push(`.bg-current .lol-uikit-background-switcher-image { display: none !important; }`);
-          lines.push(`.lol-uikit-background-switcher-image.fade { display: none !important; }`);
           lines.push(`.parties-background img { display: none !important; }`);
         }
         if (id === "champselect") {
@@ -2610,11 +2619,11 @@ function buildBackgroundCustomizationRow() {
           lines.push(`.champ-select-bg-darken { background: transparent !important; }`);
         }
         if (id === "postgame") {
-          lines.push(`.postgame-background-image img { display: none !important; }`);
+          lines.push(`.postgame-background-image { display: none !important; }`);
         }
       });
     }
-
+    lines.push(`.parties-game-invite-heading-text {display:none !important;}`);
     lines.push(`.rcp-fe-viewport-sidebar, .lol-social-sidebar { background: transparent !important; }`);
     lines.push(`.navbar_backdrop, .navbar-blur { background: transparent !important; backdrop-filter: none !important; }`);
 
@@ -2690,6 +2699,7 @@ function buildBackgroundCustomizationRow() {
     const START_MARKER = "/* === TRANSPARENT THEME FOUNDATIONS === */";
     const END_MARKER = "/* === END TRANSPARENT THEME FOUNDATIONS === */";
     const lines = [START_MARKER];
+    lines.push(`.lol-social-sidebar .alpha-version-panel { border-top: none !important; }`)
  
     lines.push(`${transScreens.join(",\n")} {`);
     lines.push(`  background: transparent !important;`);
@@ -2716,7 +2726,7 @@ function buildBackgroundCustomizationRow() {
         ".spinner",
         ".bg-current img",
         ".parties-background img",
-        ".postgame-background-image img",
+        ".postgame-background-image",
         ".style-profile-background-image img",
         ".style-profile-masked-image img",
         ".background-edge-backlight",
@@ -2735,7 +2745,14 @@ function buildBackgroundCustomizationRow() {
         ".clash-root-background-landing",
         ".activity-center__tabs_footer_divider",
         ".loading-tab:after",
+        ".sub-border",
+        ".lol-uikit-dialog-frame-sub-border",
       ];
+
+      const doKeepShowcase = row.querySelector("#bc-keep-showcase").checked;
+      if (doKeepShowcase) {
+        lines.push(`.ShowcaseComponent .uikit-background-switcher img, .ShowcaseComponent .lol-uikit-background-switcher-image { display: block !important; visibility: visible !important; opacity: 1 !important; }`);
+      }
       lines.push(``);
       lines.push(
         `/* Hide generic loading spinners and explicit background graphics */`,
@@ -2750,10 +2767,7 @@ function buildBackgroundCustomizationRow() {
       lines.push(``);
       lines.push(`.store-backdrop { background-image: none; }`);
       lines.push(``);
-      lines.push(
-        `.lol-uikit-background-switcher-image.fade {display:none !important;}`,
-      );
-      lines.push(``);
+      lines.push(`.parties-game-invite-heading-text {display:none !important;}`);
       lines.push(`.parties-status-card-bg-container { display: none !important; }`);
       lines.push(
         `.parties-status-card, .parties-invite-info-panel, .v2-parties-invite-info-panel { background-color: transparent !important; }`,
@@ -3063,7 +3077,6 @@ function buildSocialRow() {
     const START_MARKER = "/* === SOCIAL PANEL MODS === */";
     const END_MARKER   = "/* === END SOCIAL MODS === */";
     const lines = [START_MARKER];
-
     if (doTrans) {
       lines.push(`.rcp-fe-viewport-sidebar { background: transparent !important; }`);
       lines.push(`.lol-social-sidebar { background: transparent !important; }`);
@@ -3094,6 +3107,7 @@ function buildSocialRow() {
       lines.push(`.parties-status-card-bg-container { display: none !important; }`);
       lines.push(`.parties-status-card { background-color: transparent !important; }`);
       lines.push(`.parties-invite-info-panel, .v2-parties-invite-info-panel { background-color: transparent !important; }`);
+      lines.push(`.parties-game-invite-heading-text { display: none !important; }`);
     }
 
     const hiddenButtons = [];
@@ -6072,68 +6086,192 @@ function buildFontRow() {
 
   row.innerHTML = `
     <div class="ci-generic-title">Font Override</div>
-    <div class="ci-generic-desc">Replace the client font globally or target specific elements. You can mix and match by adding multiple rules. Find fonts at <a style="color:#785a28;" href="https://fonts.google.com" target="_blank">fonts.google.com</a></div>
+    <div class="ci-generic-desc">Replace the client font globally or target specific elements. Use Google Fonts for a wide variety of styles, or select from your local system fonts.</div>
     
-    <div class="ci-field" style="margin-bottom:8px;">
-      <div class="ci-label">1. Google Fonts @import URL (Optional)</div>
-      <input class="ci-input" id="ci-font-url" type="text" placeholder="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" style="width:100%;">
-      <div style="font-size:9px;color:#3a5060;margin-top:3px;padding:4px 6px;background:rgba(0,0,0,0.2);border:1px solid #1a2535;">
-        💡 Tip: In Google Fonts, select your styles, click "Get embed code", and copy the @import link.
+    <div class="ci-sub-tabs" style="display:flex; gap:4px; margin: 10px 0 14px; border-bottom: 1px solid rgba(200,170,110,0.1);">
+      <div id="ci-font-tab-google" style="cursor:pointer; color:#c8aa6e; font-weight:700; font-size:10px; text-transform:uppercase; padding: 6px 12px; border-bottom: 2px solid #c8aa6e; transition: all 0.2s; user-select:none;">Google Fonts</div>
+      <div id="ci-font-tab-local" style="cursor:pointer; color:#4a6070; font-weight:700; font-size:10px; text-transform:uppercase; padding: 6px 12px; border-bottom: 2px solid transparent; transition: all 0.2s; user-select:none;">Local / System</div>
+    </div>
+
+    <div id="ci-font-pane-google" style="display:block;">
+      <div class="ci-field" style="margin-bottom:12px;">
+        <div class="ci-label">1. Google Fonts @import URL</div>
+        <input class="ci-input" id="ci-font-url" type="text" placeholder="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" style="width:100%;">
+        <div class="ci-note" style="margin-top:6px; padding:6px 10px; border-color:rgba(200,170,110,0.15);">
+          <span>💡 Tip:</span> Select your styles on Google Fonts, click "Get embed code", and copy the <b>@import</b> link.
+        </div>
+      </div>
+
+      <div class="ci-field" style="margin-bottom:12px;">
+        <div class="ci-label">2. Font Family Name</div>
+        <input class="ci-input" id="ci-font-name-google" type="text" placeholder="e.g., 'Orbitron'">
       </div>
     </div>
 
-    <div class="ci-inline-row">
-      <div class="ci-field">
-        <div class="ci-label">2. Font Family Name</div>
-        <input class="ci-input" id="ci-font-name" type="text" placeholder="Auto-detected or type manually">
+    <div id="ci-font-pane-local" style="display:none;">
+      <div class="ci-inline-row" style="margin-bottom:12px;">
+        <div class="ci-field">
+          <div class="ci-label">1. Select System Font</div>
+          <select class="ci-select" id="ci-font-system-select">
+            <option value="custom">-- Use Custom Font File --</option>
+            <optgroup label="League Recommended">
+              <option value="Beaufort for LOL">Beaufort for LOL</option>
+              <option value="Spiegel">Spiegel</option>
+              <option value="LoL Display">LoL Display</option>
+              <option value="Fira Code">Fira Code</option>
+            </optgroup>
+            <optgroup label="Standard Windows Fonts">
+              <option value="Arial">Arial</option>
+              <option value="Arial Black">Arial Black</option>
+              <option value="Bahnschrift">Bahnschrift</option>
+              <option value="Calibri">Calibri</option>
+              <option value="Cambria">Cambria</option>
+              <option value="Candara">Candara</option>
+              <option value="Comic Sans MS">Comic Sans MS</option>
+              <option value="Consolas">Consolas</option>
+              <option value="Constantia">Constantia</option>
+              <option value="Corbel">Corbel</option>
+              <option value="Courier New">Courier New</option>
+              <option value="Ebrima">Ebrima</option>
+              <option value="Franklin Gothic Medium">Franklin Gothic Medium</option>
+              <option value="Gabriola">Gabriola</option>
+              <option value="Gadugi">Gadugi</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Impact">Impact</option>
+              <option value="Ink Free">Ink Free</option>
+              <option value="Leelawadee UI">Leelawadee UI</option>
+              <option value="Lucida Console">Lucida Console</option>
+              <option value="Lucida Sans Unicode">Lucida Sans Unicode</option>
+              <option value="Malgun Gothic">Malgun Gothic</option>
+              <option value="Microsoft JhengHei">Microsoft JhengHei</option>
+              <option value="Microsoft Sans Serif">Microsoft Sans Serif</option>
+              <option value="Microsoft YaHei">Microsoft YaHei</option>
+              <option value="MV Boli">MV Boli</option>
+              <option value="Nirmala UI">Nirmala UI</option>
+              <option value="Palatino Linotype">Palatino Linotype</option>
+              <option value="Segoe UI">Segoe UI</option>
+              <option value="Segoe UI Variable">Segoe UI Variable</option>
+              <option value="SimSun">SimSun</option>
+              <option value="Sitka Text">Sitka Text</option>
+              <option value="Sylfaen">Sylfaen</option>
+              <option value="Symbol">Symbol</option>
+              <option value="Tahoma">Tahoma</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Trebuchet MS">Trebuchet MS</option>
+              <option value="Verdana">Verdana</option>
+              <option value="Webdings">Webdings</option>
+              <option value="Wingdings">Wingdings</option>
+              <option value="Yu Gothic UI">Yu Gothic UI</option>
+            </optgroup>
+          </select>
+        </div>
       </div>
+
+      <div class="ci-field" id="ci-font-file-picker-wrap" style="margin-bottom:12px;">
+        <div class="ci-label">2. Select Custom Font File (.ttf / .otf)</div>
+        <div style="display:flex;gap:4px;">
+          <input class="ci-input" id="ci-local-font-path" type="text" placeholder="./assets/font.ttf" style="flex:1;">
+          <button class="ci-btn-prop" id="ci-local-font-pick" title="Pick local font">📂</button>
+        </div>
+      </div>
+
+      <div class="ci-field" style="margin-bottom:12px;">
+        <div class="ci-label">3. Font Family Name</div>
+        <input class="ci-input" id="ci-font-name-local" type="text" placeholder="e.g., 'My Custom Font'">
+      </div>
+    </div>
+
+    <div class="ci-inline-row" style="margin-top:12px; border-top: 1px solid rgba(200,170,110,0.05); padding-top:12px;">
       <div class="ci-field">
-        <div class="ci-label">3. Apply To</div>
+        <div class="ci-label">Apply To</div>
         <select class="ci-select" id="ci-font-scope">
           <option value="both">Global (All Text)</option>
           <option value="display">Headers & Titles Only</option>
           <option value="body">Body Text Only</option>
-          <option value="custom">Custom Element...</option>
+          <option value="custom">Custom Element Selector...</option>
         </select>
       </div>
     </div>
 
     <div class="ci-inline-row" id="ci-font-custom-wrap" style="display:none; margin-top:8px;">
       <div class="ci-field" style="grid-column: span 2;">
-        <div class="ci-label">Custom Selector</div>
+        <div class="ci-label">Selector</div>
         <div style="display:flex;gap:4px;">
           <input class="ci-input" id="ci-font-custom-sel" type="text" placeholder=".player-name">
-          <button class="ci-btn-prop ci-picker-btn" title="Pick element">🎯</button>
+          <button class="ci-btn-prop ci-font-picker-btn" title="Pick element from client">🎯</button>
         </div>
       </div>
     </div>
 
-    <div style="display:flex; align-items:center;">
-      <button class="ci-btn-add" data-action="font" style="margin-top:8px;">→ Add to CSS</button>
-      <button class="ci-btn-danger" id="ci-font-reset" style="margin-top:8px; margin-left:8px; padding:5px 10px; font-size:10px; letter-spacing:0.08em; text-transform:uppercase;">Reset Fonts</button>
-      <span class="ci-flash" id="ci-flash-font">Added ✓</span>
+    <div style="display:flex; align-items:center; gap:10px; margin-top:16px;">
+      <button class="ci-btn-primary" id="ci-btn-add-font" style="flex:1;">Apply Font Override</button>
+      <button class="ci-btn-danger" id="ci-font-reset" style="padding: 8px 12px; font-size:10px;">Reset All Fonts</button>
+    </div>
+    <div style="text-align:center; margin-top:8px;">
+      <span class="ci-flash" id="ci-flash-font">Applied successfully! ✓</span>
     </div>
   `;
 
-  // Toggle custom input
+  let activeTab = "google";
+  const tabGoogle = row.querySelector("#ci-font-tab-google");
+  const tabLocal = row.querySelector("#ci-font-tab-local");
+  const paneGoogle = row.querySelector("#ci-font-pane-google");
+  const paneLocal = row.querySelector("#ci-font-pane-local");
+
+  const switchTab = (tab) => {
+    activeTab = tab;
+    if (tab === "google") {
+      tabGoogle.style.color = "#c8aa6e";
+      tabGoogle.style.borderBottomColor = "#c8aa6e";
+      tabLocal.style.color = "#4a6070";
+      tabLocal.style.borderBottomColor = "transparent";
+      paneGoogle.style.display = "block";
+      paneLocal.style.display = "none";
+    } else {
+      tabLocal.style.color = "#c8aa6e";
+      tabLocal.style.borderBottomColor = "#c8aa6e";
+      tabGoogle.style.color = "#4a6070";
+      tabGoogle.style.borderBottomColor = "transparent";
+      paneLocal.style.display = "block";
+      paneGoogle.style.display = "none";
+    }
+  };
+
+  tabGoogle.addEventListener("click", () => switchTab("google"));
+  tabLocal.addEventListener("click", () => switchTab("local"));
+
+  // Toggle local file picker
+  const fontSelect = row.querySelector("#ci-font-system-select");
+  const filePickerWrap = row.querySelector("#ci-font-file-picker-wrap");
+  const localNameInput = row.querySelector("#ci-font-name-local");
+  const localPathField = row.querySelector("#ci-local-font-path");
+
+  fontSelect.addEventListener("change", () => {
+    const isCustom = fontSelect.value === "custom";
+    filePickerWrap.style.display = isCustom ? "block" : "none";
+    if (!isCustom) {
+      localNameInput.value = fontSelect.value;
+    }
+  });
+
+  // Toggle custom scope input
   row.querySelector("#ci-font-scope").addEventListener("change", (e) => {
     row.querySelector("#ci-font-custom-wrap").style.display =
       e.target.value === "custom" ? "block" : "none";
   });
 
   // Picker
-  row.querySelector(".ci-picker-btn").addEventListener("click", () => {
+  row.querySelector(".ci-font-picker-btn").addEventListener("click", () => {
     startElementPicker(
       (sel) => (row.querySelector("#ci-font-custom-sel").value = sel),
     );
   });
 
+  // Google Fonts Logic
   let lastDetectedFontName = "";
-
-  // Auto-detect on paste/input
   row.querySelector("#ci-font-url").addEventListener("input", (e) => {
     const url = e.target.value;
-    const nameField = row.querySelector("#ci-font-name");
+    const nameField = row.querySelector("#ci-font-name-google");
     let cleanUrl = url;
     const urlMatch = cleanUrl.match(/(https?:\/\/[^'"><\s)]+)/);
     if (urlMatch) {
@@ -6144,7 +6282,7 @@ function buildFontRow() {
       if (familyMatch) {
         const detectedName = decodeURIComponent(familyMatch[1]).replace(
           /\+/g,
-          " ",
+          " "
         );
         if (!nameField.value || nameField.value === lastDetectedFontName) {
           nameField.value = detectedName;
@@ -6157,6 +6295,27 @@ function buildFontRow() {
     }
   });
 
+  // Picker for custom font file
+  row.querySelector("#ci-local-font-pick").addEventListener("click", () => {
+    attachFilePickerToInput(localPathField);
+  });
+
+  localPathField.addEventListener("input", () => {
+    const path = localPathField.value.trim();
+    if (path) {
+      fontSelect.value = "custom"; // Ensure system selection is on custom
+      filePickerWrap.style.display = "block";
+      // Extract filename and normalize
+      const filename = path.split('/').pop().split('\\').pop(); // handle both slashes
+      const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+      // Clean and normalize the name (alphanumeric only, spaces preserved but trimmed)
+      const cleanName = nameWithoutExt.replace(/[^a-zA-Z0-9 ]/g, "").trim().replace(/\s+/g, "");
+      if (cleanName) {
+        localNameInput.value = cleanName;
+      }
+    }
+  });
+
   // Reset Fonts
   row.querySelector("#ci-font-reset").addEventListener("click", () => {
     const rawTa = row.getRootNode().querySelector("#ci-raw-textarea");
@@ -6164,11 +6323,11 @@ function buildFontRow() {
       let val = rawTa.value;
       val = val.replace(
         /\/\* === FONT OVERRIDE: [\s\S]*?\/\* === END FONT: .*? \*\/\n?/g,
-        "",
+        ""
       );
       val = val.replace(
         /@import url\(['"]https:\/\/fonts\.googleapis\.com.*?['"]\);\n?/g,
-        "",
+        ""
       );
       rawTa.value = val.trimStart();
       rawTa.dispatchEvent(new Event("input"));
@@ -6177,28 +6336,44 @@ function buildFontRow() {
       flashMessage(
         row.querySelector("#ci-flash-font"),
         "Fonts Reset!",
-        "#c84b4b",
+        "#c84b4b"
       );
     }
   });
 
-  row.querySelector('[data-action="font"]').addEventListener("click", () => {
-    const url = row.querySelector("#ci-font-url").value.trim();
-    let name = row.querySelector("#ci-font-name").value.trim();
+  // Add to CSS
+  row.querySelector("#ci-btn-add-font").addEventListener("click", () => {
+    let url = "";
+    let name = "";
+    let isLocalFile = false;
+    let localPath = "";
+
+    if (activeTab === "google") {
+      url = row.querySelector("#ci-font-url").value.trim();
+      name = row.querySelector("#ci-font-name-google").value.trim();
+    } else {
+      name = row.querySelector("#ci-font-name-local").value.trim();
+      localPath = row.querySelector("#ci-local-font-path").value.trim();
+      if (localPath) {
+        isLocalFile = true;
+      }
+    }
+
     const scope = row.querySelector("#ci-font-scope").value;
     const customSel = row.querySelector("#ci-font-custom-sel").value.trim();
 
     let cleanUrl = url;
-    const urlMatch = cleanUrl.match(/(https?:\/\/[^'"><\s)]+)/);
-    if (urlMatch) {
-      cleanUrl = urlMatch[1];
-    }
-
-    if (!name && cleanUrl && cleanUrl.includes("family=")) {
-      const familyMatch = cleanUrl.match(/[?&]family=([^&:]+)/);
-      if (familyMatch) {
-        name = decodeURIComponent(familyMatch[1]).replace(/\+/g, " ");
-        row.querySelector("#ci-font-name").value = name;
+    if (activeTab === "google") {
+      const urlMatch = cleanUrl.match(/(https?:\/\/[^'"><\s)]+)/);
+      if (urlMatch) {
+        cleanUrl = urlMatch[1];
+      }
+      if (!name && cleanUrl && cleanUrl.includes("family=")) {
+        const familyMatch = cleanUrl.match(/[?&]family=([^&:]+)/);
+        if (familyMatch) {
+          name = decodeURIComponent(familyMatch[1]).replace(/\+/g, " ");
+          row.querySelector("#ci-font-name-google").value = name;
+        }
       }
     }
 
@@ -6206,7 +6381,7 @@ function buildFontRow() {
       flashMessage(
         row.querySelector("#ci-flash-font"),
         "Enter a font name",
-        "#c84b4b",
+        "#c84b4b"
       );
       return;
     }
@@ -6225,8 +6400,8 @@ function buildFontRow() {
 
     lines.push(START_MARKER);
 
-    // Prepend the @import safely to the very top of the CSS file
-    if (cleanUrl) {
+    // Google Fonts @import
+    if (activeTab === "google" && cleanUrl) {
       const rawTa = row.getRootNode().querySelector("#ci-raw-textarea");
       if (rawTa) {
         const importStmt = `@import url('${cleanUrl}');\n`;
@@ -6239,9 +6414,19 @@ function buildFontRow() {
       }
     }
 
+    // Local Font @font-face
+    if (activeTab === "local" && isLocalFile) {
+      const familyNameMatch = name.match(/['"]([^'"]+)['"]/);
+      const familyName = familyNameMatch ? familyNameMatch[1] : name.split(',')[0].trim();
+      lines.push(`@font-face {`);
+      lines.push(`  font-family: '${familyName}';`);
+      lines.push(`  src: url('${localPath}');`);
+      lines.push(`}`);
+    }
+
     if (scope === "both") {
       lines.push(
-        `:root {\n  --font-display: ${name} !important;\n  --font-body: ${name} !important;\n}`,
+        `:root {\n  --font-display: ${name} !important;\n  --font-body: ${name} !important;\n}`
       );
     } else if (scope === "display") {
       lines.push(`:root {\n  --font-display: ${name} !important;\n}`);
@@ -6253,7 +6438,7 @@ function buildFontRow() {
       flashMessage(
         row.querySelector("#ci-flash-font"),
         "Enter a selector",
-        "#c84b4b",
+        "#c84b4b"
       );
       return;
     }

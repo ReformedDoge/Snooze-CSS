@@ -26,11 +26,11 @@ export function initShadowRootManager() {
     _shadowRegistry.set(shadowRoot, { host: this });
     _iterableShadowRoots.add(new WeakRef(shadowRoot));
 
-    console.log(
+    /*console.log(
       "[Snooze-CSS] Shadow root created for",
       this.tagName,
       this.className || this.id || "",
-    );
+    );*/
 
     if (this.id !== "snooze-css-host") {
       try {

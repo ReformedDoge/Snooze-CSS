@@ -250,6 +250,7 @@ function insertAtCursor(text, deleteCount = 0) {
 }
 
 function onTextareaKeydown(e) {
+  e.stopPropagation();
   if (acDropdown?.style.display === "block") {
     if (e.key === "ArrowDown") {
       e.preventDefault();
