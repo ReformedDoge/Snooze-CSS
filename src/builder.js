@@ -31,6 +31,7 @@ let _localPuuid = null;
 let _localSummonerId = null;
 
 // Fetch local identity info for accurate targeting (hovercards, lobby, profile)
+/*
 async function fetchLocalIdentity() {
   try {
     const r = await fetch("/lol-summoner/v1/current-summoner");
@@ -41,7 +42,7 @@ async function fetchLocalIdentity() {
     }
   } catch (e) {}
 }
-fetchLocalIdentity();
+fetchLocalIdentity(); */
 
 // Visible row observer
 const _rowObserver = new IntersectionObserver(
@@ -3158,8 +3159,17 @@ function buildPlayerIdentityRow() {
 
       <div style="height:1px; background: linear-gradient(90deg, transparent, #463720, transparent); margin:8px 0;"></div>
 
-      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-bottom:2px;">Your Identity <span style="font-size:9px; color:#5b5a56; font-weight:normal;">(Client-Side CSS)</span></div>
-      <div style="font-size:10px; color:#5b5a56; margin-bottom:4px;">Replace your banner or border locally (profile &amp; lobby).</div>
+      <div style="font-size:11px; font-weight:bold; color:#c8aa6e; margin-bottom:2px;">Your Identity <span style="font-size:9px; color:#5b5a56; font-weight:normal;">(Client-Side_CSS)</span></div>
+      <div style="font-size:10px; color:#5b5a56; margin-bottom:4px;">Replace your banner, border or icon/avatar locally (profile &amp; lobby).</div>
+      <div class="ci-inline-row" style="margin-bottom:4px;">
+        <div class="ci-field" style="grid-column: span 2;">
+          <div class="ci-label">Custom Icon/Avatar URL</div>
+          <div style="display:flex;gap:4px;">
+            <input class="ci-input" id="pi-my-icon-url" type="text" placeholder="./assets/my-icon.png" style="font-size:12px; padding:8px 10px;flex:1;">
+            <button class="ci-btn-prop" id="pi-my-icon-browse" title="Browse files">+</button>
+          </div>
+        </div>
+      </div>
       <div class="ci-inline-row">
         <div class="ci-field" style="grid-column: span 2;">
           <div class="ci-label">Custom Banner URL</div>
@@ -3367,6 +3377,9 @@ function buildPlayerIdentityRow() {
   row.querySelector("#pi-border-browse").addEventListener("click", () => {
     attachFilePickerToInput(row.querySelector("#pi-border-url"));
   });
+  row.querySelector("#pi-my-icon-browse").addEventListener("click", () => {
+    attachFilePickerToInput(row.querySelector("#pi-my-icon-url"));
+  });
   row.querySelector("#pi-my-banner-browse").addEventListener("click", () => {
     attachFilePickerToInput(row.querySelector("#pi-my-banner-url"));
   });
@@ -3413,7 +3426,20 @@ function buildPlayerIdentityRow() {
   });
 
   // Apply button
-  row.querySelector("#pi-apply-btn").addEventListener("click", () => {
+  row.querySelector("#pi-apply-btn").addEventListener("click", async () => {
+    const myIconUrl = row.querySelector("#pi-my-icon-url").value.trim();
+    if (myIconUrl) {
+      try {
+        const r = await fetch("/lol-summoner/v1/current-summoner");
+        const data = await r.json();
+        if (data && data.puuid) {
+          _localPuuid = data.puuid;
+          _localSummonerId = data.summonerId || data.id;
+        }
+      } catch (e) {
+        console.warn("[Snooze-CSS] Dynamic fetch of local identity failed:", e);
+      }
+    }
     const myBannerUrl = row.querySelector("#pi-my-banner-url").value.trim();
     const myBorderUrl = row.querySelector("#pi-my-border-url").value.trim();
     const myCrystalUrl = row.querySelector("#pi-my-crystal-url").value.trim();
@@ -3463,6 +3489,69 @@ function buildPlayerIdentityRow() {
     };
 
     // Your Identity (scoped via :host-context)
+    if (myIconUrl) {
+      lines.push("/* Personal Icon/Avatar */");
+      lines.push(`:host-context(lol-regalia-profile-v2-element[is-searched="false"]) .lol-regalia-summoner-icon, /* profile page */`);
+      lines.push(`:host-context(.local-player) .lol-regalia-summoner-icon, /* lobby */`);
+      lines.push(`.lol-social-avatar lol-uikit-radial-progress.summoner-level-icon img.icon-image, /* social bar */`);
+      lines.push(`.tft-cards-first-row-middle .icon-wrapper .icon-image /* tft LOBBY */ {`);
+      lines.push(`  content: url('${myIconUrl}') !important;`);
+      lines.push(`  background-image: url('${myIconUrl}') !important;`);
+      lines.push(`}`);
+      
+      if (_localSummonerId) {
+        lines.push(`lol-regalia-hovercard-v2-element[summoner-id="${_localSummonerId}"]::before /* Hover Card*/{`);
+        lines.push(`  content: "";`);
+        lines.push(`  position: absolute;`);
+        lines.push(`  width: 64px;`);
+        lines.push(`  height: 64px;`);
+        lines.push(`  top: 50%;`);
+        lines.push(`  left: 50%;`);
+        lines.push(`  transform: translate(-50%, -50%);`);
+        lines.push(`  border-radius: 50%;`);
+        lines.push(`  background: url('${myIconUrl}') center/cover no-repeat;`);
+        lines.push(`  z-index: 1;`);
+        lines.push(`  pointer-events: none;`);
+        lines.push(`}`);
+
+        lines.push(`lol-regalia-parties-v2-element[summoner-id="${_localSummonerId}"]::before /* Arena hover card*/ {`);
+        lines.push(`  content: "";`);
+        lines.push(`  position: absolute;`);
+        lines.push(`  width: 64px;`);
+        lines.push(`  height: 64px;`);
+        lines.push(`  top: 50%;`);
+        lines.push(`  left: 50%;`);
+        lines.push(`  transform: translate(-50%, -50%);`);
+        lines.push(`  border-radius: 50%;`);
+        lines.push(`  background: url('${myIconUrl}') center/cover no-repeat;`);
+        lines.push(`  z-index: 1;`);
+        lines.push(`  pointer-events: none;`);
+        lines.push(`}`);
+      }
+
+      if (_localPuuid) {
+        lines.push(`lol-regalia-crest-v2-element[voice-puuid="${_localPuuid}"]::before /* Arena summoner icon need PUUID*/{`);
+        lines.push(`  content: "";`);
+        lines.push(`  position: absolute;`);
+        lines.push(`  width: 34px;`);
+        lines.push(`  height: 34px;`);
+        lines.push(`  top: 50%;`);
+        lines.push(`  left: 50%;`);
+        lines.push(`  transform: translate(-50%, -50%);`);
+        lines.push(`  border-radius: 50%;`);
+        lines.push(`  background: url('${myIconUrl}') center/cover no-repeat;`);
+        lines.push(`  pointer-events: none;`);
+        lines.push(`  z-index: 1;`);
+        lines.push(`}`);
+      }
+
+      lines.push(`.v2-lobby-root-component lol-regalia-parties-v2-element::before,`);
+      lines.push(`.regalia-parties-v2-root lol-regalia-parties-v2-element::before,`);
+      lines.push(`.regalia-parties-v2-root lol-regalia-crest-v2-element::before {`);
+      lines.push(`  display: none !important;`);
+      lines.push(`}`);
+    }
+
     if (myBannerUrl) {
       lines.push("/* Personal Banner */");
       lines.push(`:host-context(.local-player) .regalia-banner-asset-static img,`);
