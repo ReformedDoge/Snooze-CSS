@@ -1,9 +1,10 @@
+import { flattenCSS } from "./css-parser.js";
+
 // SHADOW ROOT MANAGER
 
 // Global registry
 // WeakMap for automatic GC of metadata when the shadow root is destroyed
 let _shadowRegistry = new WeakMap();
-// Set of WeakRefs to allow iteration while still being memory-safe
 let _iterableShadowRoots = new Set();
 
 let _isInitialized = false;
@@ -95,14 +96,24 @@ export function applyCSSToAllRoots(cssText) {
 
   _currentCssCache = cssText;
 
-  // Extract @import rules
+  // Flatten the CSS
+  let flatCss = "";
+  try {
+    flatCss = flattenCSS(cssText);
+  } catch (err) {
+    console.error("[Snooze-CSS] CSS Flattener failed, falling back to raw", err);
+    flatCss = cssText;
+  }
+
+  // Extract @import and @font-face rules in a single pass
+  // @font-face MUST live in the main document's light DOM to function in CEF
   let importRules = "";
-  const safeCssText = cssText.replace(/@import\s+(?:url\([^)]+\)|["'][^"']+["'])[^;]*;/gi, (match) => {
+  let safeCssText = flatCss.replace(/(@import\s+(?:url\([^)]+\)|["'][^"']+["'])[^;]*;|@font-face\s*\{[\s\S]*?\})/gi, (match) => {
     importRules += match + "\n";
     return "";
   });
 
-  // 1. Main document injection
+  // Main document injection
   let mainStyleEl = document.getElementById("__Snooze-CSS");
   if (!mainStyleEl) {
     mainStyleEl = document.createElement("style");
@@ -111,14 +122,14 @@ export function applyCSSToAllRoots(cssText) {
   }
   mainStyleEl.textContent = importRules + safeCssText;
 
-  // 2. Shared stylesheet sync
+  // Shared stylesheet sync
   try {
     _globalSheet.replaceSync(safeCssText);
   } catch (err) {
     console.warn("replaceSync failed", err);
   }
 
-  // 3. Shadow root injection
+  // Shadow root injection
   const injectedCount = injectCSSToShadowRoots();
 
   console.log(

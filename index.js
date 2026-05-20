@@ -13,7 +13,7 @@ import {
 } from "./src/shadow-manager.js";
 import { loadSettings, applyWindowEffect } from "./src/settings.js";
 import { checkForUpdates } from "./src/settings.js";
-import { getActiveProfileCSS } from "./src/storage.js";
+import { getActiveProfileCSS, Storage } from "./src/storage.js";
 
 export function init() {
   console.log("[Snooze-CSS] init");
@@ -51,7 +51,7 @@ async function injectSavedCSS() {
   } catch (err) {
     // Fallback
     try {
-      const raw = await DataStore.get("Snooze-CSS-css");
+      const raw = await Storage.get("Snooze-CSS-css");
       if (raw) {
         const resolved = resolveAssetUrls(raw);
         applyCSSToAllRoots(resolved);

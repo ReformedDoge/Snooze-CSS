@@ -14,10 +14,12 @@ import {
   serializeNodesToCss,
   parseCssToMap,
   serializeMapToCss,
+  beautifyCSS,
 } from "./css-parser.js";
 import { switchTab, getBackdrop, getModalEl } from "./modal.js";
 import { applyCSSToAllRoots } from "./shadow-manager.js";
 import { getSettings } from "./settings.js";
+
 
 export function sendToRaw(snippet = null) {
   if (snippet) appendToRaw(snippet);
@@ -36,6 +38,7 @@ export function setCssProperty(selector, prop, val) {
   textareaEl.value = updateCssString(textareaEl.value, selector, {
     [prop]: finalVal,
   });
+  markUnsaved();
   updateLineCount();
   updateScrollBtns();
 }
@@ -55,6 +58,7 @@ export function setCssBatch(selector, propsObj) {
     selector,
     importantProps,
   );
+  markUnsaved();
   updateLineCount();
   updateScrollBtns();
 }
@@ -70,6 +74,7 @@ export function replaceOrAppendBlock(snippet, startMarker, endMarker) {
         val.substring(0, startIdx) +
         snippet +
         val.substring(endIdx + endMarker.length);
+      markUnsaved();
       updateLineCount();
       updateScrollBtns();
       switchTab("raw");
@@ -140,6 +145,36 @@ const FALLBACK_VALUES = {
   "user-select": ["none", "auto", "text"],
 };
 
+let _hasUnsavedEdits = false;
+let _hasUnappliedEdits = false;
+let saveBtnEl = null;
+let applyBtnEl = null;
+
+function updateSaveStateUI() {
+  if (!saveBtnEl || !applyBtnEl) return;
+  if (_hasUnsavedEdits) {
+    saveBtnEl.textContent = "Save *";
+    saveBtnEl.style.color = "#c8aa6e";
+  } else {
+    saveBtnEl.textContent = "Saved";
+    saveBtnEl.style.color = "";
+  }
+  
+  if (_hasUnappliedEdits) {
+    applyBtnEl.textContent = "Apply *";
+    applyBtnEl.style.color = "#c8aa6e";
+  } else {
+    applyBtnEl.textContent = "Applied";
+    applyBtnEl.style.color = "";
+  }
+}
+
+function markUnsaved() {
+  _hasUnsavedEdits = true;
+  _hasUnappliedEdits = true;
+  updateSaveStateUI();
+}
+
 export function buildRawTab(container) {
   container.innerHTML = `
     <div class="ci-raw-header">
@@ -183,7 +218,13 @@ export function buildRawTab(container) {
   scrollBottomBtn = container.querySelector("#ci-scroll-bottom");
   flashEl = container.querySelector("#ci-flash-raw");
 
-  textareaEl.addEventListener("input", onTextareaInput);
+  saveBtnEl = container.querySelector("#ci-btn-save");
+  applyBtnEl = container.querySelector("#ci-btn-apply");
+
+  textareaEl.addEventListener("input", () => {
+    markUnsaved();
+    onTextareaInput();
+  });
   textareaEl.addEventListener("keydown", onTextareaKeydown);
   textareaEl.addEventListener("blur", () => hideAC());
   textareaEl.addEventListener("scroll", updateScrollBtns);
@@ -419,13 +460,16 @@ function acMoveFocus(dir) {
 function formatCSS() {
   if (!textareaEl) return;
   const nodes = parseCssToNodes(textareaEl.value);
-  textareaEl.value = serializeNodesToCss(nodes);
+  let serialized = serializeNodesToCss(nodes);
+  textareaEl.value = beautifyCSS(serialized);
+  markUnsaved();
   updateLineCount();
   flash("Formatted");
 }
 
 function updateLineCount() {
-  const lines = textareaEl.value ? textareaEl.value.split("\n").length : 0;
+  const val = textareaEl.value;
+  const lines = val ? (val.match(/\n/g)?.length || 0) + 1 : 0;
   lineCountEl.textContent = `${lines} line${lines !== 1 ? "s" : ""}`;
 }
 
@@ -439,6 +483,9 @@ function flash(msg, color = "#4caf82") {
 function applyCSS(fromIde = false) {
   const css = textareaEl.value.trim();
   applyCSSToAllRoots(resolveAssetUrls(css));
+
+  _hasUnappliedEdits = false;
+  updateSaveStateUI();
 
   // Only push to the IDE if this is a manual client-side Apply
   if (!fromIde && ideSocket && ideSocket.readyState === WebSocket.OPEN) {
@@ -458,6 +505,9 @@ async function saveCSS() {
   );
   if (active) active.css = textareaEl.value;
   await saveProfiles(_profilesData);
+  
+  _hasUnsavedEdits = false;
+  updateSaveStateUI();
 }
 
 async function loadSavedCSS() {
@@ -469,6 +519,9 @@ async function loadSavedCSS() {
   );
   if (active) {
     textareaEl.value = active.css;
+    _hasUnsavedEdits = false;
+    _hasUnappliedEdits = false;
+    updateSaveStateUI();
     updateLineCount();
   }
 }
@@ -652,6 +705,9 @@ function renderProfilesList() {
         }
         _profilesData.activeId = p.id;
         textareaEl.value = p.css || "";
+        _hasUnsavedEdits = false;
+        _hasUnappliedEdits = false;
+        updateSaveStateUI();
         await saveProfiles(_profilesData);
         updateLineCount();
         applyCSS(false); // Manual activation counts as a local apply
@@ -697,6 +753,7 @@ export function appendToRaw(snippet) {
       (textareaEl.value && !textareaEl.value.endsWith("\n") ? "\n" : "") +
       snippet +
       "\n";
+    markUnsaved();
     updateLineCount();
   }
 }
@@ -708,6 +765,8 @@ export function cleanupRawTab() {
   scrollTopBtn = null;
   scrollBottomBtn = null;
   flashEl = null;
+  saveBtnEl = null;
+  applyBtnEl = null;
 
   _profilePanelEl = null;
   _profilePanelOpen = false; // Also reset the state flag

@@ -1,15 +1,32 @@
+import Utils from "./generalUtils.js";
+
 // DATA STORAGE
+// We map all old keys to the 'Snooze-css' module.
+const MODULE_NAME = "Snooze-css";
+
+// Migrate legacy keys if necessary
+Utils.Store.migrateLegacyKeys({
+  "Snooze-CSS-profiles": { module: MODULE_NAME, key: "profiles" },
+  "Snooze-CSS-css": { module: MODULE_NAME, key: "css" },
+  "Snooze-CSS-settings": { module: MODULE_NAME, key: "settings" },
+  "Snooze-CSS-tabsize": { module: MODULE_NAME, key: "tabsize" },
+});
 
 export const Storage = {
   async get(key, fallback = null) {
+    // Determine the short key
+    const shortKey = key.replace("Snooze-CSS-", "");
     try {
-      const val = await DataStore.get(key);
-      if (val === null || val === undefined) return fallback;
-      try {
-        return JSON.parse(val);
-      } catch {
-        return val;
+      const val = Utils.Store.get(MODULE_NAME, shortKey, fallback);
+      // Utils.Store.get already handles parsed JSON in many cases, but if it returned a raw JSON string for some reason:
+      if (typeof val === "string" && (val.startsWith("{") || val.startsWith("["))) {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return val;
+        }
       }
+      return val;
     } catch (e) {
       console.warn("[Snooze-CSS] Storage.get failed for key:", key, e);
       return fallback;
@@ -17,10 +34,10 @@ export const Storage = {
   },
 
   async set(key, value) {
+    const shortKey = key.replace("Snooze-CSS-", "");
     try {
-      const serialized =
-        typeof value === "string" ? value : JSON.stringify(value);
-      await DataStore.set(key, serialized);
+      // Serialize only if necessary, though Utils.Store natively supports objects
+      Utils.Store.set(MODULE_NAME, shortKey, value);
       return true;
     } catch (e) {
       console.error("[Snooze-CSS] Storage.set failed for key:", key, e);
@@ -29,8 +46,9 @@ export const Storage = {
   },
 
   async remove(key) {
+    const shortKey = key.replace("Snooze-CSS-", "");
     try {
-      await DataStore.remove(key);
+      Utils.Store.remove(MODULE_NAME, shortKey);
       return true;
     } catch (e) {
       console.error("[Snooze-CSS] Storage.remove failed for key:", key, e);
