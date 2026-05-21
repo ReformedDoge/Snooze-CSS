@@ -3,14 +3,13 @@ import { flattenCSS } from "./css-parser.js";
 // SHADOW ROOT MANAGER
 
 // Global registry
-// WeakMap for automatic GC of metadata when the shadow root is destroyed
 let _shadowRegistry = new WeakMap();
 let _iterableShadowRoots = new Set();
 
 let _isInitialized = false;
 let _originalAttachShadow = null;
-let _currentCssCache = "";
-export const _globalSheet = new CSSStyleSheet();
+export let _globalSheet = new CSSStyleSheet();
+_globalSheet._isSnooze = true;
 
 // Initialize manager
 export function initShadowRootManager() {
@@ -27,15 +26,8 @@ export function initShadowRootManager() {
     _shadowRegistry.set(shadowRoot, { host: this });
     _iterableShadowRoots.add(new WeakRef(shadowRoot));
 
-    /*console.log(
-      "[Snooze-CSS] Shadow root created for",
-      this.tagName,
-      this.className || this.id || "",
-    );*/
-
     if (this.id !== "snooze-css-host") {
       try {
-        // Prevent UI frameworks from overwriting sheets
         const desc = Object.getOwnPropertyDescriptor(
           ShadowRoot.prototype,
           "adoptedStyleSheets",
@@ -43,15 +35,17 @@ export function initShadowRootManager() {
         if (desc && desc.set) {
           Object.defineProperty(shadowRoot, "adoptedStyleSheets", {
             set: function (val) {
-              if (val && !val.includes(_globalSheet))
-                val = [...val, _globalSheet];
+              if (val) {
+                val = val.filter(s => !s._isSnooze);
+                val.push(_globalSheet);
+              }
               desc.set.call(this, val);
             },
             get: desc.get,
           });
         }
         shadowRoot.adoptedStyleSheets = [
-          ...shadowRoot.adoptedStyleSheets,
+          ...shadowRoot.adoptedStyleSheets.filter(s => !s._isSnooze),
           _globalSheet,
         ];
       } catch (err) {}
@@ -78,10 +72,10 @@ function _scanExistingShadowRoots(root) {
         _shadowRegistry.set(node.shadowRoot, { host: node });
         _iterableShadowRoots.add(new WeakRef(node.shadowRoot));
         try {
-          const sheets = node.shadowRoot.adoptedStyleSheets;
-          if (!sheets.includes(_globalSheet)) {
-            node.shadowRoot.adoptedStyleSheets = [...sheets, _globalSheet];
-          }
+          let sheets = node.shadowRoot.adoptedStyleSheets;
+          sheets = sheets.filter(s => !s._isSnooze);
+          sheets.push(_globalSheet);
+          node.shadowRoot.adoptedStyleSheets = sheets;
         } catch (err) {}
         _scanExistingShadowRoots(node.shadowRoot);
       }
@@ -94,9 +88,7 @@ function _scanExistingShadowRoots(root) {
 export function applyCSSToAllRoots(cssText) {
   if (typeof cssText !== "string") return false;
 
-  _currentCssCache = cssText;
-
-  // Flatten the CSS
+  // Flatten the CSS (preserves @keyframes safely)
   let flatCss = "";
   try {
     flatCss = flattenCSS(cssText);
@@ -105,7 +97,7 @@ export function applyCSSToAllRoots(cssText) {
     flatCss = cssText;
   }
 
-  // Extract @import and @font-face rules in a single pass
+  // Extract @import and @font-face rules
   // @font-face MUST live in the main document's light DOM to function in CEF
   let importRules = "";
   let safeCssText = flatCss.replace(/(@import\s+(?:url\([^)]+\)|["'][^"']+["'])[^;]*;|@font-face\s*\{[\s\S]*?\})/gi, (match) => {
@@ -113,18 +105,20 @@ export function applyCSSToAllRoots(cssText) {
     return "";
   });
 
-  // Main document injection
+  // Main document injection - completely recreate the tag to bust CEF cache
   let mainStyleEl = document.getElementById("__Snooze-CSS");
-  if (!mainStyleEl) {
-    mainStyleEl = document.createElement("style");
-    mainStyleEl.id = "__Snooze-CSS";
-    document.head.appendChild(mainStyleEl);
-  }
+  if (mainStyleEl) mainStyleEl.remove();
+  mainStyleEl = document.createElement("style");
+  mainStyleEl.id = "__Snooze-CSS";
   mainStyleEl.textContent = importRules + safeCssText;
+  document.head.appendChild(mainStyleEl);
 
-  // Shared stylesheet sync
+  // Shared stylesheet sync - recreate the sheet to bust CEF cache
+  const newSheet = new CSSStyleSheet();
+  newSheet._isSnooze = true;
   try {
-    _globalSheet.replaceSync(safeCssText);
+    newSheet.replaceSync(safeCssText);
+    _globalSheet = newSheet;
   } catch (err) {
     console.warn("replaceSync failed", err);
   }
@@ -148,10 +142,11 @@ function injectCSSToShadowRoots() {
     try {
       if (shadowRoot.host.id === "snooze-css-host") return;
 
-      const sheets = shadowRoot.adoptedStyleSheets;
-      if (!sheets.includes(_globalSheet)) {
-        shadowRoot.adoptedStyleSheets = [...sheets, _globalSheet];
-      }
+      let sheets = shadowRoot.adoptedStyleSheets;
+      sheets = sheets.filter(s => !s._isSnooze);
+      sheets.push(_globalSheet);
+      shadowRoot.adoptedStyleSheets = sheets;
+      
       count++;
     } catch (err) {}
   });
@@ -166,14 +161,16 @@ export function getShadowRoots() {
 
   _iterableShadowRoots.forEach((ref) => {
     const sr = ref.deref();
-    if (!sr || !sr.host || !sr.host.isConnected) {
+    // Do NOT purge detached elements (host.isConnected === false) on startup!
+    // Detached elements are still alive and will be connected to the DOM soon.
+    if (!sr || !sr.host) {
       deadRefs.push(ref);
       return;
     }
     result.push({ shadowRoot: sr, host: sr.host });
   });
 
-  // Prune the iterable set to keep it lean
+  // Prune the iterable set to keep it lean (only truly GC'd ones)
   deadRefs.forEach((ref) => _iterableShadowRoots.delete(ref));
 
   return result;

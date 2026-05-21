@@ -30,6 +30,19 @@ export function init() {
   initResolver(import.meta.url);
   injectSavedCSS();
 
+  // Workaround for Web Component / CEF @keyframes startup bug
+  // Detached shadow roots fail to resolve keyframes in older CEF builds
+  // We wait until the main client navigation shell is fully connected to the DOM,
+  // then silently re-apply the active profile to kickstart the animations.
+  if (window.rcp) {
+    window.rcp.whenReady('rcp-fe-lol-navigation').then(() => {
+      setTimeout(() => {
+        console.log("[Snooze-CSS] Navigation ready, kickstarting animations...");
+        injectSavedCSS();
+      }, 1000);
+    });
+  }
+
   document.addEventListener("keydown", (e) => {
     if (e.altKey && e.key.toLowerCase() === "c") {
       e.preventDefault();

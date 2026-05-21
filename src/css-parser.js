@@ -466,9 +466,40 @@ export function flattenCSS(css) {
           let inner = parseBlock([], statement);
           topLevel.push(...inner);
         } else {
-          // It's a flat block like @font-face or @keyframes.
-          let inner = parseBlock([statement], null);
-          topLevel.push(...inner);
+          // Do NOT flatten @keyframes, @font-face, etc.
+          // Extract the raw block and preserve it exactly as written.
+          let depth = 1;
+          let blockStart = i - 1; // Start at the opening '{'
+          while (i < css.length) {
+            if (css[i] === '/' && css[i + 1] === '*') {
+               let end = css.indexOf('*/', i + 2);
+               i = end === -1 ? css.length : end + 2;
+               continue;
+            }
+            if (css[i] === '"' || css[i] === "'") {
+               let quote = css[i];
+               i++;
+               while(i < css.length && css[i] !== quote) {
+                  if (css[i] === '\\') i++;
+                  i++;
+               }
+               i++;
+               continue;
+            }
+            if (css[i] === '{') depth++;
+            else if (css[i] === '}') {
+              depth--;
+              if (depth === 0) {
+                i++;
+                break;
+              }
+            }
+            i++;
+          }
+          
+          // Append the preserved block directly to the final CSS output
+          let blockBody = css.slice(blockStart, i);
+          result += statement + " " + blockBody + "\n\n";
         }
       } else {
         // Slice off trailing semicolon on flat at-rules to prevent double semicolons
