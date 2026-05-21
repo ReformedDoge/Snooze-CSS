@@ -563,30 +563,46 @@ function settingsUtils(context, pluginConfig) {
 
 const Assets = {
   champs: {}, items: {}, spells: {}, perks: {}, queues: [],
+  _initPromise: null,
   _initialized: false,
   async init() {
-    if (this._initialized || !LCU) return;
-    this._initialized = true;
-    try {
-      const [c, i, s, p, ps, q] = await Promise.all([
-        LCU.get('/lol-game-data/assets/v1/champion-summary.json').catch(()=>[]),
-        LCU.get('/lol-game-data/assets/v1/items.json').catch(()=>[]),
-        LCU.get('/lol-game-data/assets/v1/summoner-spells.json').catch(()=>[]),
-        LCU.get('/lol-game-data/assets/v1/perks.json').catch(()=>[]),
-        LCU.get('/lol-game-data/assets/v1/perkstyles.json').catch(()=>({styles:[]})),
-        LCU.get('/lol-game-queues/v1/queues').catch(()=>[])
-      ]);
-      if (Array.isArray(c)) c.forEach(x => this.champs[x.id] = x);
-      if (Array.isArray(i)) i.forEach(x => this.items[x.id] = x);
-      if (Array.isArray(s)) s.forEach(x => this.spells[x.id] = x);
-      if (Array.isArray(p)) p.forEach(x => this.perks[x.id] = x);
-      if (ps && Array.isArray(ps.styles)) ps.styles.forEach(x => this.perks[x.id] = x);
-      if (Array.isArray(q)) {
-        this.queues = q.filter(x => x.name && x.id).map(x => ({
-          id: x.id, name: x.shortName || x.name, tag: 'q_' + x.id
-        })).sort((a, b) => a.name.localeCompare(b.name));
+    if (!LCU) return;
+    if (this._initPromise) return this._initPromise;
+
+    this._initPromise = (async () => {
+      try {
+        const [c, i, s, p, ps, q] = await Promise.all([
+          LCU.get('/lol-game-data/assets/v1/champion-summary.json').catch(()=>[]),
+          LCU.get('/lol-game-data/assets/v1/items.json').catch(()=>[]),
+          LCU.get('/lol-game-data/assets/v1/summoner-spells.json').catch(()=>[]),
+          LCU.get('/lol-game-data/assets/v1/perks.json').catch(()=>[]),
+          LCU.get('/lol-game-data/assets/v1/perkstyles.json').catch(()=>({styles:[]})),
+          LCU.get('/lol-game-queues/v1/queues').catch(()=>[])
+        ]);
+        if (Array.isArray(c) && c.length > 0) c.forEach(x => this.champs[x.id] = x);
+        if (Array.isArray(i) && i.length > 0) i.forEach(x => this.items[x.id] = x);
+        if (Array.isArray(s) && s.length > 0) s.forEach(x => this.spells[x.id] = x);
+        if (Array.isArray(p) && p.length > 0) p.forEach(x => this.perks[x.id] = x);
+        if (ps && Array.isArray(ps.styles) && ps.styles.length > 0) ps.styles.forEach(x => this.perks[x.id] = x);
+        if (Array.isArray(q) && q.length > 0) {
+          this.queues = q.filter(x => x.name && x.id).map(x => ({
+            id: x.id, name: x.shortName || x.name, tag: 'q_' + x.id
+          })).sort((a, b) => a.name.localeCompare(b.name));
+        }
+        
+        this._initialized = true;
+
+        if (this.queues.length === 0 || Object.keys(this.champs).length === 0) {
+          this._initPromise = null;
+          this._initialized = false;
+        }
+      } catch (e) {
+        this._initPromise = null;
+        this._initialized = false;
       }
-    } catch (e) {}
+    })();
+
+    return this._initPromise;
   },
   getIcon(type, id) {
     if (!id || id <= 0) return '';
