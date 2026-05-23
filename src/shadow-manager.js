@@ -1,8 +1,14 @@
 import { flattenCSS } from "./css-parser.js";
+import { Utils } from "./generalUtils.js";
 
 // Global registry
 let _shadowRegistry = new WeakMap();
 let _iterableShadowRoots = new Set();
+
+// Iframe registry
+let _iterableIframes = new Set(); // Set<WeakRef<HTMLIFrameElement>>
+let _iframeObserver = null;
+let _lastSafeCssText = ""; // cached for re-injection on iframe load
 
 let _isInitialized = false;
 let _originalAttachShadow = null;
@@ -40,8 +46,12 @@ export function initShadowRootManager() {
 
   _isInitialized = true;
 
-  // Scan existing DOM
+  // Scan existing DOM for shadow roots and iframes
   _scanExistingShadowRoots(document.documentElement);
+  _scanExistingIframes(document.documentElement);
+
+  // Watch for new iframes added to DOM
+  _startIframeObserver();
 
   console.log("[Snooze-CSS] Shadow root manager initialized");
 }
@@ -73,6 +83,82 @@ function _scanExistingShadowRoots(root) {
   }
 }
 
+// Walk DOM for same-origin iframes
+function _scanExistingIframes(root) {
+  let elements;
+  try {
+    // root might be a ShadowRoot or a Document fragment — querySelectorAll works on both
+    elements = root.querySelectorAll("iframe");
+  } catch {
+    return;
+  }
+
+  elements.forEach((iframe) => _registerIframe(iframe));
+}
+
+// Register a single iframe, attach load listener, inject immediately if ready
+function _registerIframe(iframe) {
+  // Deduplicate via WeakRef scan
+  for (const ref of _iterableIframes) {
+    if (ref.deref() === iframe) return; // already tracked
+  }
+
+  _iterableIframes.add(new WeakRef(iframe));
+
+  // Inject now if the document is already accessible
+  _tryInjectToIframe(iframe);
+
+  // Re-inject whenever the iframe navigates / reloads
+  iframe.addEventListener("load", () => {
+    _tryInjectToIframe(iframe);
+  });
+}
+
+// Inject _lastSafeCssText into an iframe's document as a <style> tag
+function _tryInjectToIframe(iframe) {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc || !doc.head) return false;
+
+    let styleEl = doc.getElementById("__Snooze-CSS-iframe");
+    if (!styleEl) {
+      styleEl = doc.createElement("style");
+      styleEl.id = "__Snooze-CSS-iframe";
+      doc.head.appendChild(styleEl);
+    }
+    styleEl.textContent = _lastSafeCssText;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// MutationObserver to catch iframes added after init
+function _startIframeObserver() {
+  if (_iframeObserver) return;
+  _iframeObserver = Utils.DOM.observer.observe("iframe", _registerIframe);
+}
+
+// Inject CSS to all tracked iframes, return count
+function injectCSSToIframes() {
+  let count = 0;
+  const dead = [];
+
+  _iterableIframes.forEach((ref) => {
+    const iframe = ref.deref();
+
+    if (!iframe || !iframe.isConnected) {
+      dead.push(ref);
+      return;
+    }
+
+    if (_tryInjectToIframe(iframe)) count++;
+  });
+
+  dead.forEach((ref) => _iterableIframes.delete(ref));
+  return count;
+}
+
 // Apply CSS globally
 export function applyCSSToAllRoots(cssText) {
   if (typeof cssText !== "string") return false;
@@ -97,6 +183,9 @@ export function applyCSSToAllRoots(cssText) {
     }
   );
 
+  // Cache for iframe re-injection on load events
+  _lastSafeCssText = safeCssText;
+
   // MAIN DOCUMENT INJECTION (force full refresh to apply animations correctly)
   let mainStyleEl = document.getElementById("__Snooze-CSS");
 
@@ -115,10 +204,14 @@ export function applyCSSToAllRoots(cssText) {
   }
 
   // Sync shadow roots
-  const injectedCount = injectCSSToShadowRoots();
+  const shadowCount = injectCSSToShadowRoots();
+
+  // Sync iframes — also pick up any iframes added since init
+  _scanExistingIframes(document.documentElement);
+  const iframeCount = injectCSSToIframes();
 
   console.log(
-    `[Snooze-CSS] CSS applied: main document + ${injectedCount} shadow root(s)`
+    `[Snooze-CSS] CSS applied: main document + ${shadowCount} shadow root(s) + ${iframeCount} iframe(s)`
   );
 
   return true;
@@ -163,6 +256,27 @@ export function getShadowRoots() {
   });
 
   deadRefs.forEach((ref) => _iterableShadowRoots.delete(ref));
+
+  return result;
+}
+
+// Get tracked iframes
+export function getIframes() {
+  const result = [];
+  const deadRefs = [];
+
+  _iterableIframes.forEach((ref) => {
+    const iframe = ref.deref();
+
+    if (!iframe || !iframe.isConnected) {
+      deadRefs.push(ref);
+      return;
+    }
+
+    result.push(iframe);
+  });
+
+  deadRefs.forEach((ref) => _iterableIframes.delete(ref));
 
   return result;
 }

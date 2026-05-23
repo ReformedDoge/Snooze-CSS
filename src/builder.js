@@ -8,9 +8,10 @@ import {
   applyWindowEffect,
 } from "./settings.js";
 import { rgbToHex, escHtml, flashMessage, buildStrategicSelector, attachFilePicker } from "./utils.js";
-import { getBackdrop } from "./modal.js";
-import { getShadowRoots } from "./shadow-manager.js";
+import { getBackdrop, getModalEl, isPopoutMode, setPopupPickerMode } from "./modal.js";
+import { getShadowRoots, getIframes } from "./shadow-manager.js";
 import { extractAndNavigate, collectFromNode, buildCompactAssetRow } from "./assets.js";
+import Utils from "./generalUtils.js";
 
 // SESSION STATE
 const _collapseState = new Map();
@@ -3393,35 +3394,21 @@ function buildPlayerIdentityRow() {
   // Server-side buttons
   row.querySelector("#pi-srv-remove-banner").addEventListener("click", () => {
     const flash = row.querySelector("#pi-srv-flash");
-    fetch("/lol-challenges/v1/update-player-preferences", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "accept": "application/json" },
-      body: JSON.stringify({ bannerAccent: "2" }),
-    }).then((r) => {
-      if (r.ok) {
+    Utils.LCU.post("/lol-challenges/v1/update-player-preferences", { bannerAccent: "2" })
+    .then(() => {
         flashMessage(flash, "Banner removed!", "#4caf82");
-      } else {
-        flashMessage(flash, `Banner removal failed (${r.status})`, "#e49429");
-      }
-    }).catch(() => {
-      flashMessage(flash, "Banner removal failed (network error)", "#e49429");
+    }).catch((e) => {
+        flashMessage(flash, `Banner removal failed (${e.message || 'network error'})`, "#e49429");
     });
   });
 
   row.querySelector("#pi-srv-remove-border").addEventListener("click", () => {
     const flash = row.querySelector("#pi-srv-flash");
-    fetch("/lol-regalia/v2/current-summoner/regalia", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", "accept": "application/json" },
-      body: JSON.stringify({ preferredCrestType: "prestige", preferredBannerType: "blank" }),
-    }).then((r) => {
-      if (r.ok) {
+    Utils.LCU.put("/lol-regalia/v2/current-summoner/regalia", { preferredCrestType: "prestige", preferredBannerType: "blank" })
+    .then(() => {
         flashMessage(flash, "Border removed!", "#4caf82");
-      } else {
-        flashMessage(flash, `Border removal failed (${r.status})`, "#e49429");
-      }
-    }).catch(() => {
-      flashMessage(flash, "Border removal failed (network error)", "#e49429");
+    }).catch((e) => {
+        flashMessage(flash, `Border removal failed (${e.message || 'network error'})`, "#e49429");
     });
   });
 
@@ -3430,8 +3417,7 @@ function buildPlayerIdentityRow() {
     const myIconUrl = row.querySelector("#pi-my-icon-url").value.trim();
     if (myIconUrl) {
       try {
-        const r = await fetch("/lol-summoner/v1/current-summoner");
-        const data = await r.json();
+        const data = await Utils.LCU.get("/lol-summoner/v1/current-summoner");
         if (data && data.puuid) {
           _localPuuid = data.puuid;
           _localSummonerId = data.summonerId || data.id;
@@ -7370,7 +7356,15 @@ function findCatalogMatch(sel) {
 // ELEMENT PICKER
 export function startElementPicker(onPickCallback) {
   const backdrop = getBackdrop();
-  if (backdrop) backdrop.style.display = "none";
+  const popout = isPopoutMode();
+
+  if (popout) {
+    // Shrink the popup window to a slim strip so the user can see/click
+    // the League client behind it, then restore after picking.
+    setPopupPickerMode(true);
+  } else {
+    if (backdrop) backdrop.style.display = "none";
+  }
   const overlay = document.createElement("div");
   overlay.id = "ci-inspector-overlay";
   overlay.style.cssText =
@@ -7378,8 +7372,14 @@ export function startElementPicker(onPickCallback) {
   const label = document.createElement("div");
   label.style.cssText =
     'position:fixed; pointer-events:none; z-index:999999; background:#091220; color:#c8aa6e; border:1px solid #c8aa6e; font-family:"Fira Code",monospace; padding:4px 8px; white-space:nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.7); display:none; transition:all 0.1s ease-out;';
+  
+  const captureLayer = document.createElement("div");
+  captureLayer.id = "ci-inspector-capture";
+  captureLayer.style.cssText = "position:fixed; inset:0; z-index:999997; background:transparent; pointer-events:auto; cursor:crosshair;";
+  
   document.body.appendChild(overlay);
   document.body.appendChild(label);
+  document.body.appendChild(captureLayer);
   
   const settings = getSettings();
   let isGlobal = settings.lastGlobalToggle || false;
@@ -7387,8 +7387,9 @@ export function startElementPicker(onPickCallback) {
   let isInShadow = false; // tracks whether currentTarget lives inside a shadow root
   let isLocked = false;
 
-  // Shadow-piercing elementFromPoint
+  // Shadow-piercing and iframe-piercing elementFromPoint
   function deepElementFromPoint(x, y) {
+    captureLayer.style.pointerEvents = "none";
     // Start with the document-level hit
     let best = document.elementFromPoint(x, y);
     let bestArea = best
@@ -7427,6 +7428,34 @@ export function startElementPicker(onPickCallback) {
       }
     }
 
+    const iframes = getIframes();
+    for (const iframe of iframes) {
+      try {
+        const hostRect = iframe.getBoundingClientRect();
+        if (
+          x < hostRect.left ||
+          x > hostRect.right ||
+          y < hostRect.top ||
+          y > hostRect.bottom
+        ) continue;
+
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!doc) continue;
+
+        const hit = doc.elementFromPoint(x - hostRect.left, y - hostRect.top);
+        if (!hit || hit === doc.documentElement || hit === doc.body) continue;
+
+        const hitRect = hit.getBoundingClientRect();
+        const area = hitRect.width * hitRect.height;
+        if (area < bestArea && area > 0) {
+          best = hit;
+          bestArea = area;
+          bestInShadow = true;
+        }
+      } catch {}
+    }
+
+    captureLayer.style.pointerEvents = "auto";
     isInShadow = bestInShadow;
     return best;
   }
@@ -7437,7 +7466,7 @@ export function startElementPicker(onPickCallback) {
   }
 
   function getShadowHostLabel(el) {
-    // Walk up until we find a shadow root, return its host selector
+    // Walk up until we find a shadow root or iframe body, return its host selector
     let node = el.parentNode;
     while (node) {
       if (node.nodeType === 11) {
@@ -7452,6 +7481,16 @@ export function startElementPicker(onPickCallback) {
       }
       node = node.parentNode;
     }
+    const doc = el.ownerDocument;
+    if (doc && doc.defaultView && doc.defaultView.frameElement) {
+       const host = doc.defaultView.frameElement;
+       const tag = host.tagName.toLowerCase();
+       const cls = [...(host.classList || [])]
+          .filter((c) => !/^(ng-|ember)/i.test(c))
+          .slice(0, 2)
+          .join(".");
+       return tag + (cls ? "." + cls : "");
+    }
     return null;
   }
 
@@ -7461,15 +7500,38 @@ export function startElementPicker(onPickCallback) {
       if (node.parentNode && node.parentNode.nodeType === 11) return true;
       node = node.parentNode;
     }
+    const doc = el.ownerDocument;
+    if (doc && doc.defaultView && doc.defaultView.frameElement) return true;
     return false;
   }
 
   function renderOverlay() {
     if (!currentTarget) return;
     const rect = currentTarget.getBoundingClientRect();
+    
+    // Adjust rect if inside an iframe
+    let overlayTop = rect.top;
+    let overlayLeft = rect.left;
+    let doc = currentTarget.ownerDocument;
+    
+    while (doc && doc.defaultView && doc.defaultView.frameElement) {
+       const frame = doc.defaultView.frameElement;
+       const frameRect = frame.getBoundingClientRect();
+       const parentWin = frame.ownerDocument.defaultView;
+       if (parentWin) {
+         const style = parentWin.getComputedStyle(frame);
+         overlayTop += frameRect.top + parseFloat(style.borderTopWidth || 0) + parseFloat(style.paddingTop || 0);
+         overlayLeft += frameRect.left + parseFloat(style.borderLeftWidth || 0) + parseFloat(style.paddingLeft || 0);
+       } else {
+         overlayTop += frameRect.top;
+         overlayLeft += frameRect.left;
+       }
+       doc = frame.ownerDocument;
+    }
+    
     overlay.style.display = "block";
-    overlay.style.top = rect.top + "px";
-    overlay.style.left = rect.left + "px";
+    overlay.style.top = overlayTop + "px";
+    overlay.style.left = overlayLeft + "px";
     overlay.style.width = rect.width + "px";
     overlay.style.height = rect.height + "px";
     const selector = buildSelector(currentTarget);
@@ -7527,10 +7589,10 @@ export function startElementPicker(onPickCallback) {
 
     // Priority: above → below → right → left
     const _candidates = [
-      { top: rect.top  - _lH - _pad, left: rect.left                },
-      { top: rect.bottom + _pad,     left: rect.left                },
-      { top: rect.top,               left: rect.right  + _pad       },
-      { top: rect.top,               left: rect.left   - _lW - _pad },
+      { top: overlayTop  - _lH - _pad, left: overlayLeft                },
+      { top: overlayTop + rect.height + _pad, left: overlayLeft         },
+      { top: overlayTop,               left: overlayLeft + rect.width + _pad },
+      { top: overlayTop,               left: overlayLeft - _lW - _pad },
     ];
 
     let _best = _candidates.find(c => _fits(c.top, c.left)) ?? _candidates[0];
@@ -7565,7 +7627,12 @@ export function startElementPicker(onPickCallback) {
        document.removeEventListener("pointerup", blockEvent, true);
     overlay.remove();
     label.remove();
-    if (backdrop) backdrop.style.display = "flex"; // restore modal
+    captureLayer.remove();
+    if (popout) {
+      setPopupPickerMode(false); // restore popup window size
+    } else {
+      if (backdrop) backdrop.style.display = "flex"; // restore modal
+    }
   }
   function confirmSelection() {
     cleanup();
@@ -7607,10 +7674,16 @@ export function startElementPicker(onPickCallback) {
         nextTarget = currentTarget.parentElement;
       }
     } else if (e.deltaY > 0) {
-      // Step INTO shadow roots if they exist, otherwise normal light DOM
+      // Step INTO shadow roots or iframes if they exist, otherwise normal light DOM
       const sRoot = currentTarget.shadowRoot || getShadowRoots().find(r => r.host === currentTarget)?.shadowRoot;
-      nextTarget = sRoot ? sRoot.firstElementChild : currentTarget.firstElementChild;
-      //nextTarget = currentTarget.firstElementChild;
+      if (sRoot) {
+         nextTarget = sRoot.firstElementChild;
+      } else if (currentTarget.tagName === "IFRAME") {
+         const doc = currentTarget.contentDocument || currentTarget.contentWindow?.document;
+         nextTarget = doc ? doc.firstElementChild : currentTarget.firstElementChild;
+      } else {
+         nextTarget = currentTarget.firstElementChild;
+      }
     }
     if (
       nextTarget &&
@@ -7646,7 +7719,14 @@ export function startElementPicker(onPickCallback) {
             : currentTarget.parentElement;
       } else if (e.key === "ArrowDown") {
         const sRoot = currentTarget.shadowRoot || getShadowRoots().find(r => r.host === currentTarget)?.shadowRoot;
-        nextTarget = sRoot ? sRoot.firstElementChild : currentTarget.firstElementChild;
+        if (sRoot) {
+           nextTarget = sRoot.firstElementChild;
+        } else if (currentTarget.tagName === "IFRAME") {
+           const doc = currentTarget.contentDocument || currentTarget.contentWindow?.document;
+           nextTarget = doc ? doc.firstElementChild : currentTarget.firstElementChild;
+        } else {
+           nextTarget = currentTarget.firstElementChild;
+        }
       } else if (e.key === "ArrowLeft") {
         nextTarget = currentTarget.previousElementSibling;
       } else if (e.key === "ArrowRight") {

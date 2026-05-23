@@ -1,6 +1,32 @@
 // UI Styles
 
 export const STYLES = `
+    /* - Popout window overrides - */
+    /* Applied when #snooze-css-host has the .popout class */
+    :host(.popout) #css-injector-backdrop {
+      position: fixed;
+      inset: 0;
+    }
+
+    :host(.popout) #css-injector-modal {
+      position: absolute;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
+      left: 0 !important;
+      top: 0 !important;
+      border: none;
+      box-shadow: none;
+    }
+
+    :host(.popout) .ci-header {
+      cursor: default;
+    }
+
+    :host(.popout) .ci-hotkey {
+      display: none;
+    }
+
     #css-injector-backdrop {
       position: fixed;
       inset: 0;
@@ -723,7 +749,7 @@ export const STYLES = `
     /* SCROLL BUTTONS */
     .ci-scroll-btns {
       position: absolute;
-      right: 6px;
+      right: 17px;
       top: 6px;
       display: flex;
       flex-direction: column;
@@ -1290,6 +1316,23 @@ export const STYLES = `
       overflow: hidden;
       border-radius: 2px;
       font-family: 'LoL Display', 'Beaufort for LOL', serif;
+    }
+
+    /* In popout mode the panel can't slide out to the right — it would be off-screen.
+       Instead it slides down from the top as a full overlay inside the modal. */
+    :host(.popout) .ci-profiles-panel-float {
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      margin-left: 0;
+      border-radius: 0;
+      animation: ci-drop-slide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes ci-drop-slide {
+      from { opacity: 0; transform: translateY(-16px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
 
     @keyframes ci-side-slide {

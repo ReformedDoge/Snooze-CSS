@@ -16,7 +16,7 @@ import {
   serializeMapToCss,
   beautifyCSS,
 } from "./css-parser.js";
-import { switchTab, getBackdrop, getModalEl } from "./modal.js";
+import { switchTab, getBackdrop, getModalEl, getModalDocument } from "./modal.js";
 import { applyCSSToAllRoots } from "./shadow-manager.js";
 import { getSettings } from "./settings.js";
 
@@ -547,7 +547,9 @@ function showProfilesPanel() {
   if (!modal) return;
 
   if (!_profilePanelEl) {
-    _profilePanelEl = document.createElement("div");
+    // Create the element in the same document as the modal (popup or main)
+    const ownerDoc = getModalDocument();
+    _profilePanelEl = ownerDoc.createElement("div");
     _profilePanelEl.className = "ci-profiles-panel-float";
     modal.appendChild(_profilePanelEl);
   }

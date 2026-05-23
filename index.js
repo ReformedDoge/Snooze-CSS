@@ -15,7 +15,7 @@ import { loadSettings, applyWindowEffect } from "./src/settings.js";
 import { checkForUpdates } from "./src/settings.js";
 import { getActiveProfileCSS, Storage } from "./src/storage.js";
 
-export function init() {
+export function load() {
   console.log("[Snooze-CSS] init");
   // Apply settings
   loadSettings().then((settings) => {

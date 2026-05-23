@@ -19,6 +19,10 @@ const defaults = {
   blurColor: "#ff000010",
   bridgeEnabled: false,
   bridgePort: 8765,
+  openModalInNewWindow: false,
+  popoutWindowSize: "medium",
+  popoutWindowWidth: 960,
+  popoutWindowHeight: 680,
   windowEffect: {
     enabled: false,
     name: "blurbehind",
@@ -164,6 +168,12 @@ export function getSettings() {
   return state;
 }
 
+/** Set a single setting key and persist immediately. */
+export function updateSetting(key, value) {
+  state[key] = value;
+  saveSettings().catch(() => {});
+}
+
 export function setRefreshCallback(fn) {
   refreshCallback = fn;
 }
@@ -277,6 +287,129 @@ export function buildSettingsTab(container) {
 
   const wrap = document.createElement("div");
   wrap.style.cssText = "display:flex;flex-direction:column;gap:16px;";
+
+  // WINDOW BEHAVIOR
+  const windowSection = makeSection(
+    "Window Behavior",
+    "Open the Snooze-CSS UI in a separate pop-out window instead of an in-client overlay.",
+  );
+
+  function normPopupDim(value, fallback, min, max) {
+    const parsed = parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+  }
+
+  // size control (select + custom inputs) 
+  const sizeRow = document.createElement("div");
+  sizeRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
+
+  const sizeLabel = document.createElement("span");
+  sizeLabel.style.cssText = "font-size:11px;color:#8a9aaa;";
+  sizeLabel.textContent = "Window size";
+
+  const sizeControlWrap = document.createElement("div");
+  sizeControlWrap.style.cssText = "display:flex;align-items:center;gap:6px;";
+
+  const sizePresets = [
+    { label: "Small (800×560)",   value: "small" },
+    { label: "Medium (960×680)",  value: "medium" },
+    { label: "Large (1200×800)",  value: "large" },
+    { label: "Custom",            value: "custom" },
+  ];
+
+  const sizeSelect = document.createElement("select");
+  sizeSelect.className = "ci-input";
+  sizeSelect.style.cssText = "font-size:11px;padding:4px 8px;";
+  sizePresets.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.value;
+    opt.textContent = p.label;
+    opt.selected = state.popoutWindowSize === p.value;
+    sizeSelect.appendChild(opt);
+  });
+  if (!sizePresets.some((p) => p.value === state.popoutWindowSize)) {
+    state.popoutWindowSize = "medium";
+    sizeSelect.value = "medium";
+  }
+
+  const widthInput = document.createElement("input");
+  widthInput.type = "number";
+  widthInput.className = "ci-input";
+  widthInput.style.cssText = "width:68px;font-size:11px;padding:4px 6px;text-align:center;";
+  widthInput.min = "800"; widthInput.max = "3840";
+  widthInput.value = normPopupDim(state.popoutWindowWidth, 960, 600, 3840);
+
+  const dimSep = document.createElement("span");
+  dimSep.style.cssText = "font-size:11px;color:#4a6070;";
+  dimSep.textContent = "×";
+
+  const heightInput = document.createElement("input");
+  heightInput.type = "number";
+  heightInput.className = "ci-input";
+  heightInput.style.cssText = "width:68px;font-size:11px;padding:4px 6px;text-align:center;";
+  heightInput.min = "600"; heightInput.max = "2160";
+  heightInput.value = normPopupDim(state.popoutWindowHeight, 680, 400, 2160);
+
+  const syncCustomVisible = () => {
+    const isCustom = sizeSelect.value === "custom";
+    widthInput.style.display = isCustom ? "" : "none";
+    heightInput.style.display = isCustom ? "" : "none";
+    dimSep.style.display = isCustom ? "" : "none";
+  };
+  syncCustomVisible();
+
+  sizeSelect.addEventListener("change", async () => {
+    state.popoutWindowSize = sizeSelect.value;
+    syncCustomVisible();
+    await saveSettings();
+  });
+  widthInput.addEventListener("change", async () => {
+    const v = normPopupDim(widthInput.value, 960, 600, 3840);
+    widthInput.value = v;
+    state.popoutWindowWidth = v;
+    await saveSettings();
+  });
+  heightInput.addEventListener("change", async () => {
+    const v = normPopupDim(heightInput.value, 680, 400, 2160);
+    heightInput.value = v;
+    state.popoutWindowHeight = v;
+    await saveSettings();
+  });
+
+  sizeControlWrap.appendChild(sizeSelect);
+  sizeControlWrap.appendChild(widthInput);
+  sizeControlWrap.appendChild(dimSep);
+  sizeControlWrap.appendChild(heightInput);
+  sizeRow.appendChild(sizeLabel);
+  sizeRow.appendChild(sizeControlWrap);
+
+  // popout toggle 
+  const popoutToggleRow = document.createElement("div");
+  popoutToggleRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
+
+  const popoutToggleLabel = document.createElement("span");
+  popoutToggleLabel.style.cssText = "font-size:11px;color:#8a9aaa;";
+  popoutToggleLabel.textContent = "Open in separate window";
+
+  const setWindowSizeDisabled = (disabled) => {
+    sizeRow.style.opacity = disabled ? "0.35" : "1";
+    sizeRow.style.pointerEvents = disabled ? "none" : "";
+  };
+  setWindowSizeDisabled(!state.openModalInNewWindow);
+
+  const popoutToggle = makeToggle(state.openModalInNewWindow, async (val) => {
+    state.openModalInNewWindow = val;
+    setWindowSizeDisabled(!val);
+    await saveSettings();
+  });
+
+  popoutToggleRow.appendChild(popoutToggleLabel);
+  popoutToggleRow.appendChild(popoutToggle);
+
+  windowSection.appendChild(popoutToggleRow);
+  windowSection.appendChild(sizeRow);
+  wrap.appendChild(windowSection);
 
   // AUTO MONITOR
   const monSection = makeSection(
