@@ -281,7 +281,7 @@ function insertAtCursor(text, deleteCount = 0) {
   const end = textareaEl.selectionEnd;
   textareaEl.focus();
   textareaEl.setSelectionRange(start - deleteCount, end);
-  if (!document.execCommand("insertText", false, text)) {
+  if (!textareaEl.ownerDocument.execCommand("insertText", false, text)) {
     const val = textareaEl.value;
     const newCursorPos = start - deleteCount + text.length;
     textareaEl.value =
