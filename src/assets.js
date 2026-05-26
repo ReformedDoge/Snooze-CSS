@@ -690,7 +690,27 @@ function buildAssetRow(asset) {
       controlsRow.appendChild(modeWrap);
       controlsRow.appendChild(targetWrap);
       controlsRow.appendChild(baseWrap);
+      
+      const optionsRow = document.createElement("div");
+      optionsRow.style.cssText = "display:flex;gap:12px;margin-bottom:8px;align-items:center;";
+      
+      const isolateWrap = document.createElement("label");
+      isolateWrap.style.cssText = "display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;color:#a0b4c8;";
+      const isolateCheck = document.createElement("input");
+      isolateCheck.type = "checkbox";
+      isolateCheck.style.accentColor = "#c8aa6e";
+      isolateWrap.appendChild(isolateCheck);
+      isolateWrap.appendChild(document.createTextNode("Apply to background only (preserve children)"));
+      optionsRow.appendChild(isolateWrap);
+      
+      const tag = asset.domNode?.tagName?.toLowerCase() || "";
+      const isReplacedElement = tag === "img" || tag === "video" || tag === "source";
+      if (isReplacedElement) {
+         isolateWrap.style.display = "none";
+      }
+
       effectBody.appendChild(controlsRow);
+      effectBody.appendChild(optionsRow);
       
       const cssOut = document.createElement("textarea");
       cssOut.spellcheck = false;
@@ -712,6 +732,7 @@ function buildAssetRow(asset) {
          let filterStr;
          let comment = "";
          const mode = modeSelect.value;
+         const isolate = isolateCheck.checked && !isReplacedElement;
          
          if (mode === "solid") {
             filterStr = calculateSolidFilter(targetInput.value);
@@ -756,17 +777,21 @@ function buildAssetRow(asset) {
          }
          
          const type = getCssStrategy(asset).type;
-         const tag = asset.domNode?.tagName?.toLowerCase() || "";
          const videoSuffix = (type.includes("video") && tag !== "video" && tag !== "source") ? " video" : "";
          const targetSelector = selSelect.value + videoSuffix;
          
-         cssOut.value = `${comment}\n${targetSelector} {\n  filter: ${filterStr} !important;\n}`;
+         if (isolate) {
+            cssOut.value = `${comment}\n${targetSelector} {\n  position: relative !important;\n}\n${targetSelector}::before {\n  content: "" !important;\n  position: absolute !important;\n  inset: 0 !important;\n  background-image: inherit !important;\n  background-size: inherit !important;\n  background-repeat: inherit !important;\n  background-position: inherit !important;\n  filter: ${filterStr} !important;\n  pointer-events: none !important;\n  z-index: 0 !important;\n  border-radius: inherit !important;\n}\n${targetSelector} > * {\n z-index: 1 !important;\n}`;
+         } else {
+            cssOut.value = `${comment}\n${targetSelector} {\n  filter: ${filterStr} !important;\n}`;
+         }
       };
       
       modeSelect.addEventListener("change", updateFilter);
       baseInput.addEventListener("input", updateFilter);
       targetInput.addEventListener("input", updateFilter);
       selSelect.addEventListener("change", updateFilter);
+      isolateCheck.addEventListener("change", updateFilter);
       
       updateFilter();
     }

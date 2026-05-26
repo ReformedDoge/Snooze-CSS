@@ -7,7 +7,7 @@ import {
   saveSettings,
   applyWindowEffect,
 } from "./settings.js";
-import { rgbToHex, escHtml, flashMessage, buildStrategicSelector, attachFilePicker } from "./utils.js";
+import { rgbToHex, escHtml, flashMessage, buildStrategicSelector, attachFilePicker, copyText } from "./utils.js";
 import { getBackdrop, getModalEl, isPopoutMode, setPopupPickerMode } from "./modal.js";
 import { getShadowRoots, getIframes } from "./shadow-manager.js";
 import { extractAndNavigate, collectFromNode, buildCompactAssetRow } from "./assets.js";
@@ -6698,17 +6698,7 @@ function buildElementRow(el) {
   clsCode.style.cursor = "pointer";
   clsCode.addEventListener("click", (e) => {
     e.stopPropagation();
-    try {
-      navigator.clipboard.writeText(el.cls);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = el.cls;
-      ta.style.cssText = "position:fixed;opacity:0;pointer-events:none;";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
+    copyText(el.cls);
     const prev = clsCode.textContent;
     clsCode.textContent = "✓ copied";
     clsCode.style.color = "#4caf82";

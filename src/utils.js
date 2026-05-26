@@ -1,5 +1,6 @@
 import { getSettings } from "./settings.js";
 import { resolveRelativePath } from "./resolver.js";
+import { getModalDocument } from "./modal.js";
 
 // FLASH MESSAGE
 export function flashMessage(target, msg = "Added", duration = 1800) {
@@ -13,16 +14,46 @@ export function flashMessage(target, msg = "Added", duration = 1800) {
 
 // CLIPBOARD HELPERS
 export function copyText(text) {
+  const targetDoc = typeof getModalDocument === "function" ? getModalDocument() : document;
+  const targetWin = targetDoc.defaultView || window;
+  const invoke = targetWin.riotInvoke || window.riotInvoke || window.opener?.riotInvoke;
+
   try {
-    navigator.clipboard.writeText(text);
-  } catch {
-    const ta = document.createElement("textarea");
+    const ta = targetDoc.createElement("textarea");
     ta.value = text;
     ta.style.cssText = "position:fixed;opacity:0;pointer-events:none;";
-    document.body.appendChild(ta);
+    targetDoc.body.appendChild(ta);
     ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
+
+    if (typeof invoke === "function") {
+      invoke({
+        request: JSON.stringify({
+          name: "RiotClient.Copy",
+          params: []
+        })
+      });
+      setTimeout(() => {
+        try { targetDoc.body.removeChild(ta); } catch {}
+      }, 100);
+    } else if (targetWin.navigator?.clipboard?.writeText) {
+      targetWin.navigator.clipboard.writeText(text)
+        .then(() => {
+          try { targetDoc.body.removeChild(ta); } catch {}
+        })
+        .catch(() => {
+          try {
+            targetDoc.execCommand("copy");
+            targetDoc.body.removeChild(ta);
+          } catch {}
+        });
+    } else {
+      try {
+        targetDoc.execCommand("copy");
+        targetDoc.body.removeChild(ta);
+      } catch {}
+    }
+  } catch (e) {
+    console.error("[Snooze-CSS] Copy failed:", e);
   }
 }
 
