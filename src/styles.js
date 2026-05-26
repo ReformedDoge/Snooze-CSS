@@ -576,6 +576,190 @@ export const STYLES = `
       color: #4a6070;
     }
 
+    .ci-raw-editor-shell {
+      position: relative;
+    }
+
+    .ci-textarea-stack {
+      position: relative;
+      min-height: 260px;
+    }
+
+    .ci-textarea-backdrop {
+      position: absolute;
+      inset: 1px;
+      z-index: 1;
+      overflow: hidden;
+      pointer-events: none;
+      background: rgba(0,0,0,0.45);
+      opacity: 0;
+    }
+
+    .ci-search-highlights {
+      position: absolute;
+      top: 0;
+      left: 0;
+      white-space: pre;
+      color: #a8c8a0;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 11px;
+      line-height: 1.6;
+      tab-size: 2;
+      min-width: max-content;
+    }
+
+    .ci-textarea-stack--searching .ci-textarea-backdrop {
+      opacity: 1;
+    }
+
+    .ci-textarea-stack--searching .ci-textarea {
+      background: transparent;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      caret-color: #f0e6d3;
+      text-shadow: none;
+    }
+
+    .ci-textarea-stack--searching .ci-textarea::selection {
+      background: rgba(200,170,110,0.28);
+      -webkit-text-fill-color: transparent;
+    }
+
+    .ci-search-match {
+      background: rgba(200,170,110,0.24);
+      color: inherit;
+      box-shadow: inset 0 -1px 0 rgba(200,170,110,0.65);
+      padding: 0;
+    }
+
+    .ci-search-match--active {
+      background: rgba(76,175,130,0.42);
+      outline: 1px solid rgba(76,175,130,0.9);
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.35);
+    }
+
+    .ci-raw-find {
+      position: absolute;
+      top: 8px;
+      right: 28px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      max-width: calc(100% - 56px);
+      background: rgba(1,10,19,0.96);
+      border: 1px solid #1e2d3d;
+      border-bottom-color: #785a28;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.58);
+      backdrop-filter: blur(6px);
+    }
+
+    .ci-raw-find[hidden] {
+      display: none;
+    }
+
+    .ci-raw-find-row {
+      display: flex;
+      align-items: center;
+      height: 30px;
+      min-width: 0;
+    }
+
+    .ci-raw-find-row + .ci-raw-find-row {
+      border-top: 1px solid #1e2d3d;
+    }
+
+    .ci-raw-find-input {
+      width: 190px;
+      min-width: 80px;
+      flex: 1 1 auto;
+      height: 28px;
+      box-sizing: border-box;
+      background: transparent;
+      border: none;
+      border-right: 1px solid #1e2d3d;
+      color: #f0e6d3;
+      outline: none;
+      padding: 0 9px;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 11px;
+    }
+
+    .ci-raw-find-input:focus {
+      background: rgba(120,90,40,0.08);
+    }
+
+    .ci-raw-replace-input {
+      width: 244px;
+    }
+
+    .ci-raw-find-input::placeholder {
+      color: #3a5060;
+    }
+
+    .ci-raw-find-count {
+      min-width: 54px;
+      padding: 0 8px;
+      color: #4a6070;
+      font-size: 10px;
+      line-height: 30px;
+      text-align: center;
+      border-right: 1px solid #1e2d3d;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      white-space: nowrap;
+    }
+
+    .ci-raw-find-count--empty {
+      min-width: 70px;
+      color: #c84b4b;
+    }
+
+    .ci-raw-find-tool,
+    .ci-raw-find-close,
+    .ci-raw-find-action {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-right: 1px solid #1e2d3d;
+      color: #4a6070;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      line-height: 1;
+      padding: 0;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    .ci-raw-find-action {
+      width: auto;
+      min-width: 58px;
+      padding: 0 9px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .ci-raw-find-tool:hover,
+    .ci-raw-find-tool.active,
+    .ci-raw-find-action:hover {
+      background: rgba(120,90,40,0.22);
+      color: #c8aa6e;
+    }
+
+    .ci-raw-find-close {
+      border-right: none;
+      color: #6a3a3a;
+    }
+
+    .ci-raw-find-close:hover {
+      background: rgba(200,75,75,0.12);
+      color: #c84b4b;
+    }
+
     .ci-textarea {
       width: 100%;
       box-sizing: border-box;
@@ -590,6 +774,8 @@ export const STYLES = `
       border: 1px solid #1e2d3d;
       outline: none;
       transition: border-color 0.15s;
+      position: relative;
+      z-index: 2;
     }
 
     .ci-textarea:focus { border-color: #785a28; }
@@ -751,10 +937,15 @@ export const STYLES = `
       position: absolute;
       right: 17px;
       top: 6px;
+      z-index: 30;
       display: flex;
       flex-direction: column;
       gap: 3px;
       pointer-events: none;
+    }
+
+    .ci-raw-find:not([hidden]) ~ .ci-scroll-btns {
+      top: 76px;
     }
 
     /* Sticky scroll buttons */
@@ -1529,5 +1720,151 @@ export const STYLES = `
       overflow: auto;
       scrollbar-gutter: stable;
     }
-  `;
 
+    /* READABILITY PASS */
+    #css-injector-modal {
+      color: #b8c7d3;
+      font-family: "Segoe UI", Inter, "Sora", Arial, sans-serif;
+      font-size: 12px;
+      letter-spacing: 0;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    .ci-title {
+      font-size: 14px;
+      letter-spacing: 0.07em;
+      color: #d7bd7a;
+    }
+
+    .ci-version-tag,
+    .ci-hotkey,
+    .ci-line-count,
+    .ci-raw-label,
+    .ci-label,
+    .ci-prop-label {
+      color: #7890a2;
+      letter-spacing: 0.04em;
+    }
+
+    .ci-version-tag,
+    .ci-hotkey,
+    .ci-line-count,
+    .ci-raw-label {
+      font-size: 11px;
+    }
+
+    .ci-label {
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .ci-tab {
+      font-size: 12px;
+      letter-spacing: 0.035em;
+      color: #7890a2;
+      font-weight: 600;
+    }
+
+    .ci-tab:hover {
+      color: #c1d0dc;
+    }
+
+    .ci-tab-active {
+      color: #f2eadb !important;
+    }
+
+    .ci-input,
+    .ci-select,
+    .ci-search,
+    .ci-search-btn,
+    .ci-btn-primary,
+    .ci-btn-secondary,
+    .ci-btn-danger,
+    .ci-confirm-btn,
+    .ci-pp-btn,
+    .ci-pp-action-btn {
+      font-family: inherit !important;
+      font-size: 12px !important;
+      letter-spacing: 0.025em !important;
+    }
+
+    .ci-input,
+    .ci-select,
+    .ci-search,
+    .ci-pp-name {
+      color: #c3d2dc !important;
+    }
+
+    .ci-input:focus,
+    .ci-select:focus,
+    .ci-search:focus,
+    .ci-pp-name:focus {
+      color: #f2eadb !important;
+    }
+
+    .ci-btn-secondary {
+      color: #7890a2;
+      border-color: #26384a;
+    }
+
+    .ci-btn-secondary:hover {
+      color: #d3e0e8;
+      border-color: #5f7587;
+      background: rgba(95,117,135,0.08);
+    }
+
+    .ci-textarea,
+    .ci-search-highlights,
+    .ci-raw-find-input,
+    .ci-raw-find-count,
+    .ci-ac-dropdown,
+    .ci-az-pre,
+    .ci-az-textarea {
+      font-family: "Cascadia Mono", "Fira Code", Consolas, monospace;
+    }
+
+    .ci-textarea,
+    .ci-search-highlights {
+      font-size: 12px;
+      line-height: 1.65;
+      color: #c7e4bf;
+    }
+
+    .ci-textarea {
+      background: rgba(0,0,0,0.5);
+    }
+
+    .ci-textarea-backdrop {
+      background: rgba(0,0,0,0.5);
+    }
+
+    .ci-raw-find {
+      border-color: #2a3d50;
+      border-bottom-color: #b69555;
+    }
+
+    .ci-raw-find-input {
+      font-size: 12px;
+    }
+
+    .ci-raw-find-count {
+      color: #8fa5b5;
+    }
+
+    .ci-group-label,
+    .ci-generic-title,
+    .ci-item-label,
+    .ci-az-selector,
+    .ci-pp-title {
+      letter-spacing: 0.045em;
+    }
+
+    .ci-generic-desc,
+    .ci-item-desc,
+    .ci-note {
+      color: #73889a;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+  `;
