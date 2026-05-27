@@ -156,30 +156,33 @@ function runExtraction(selector, targetNode = null) {
   header.appendChild(rerunBtn);
   content.appendChild(header);
 
-  const seenAssets = new Set();
+  const seenAssets = new Map();
   const selfAssets = [];
   const childAssets = [];
   const ancestorAssets = [];
+  
+  function processAsset(a, group) {
+    const fp = `${a.prop}|${a.url}`;
+    if (!seenAssets.has(fp)) {
+      a.allSelectors = new Set([a.selector, a.exactSelector, a.genericSelector]);
+      seenAssets.set(fp, a);
+      group.push(a);
+    } else {
+      const existing = seenAssets.get(fp);
+      existing.allSelectors.add(a.selector);
+      existing.allSelectors.add(a.exactSelector);
+      existing.allSelectors.add(a.genericSelector);
+    }
+  }
 
   for (const domNode of domNodes) {
     const nodeSelf = collectFromNode(domNode, selector);
     for (const a of nodeSelf) {
-      const fp = `${a.prop}|${a.url}`;
-      if (!seenAssets.has(fp)) {
-        seenAssets.add(fp);
-        selfAssets.push(a);
-      }
+      processAsset(a, selfAssets);
     }
 
-    const nodeChildren = collectFromDescendants(domNode, selector, seenAssets);
-    for (const a of nodeChildren) {
-      childAssets.push(a);
-    }
-
-    const nodeAncestors = collectFromAncestors(domNode, selector, seenAssets);
-    for (const a of nodeAncestors) {
-      ancestorAssets.push(a);
-    }
+    collectFromDescendants(domNode, selector, seenAssets, processAsset, childAssets);
+    collectFromAncestors(domNode, selector, seenAssets, processAsset, ancestorAssets);
   }
 
   const totalCount =
@@ -303,14 +306,11 @@ export function collectFromNode(node, selector) {
   return results;
 }
 
-function collectFromDescendants(rootNode, rootSelector, seenAssets) {
-  const results = [];
-  walkForAssets(rootNode, rootSelector, results, seenAssets, false);
-  return results;
+function collectFromDescendants(rootNode, rootSelector, seenAssets, processAsset, group) {
+  walkForAssets(rootNode, rootSelector, seenAssets, processAsset, group, false);
 }
 
-function collectFromAncestors(node, _rootSelector, seenAssets) {
-  const results = [];
+function collectFromAncestors(node, _rootSelector, seenAssets, processAsset, group) {
   // Ancestor walk
   let current = node.parentNode || node.parentElement;
   while (current) {
@@ -334,20 +334,15 @@ function collectFromAncestors(node, _rootSelector, seenAssets) {
     const sel = buildStrategicSelector(current, 'categorical');
     const assets = collectFromNode(current, sel);
     for (const asset of assets) {
-      const fp = `${asset.prop}|${asset.url}`;
-      if (!seenAssets.has(fp)) {
-        seenAssets.add(fp);
-        results.push(asset);
-      }
+      processAsset(asset, group);
     }
 
     current = current.parentNode || current.parentElement;
   }
-  return results;
 }
 
 // Descendant Walker
-function walkForAssets(node, _parentSelector, results, seenAssets, includeSelf) {
+function walkForAssets(node, _parentSelector, seenAssets, processAsset, group, includeSelf) {
   if (!node || node.nodeType !== 1) return;
   if (node.id === "snooze-css-host") return;
 
@@ -359,17 +354,13 @@ function walkForAssets(node, _parentSelector, results, seenAssets, includeSelf) 
     }
     const assets = collectFromNode(node, combinedSel);
     for (const asset of assets) {
-      const fp = `${asset.prop}|${asset.url}`;
-      if (!seenAssets.has(fp)) {
-        seenAssets.add(fp);
-        results.push(asset);
-      }
+      processAsset(asset, group);
     }
   }
 
   // Light DOM children
   for (const child of node.children) {
-    walkForAssets(child, _parentSelector, results, seenAssets, true);
+    walkForAssets(child, _parentSelector, seenAssets, processAsset, group, true);
   }
 
   // Shadow DOM walk
@@ -385,7 +376,7 @@ function walkForAssets(node, _parentSelector, results, seenAssets, includeSelf) 
     }
     
     for (const child of shadowRoot.children) {
-      walkForAssets(child, shadowParentSel, results, seenAssets, true);
+      walkForAssets(child, shadowParentSel, seenAssets, processAsset, group, true);
     }
   }
 }
@@ -503,16 +494,25 @@ function buildAssetRow(asset) {
   selLabel.textContent = "Target:";
   const selSelect = document.createElement("select");
   selSelect.className = "ci-select";
-  selSelect.style.cssText = "font-size:10px;height:24px;flex:1;min-width:0;";
+  selSelect.style.cssText = "font-size:10px;flex:1;min-width:0;";
 
   const fileName  = asset.url.split('/').pop().split('?')[0]; 
   const sniper    = asset.isAttr ? `[src*="${fileName}"]` : "";
 
-  const baseScenarios = [
-    { label: "1. Contextual", val: asset.selector },
-    { label: "2. Specific Node", val: asset.exactSelector },
-    { label: "3. Global Node", val: asset.genericSelector }
-  ];
+  const baseScenarios = [];
+  if (asset.allSelectors) {
+     let i = 1;
+     for (const sel of asset.allSelectors) {
+        if (!sel || sel === "*") continue;
+        let label = `Target ${i++}`;
+        if (sel.includes(":host-context")) label = "Contextual " + label;
+        baseScenarios.push({ label, val: sel });
+     }
+  } else {
+     baseScenarios.push({ label: "1. Contextual", val: asset.selector });
+     baseScenarios.push({ label: "2. Specific Node", val: asset.exactSelector });
+     baseScenarios.push({ label: "3. Global Node", val: asset.genericSelector });
+  }
 
   const seenScenarios = new Set();
   baseScenarios.forEach(s => {
@@ -550,7 +550,7 @@ function buildAssetRow(asset) {
   methodLabel.textContent = "Method:";
   const methodSelect = document.createElement("select");
   methodSelect.className = "ci-select";
-  methodSelect.style.cssText = "font-size:10px;height:24px;flex:1;min-width:0;";
+  methodSelect.style.cssText = "font-size:10px;flex:1;min-width:0;";
 
   const sInfo = getCssStrategy(asset);
   if (sInfo.options) {
@@ -590,7 +590,7 @@ function buildAssetRow(asset) {
   downloadBtn.className = "ci-btn-secondary";
   downloadBtn.style.cssText = "font-size:10px;padding:3px 10px;";
   downloadBtn.textContent = "⬇ Download";
-  downloadBtn.addEventListener("click", () => downloadAsset(asset.url));
+  downloadBtn.addEventListener("click", (e) => downloadAsset(asset.url, e.target.ownerDocument));
 
   const sendBtn = document.createElement("button");
   sendBtn.className = "ci-az-send-btn";
@@ -652,7 +652,7 @@ function buildAssetRow(asset) {
       modeWrap.style.cssText = "display:flex;align-items:center;gap:4px;";
       const modeSelect = document.createElement("select");
       modeSelect.className = "ci-select";
-      modeSelect.style.cssText = "font-size:10px;height:22px;";
+      modeSelect.style.cssText = "font-size:10px;";
       modeSelect.innerHTML = `
         <option value="relative">Shift (Preserve Multi-Color)</option>
         <option value="solid">Solid (Uniform Recolor)</option>
@@ -781,7 +781,7 @@ function buildAssetRow(asset) {
          const targetSelector = selSelect.value + videoSuffix;
          
          if (isolate) {
-            cssOut.value = `${comment}\n${targetSelector} {\n  position: relative !important;\n}\n${targetSelector}::before {\n  content: "" !important;\n  position: absolute !important;\n  inset: 0 !important;\n  background-image: inherit !important;\n  background-size: inherit !important;\n  background-repeat: inherit !important;\n  background-position: inherit !important;\n  filter: ${filterStr} !important;\n  pointer-events: none !important;\n  z-index: 0 !important;\n  border-radius: inherit !important;\n}\n${targetSelector} > * {\n z-index: 1 !important;\n}`;
+            cssOut.value = `${comment}\n/* If the effect escapes the container, uncomment the position line below */\n${targetSelector} {\n  /* position: relative !important; */\n}\n${targetSelector}::before {\n  content: "" !important;\n  position: absolute !important;\n  inset: 0 !important;\n  background-image: inherit !important;\n  background-size: inherit !important;\n  background-repeat: inherit !important;\n  background-position: inherit !important;\n  filter: ${filterStr} !important;\n  pointer-events: none !important;\n  z-index: 0 !important;\n  border-radius: inherit !important;\n}\n${targetSelector} > * {\n z-index: 1 !important;\n}`;
          } else {
             cssOut.value = `${comment}\n${targetSelector} {\n  filter: ${filterStr} !important;\n}`;
          }
@@ -840,7 +840,7 @@ export function buildCompactAssetRow(asset, onAdd) {
   if (sInfo.options) {
     sSelect = document.createElement("select");
     sSelect.className = "ci-select";
-    sSelect.style.cssText = "font-size:9px; height:22px; margin-top:2px; width:100%;";
+    sSelect.style.cssText = "font-size:9px; margin-top:2px; width:100%;";
     sInfo.options.forEach(opt => {
       const o = document.createElement("option");
       o.value = opt.id;
@@ -973,12 +973,11 @@ export function generateReplacementCSS(asset, replacementUrl) {
 
 // DOWNLOAD 
 
-async function downloadAsset(url) {
+async function downloadAsset(url, doc = document) {
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const buffer = await response.arrayBuffer();
-    // Guess mime from URL extension
+    let fetchUrl = url;
+    const res = await fetch(fetchUrl);
+    const buffer = await res.arrayBuffer();
     const ext = url.split("?")[0].split(".").pop().toLowerCase();
     const mimeMap = {
       png: "image/png",
@@ -990,14 +989,17 @@ async function downloadAsset(url) {
       avif: "image/avif",
       mp4: "video/mp4",
       webm: "video/webm",
+      ogg: "video/ogg",
     };
     const mime = mimeMap[ext] || "application/octet-stream";
     const blob = new Blob([buffer], { type: mime });
     const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const a = doc.createElement("a");
     a.href = blobUrl;
     a.download = url.split("/").pop().split("?")[0] || "asset";
+    doc.body.appendChild(a);
     a.click();
+    doc.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
   } catch (err) {
     console.error("[Snooze-CSS] Asset download failed:", url, err);

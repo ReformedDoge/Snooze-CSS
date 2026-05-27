@@ -1,4 +1,12 @@
 /**
+ * @name Snooze-GeneralUtils
+ * @version 1.0.0
+ * @author SnoozeFest - github@ReformedDoge
+ * @description Shared helper utilities used by Snooze modules.
+ * @link https://github.com/ReformedDoge
+ */
+
+/**
  * Smart DOM observer:
  * - Runs callbacks only for matching selectors
  * - Deduplicates elements (runs once per element)
@@ -477,6 +485,9 @@ function settingsUtils(context, pluginConfig) {
   if (window.SnoozeManager && window.SnoozeManager.__isLoader) return;
   EmberHook.install(context);
 
+  const categoryTitles = window.SnoozeCategoryTitles = window.SnoozeCategoryTitles || new Map();
+  categoryTitles.set(pluginConfig.titleKey, pluginConfig.titleName);
+
   const strings = {
     'snooze_plugins':         'Plugins',
     'snooze_plugins_capital': 'PLUGINS',
@@ -503,6 +514,12 @@ function settingsUtils(context, pluginConfig) {
         isEnabled: () => true
       });
     }
+
+    pluginGroup.categories.sort((a, b) => {
+      const titleA = categoryTitles.get(a.titleKey) || a.name || '';
+      const titleB = categoryTitles.get(b.titleKey) || b.name || '';
+      return titleA.localeCompare(titleB);
+    });
 
     rcp._modalManager._refreshCategoryGroups();
   });

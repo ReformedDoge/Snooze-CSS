@@ -118,31 +118,31 @@ export function createProfile(data, name) {
 }
 
 // Export profile to .css file
-export function exportProfile(profile) {
+export function exportProfile(profile, doc = document) {
   const blob = new Blob([profile.css], { type: "text/css" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
+  const a = doc.createElement("a");
   a.href = url;
   a.download = `${profile.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.css`;
-  document.body.appendChild(a);
+  doc.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
+  doc.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
 // Import .css file into new profile
-export function importProfile(data) {
+export function importProfile(data, doc = document) {
   return new Promise((resolve) => {
-    const input = document.createElement("input");
+    const input = doc.createElement("input");
     input.type = "file";
     input.accept = ".css,text/css";
     input.style.display = "none";
-    document.body.appendChild(input);
+    doc.body.appendChild(input);
 
     input.addEventListener("change", () => {
       const file = input.files?.[0];
       if (!file) {
-        document.body.removeChild(input);
+        if (input.parentNode) input.parentNode.removeChild(input);
         resolve(null);
         return;
       }
@@ -155,11 +155,11 @@ export function importProfile(data) {
           css: reader.result || "",
         };
         data.profiles.push(profile);
-        document.body.removeChild(input);
+        if (input.parentNode) input.parentNode.removeChild(input);
         resolve(profile);
       };
       reader.onerror = () => {
-        document.body.removeChild(input);
+        if (input.parentNode) input.parentNode.removeChild(input);
         resolve(null);
       };
       reader.readAsText(file);

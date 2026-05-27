@@ -5801,7 +5801,7 @@ function buildLocalAssetRow() {
   const statusEl = row.querySelector("#ci-flash-asset-status");
 
   // Create hidden file input
-  const hiddenFileInput = document.createElement("input");
+  const hiddenFileInput = row.ownerDocument.createElement("input");
   hiddenFileInput.type = "file";
   hiddenFileInput.accept =
     "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm";
@@ -7365,11 +7365,16 @@ export function startElementPicker(onPickCallback) {
   
   const captureLayer = document.createElement("div");
   captureLayer.id = "ci-inspector-capture";
-  captureLayer.style.cssText = "position:fixed; inset:0; z-index:999997; background:transparent; pointer-events:auto; cursor:crosshair;";
+  captureLayer.style.cssText = "position:fixed; inset:0; z-index:999997; background:transparent; pointer-events:none;";
+  
+  const cursorStyle = document.createElement("style");
+  cursorStyle.id = "ci-inspector-cursor-style";
+  cursorStyle.textContent = "* { cursor: crosshair !important; }";
   
   document.body.appendChild(overlay);
   document.body.appendChild(label);
   document.body.appendChild(captureLayer);
+  document.head.appendChild(cursorStyle);
   
   const settings = getSettings();
   let isGlobal = settings.lastGlobalToggle || false;
@@ -7379,7 +7384,6 @@ export function startElementPicker(onPickCallback) {
 
   // Shadow-piercing and iframe-piercing elementFromPoint
   function deepElementFromPoint(x, y) {
-    captureLayer.style.pointerEvents = "none";
     // Start with the document-level hit
     let best = document.elementFromPoint(x, y);
     let bestArea = best
@@ -7445,7 +7449,6 @@ export function startElementPicker(onPickCallback) {
       } catch {}
     }
 
-    captureLayer.style.pointerEvents = "auto";
     isInShadow = bestInShadow;
     return best;
   }
@@ -7618,6 +7621,7 @@ export function startElementPicker(onPickCallback) {
     overlay.remove();
     label.remove();
     captureLayer.remove();
+    cursorStyle.remove();
     if (popout) {
       setPopupPickerMode(false); // restore popup window size
     } else {

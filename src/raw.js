@@ -1196,8 +1196,8 @@ function renderProfilesList() {
     renderProfilesList();
   };
 
-  _profilePanelEl.querySelector("#ci-pp-import").onclick = async () => {
-    if (await importProfile(_profilesData)) {
+  _profilePanelEl.querySelector("#ci-pp-import").onclick = async (e) => {
+    if (await importProfile(_profilesData, e.target.ownerDocument)) {
       await saveProfiles(_profilesData);
       renderProfilesList();
     }
@@ -1323,7 +1323,7 @@ function renderProfilesList() {
       };
     }
 
-    row.querySelector(".ci-pp-btn--export").onclick = () => exportProfile(p);
+    row.querySelector(".ci-pp-btn--export").onclick = (e) => exportProfile(p, e.target.ownerDocument);
 
     row.querySelector(".ci-pp-btn--delete").onclick = () => {
       if (_profilesData.profiles.length > 1) {

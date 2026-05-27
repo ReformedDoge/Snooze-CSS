@@ -312,11 +312,12 @@ export function buildStrategicSelector(el, mode = 'specific') {
 export function attachFilePicker(inputElement) {
   if (!inputElement) return;
 
-  const hidden = document.createElement("input");
+  const doc = inputElement.ownerDocument;
+  const hidden = doc.createElement("input");
   hidden.type = "file";
   hidden.accept = "image/*,.webp,.jpg,.jpeg,.png,.gif,.avif,.svg,.mp4,.webm,.ttf,.otf,.woff,.woff2";
   hidden.style.display = "none";
-  document.body.appendChild(hidden);
+  doc.body.appendChild(hidden);
 
   // cleanup up
   const cleanup = () => {
@@ -366,7 +367,7 @@ export function showFilePickerWarning(inputElement, message) {
   const existing = inputElement._fileWarnEl;
   if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
 
-  const warn = document.createElement("div");
+  const warn = inputElement.ownerDocument.createElement("div");
   warn.style.cssText =
     "margin-top:4px;padding:5px 8px;font-size:10px;line-height:1.4;color:#ff9a3c;" +
     "background:rgba(255,90,0,0.1);border:1px solid rgba(255,90,0,0.3);" +
