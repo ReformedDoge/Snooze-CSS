@@ -228,11 +228,11 @@ export function collectFromNode(node, selector) {
   if (!node) return [];
   const results = [];
 
-  // CSS Assets
-  const cs = window.getComputedStyle(node);
   const semanticSel = buildStrategicSelector(node, 'specific');
   const genericSel = buildStrategicSelector(node, 'categorical');
-  
+
+  // CSS Assets — element itself
+  const cs = window.getComputedStyle(node);
   for (const prop of ASSET_PROPS) {
     const val = cs.getPropertyValue(prop)?.trim();
     if (!val || val === "none") continue;
@@ -249,6 +249,35 @@ export function collectFromNode(node, selector) {
     });
   }
 
+  // CSS Assets — pseudo-elements (::before / ::after)
+  // getComputedStyle requires the pseudo as a second argument; without it pseudo assets are invisible.
+  for (const pseudo of ['::before', '::after']) {
+    let pcs;
+    try { pcs = window.getComputedStyle(node, pseudo); } catch { continue; }
+    // content === 'none' means the pseudo-element does not exist on this node.
+    const content = pcs.getPropertyValue('content')?.trim();
+    if (!content || content === 'none') continue;
+
+    const pseudoSel         = `${selector}${pseudo}`;
+    const semanticPseudoSel = `${semanticSel}${pseudo}`;
+    const genericPseudoSel  = `${genericSel}${pseudo}`;
+
+    for (const prop of ASSET_PROPS) {
+      const val = pcs.getPropertyValue(prop)?.trim();
+      if (!val || val === "none") continue;
+      extractUrls(val).forEach((url) => {
+        results.push({
+          selector:        pseudoSel,
+          prop,
+          url,
+          domNode:         node,
+          isAttr:          false,
+          exactSelector:   semanticPseudoSel,
+          genericSelector: genericPseudoSel,
+        });
+      });
+    }
+  }
   // Attribute Assets
   const tag = node.tagName.toLowerCase();
   if (MEDIA_TAGS.has(tag)) {
