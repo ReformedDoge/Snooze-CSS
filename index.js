@@ -44,7 +44,7 @@ export function load() {
   }
 
   document.addEventListener("keydown", (e) => {
-    if (e.altKey && e.key.toLowerCase() === "c") {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === "KeyC") {
       e.preventDefault();
       createModal();
     }

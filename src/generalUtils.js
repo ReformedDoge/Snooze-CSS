@@ -475,6 +475,13 @@ const LCU = {
 
     this._subscriptions.delete(uri);
     this._subscribed.delete(uri);
+  },
+
+  async delete(url) {
+    const r = await fetch(url.startsWith('/') ? url : '/' + url, { method: 'DELETE' });
+    if (!r.ok) throw new Error(r.status);
+    const t = await r.text();
+    return t ? JSON.parse(t) : null;
   }
 };
 
