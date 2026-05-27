@@ -65,14 +65,14 @@ export function makeSection(title, desc) {
 
   const t = document.createElement("div");
   t.style.cssText =
-    "font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#c8aa6e;" +
+    "font-size:13px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#c8aa6e;" +
     (desc ? "margin-bottom:4px;" : "");
   t.textContent = title;
   sec.appendChild(t);
 
   if (desc) {
     const d = document.createElement("div");
-    d.style.cssText = "font-size:10px;color:#3a5060;line-height:1.5;";
+    d.style.cssText = "font-size:12px;color:#7a8a9a;line-height:1.5;";
     d.textContent = desc;
     sec.appendChild(d);
   }

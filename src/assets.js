@@ -77,9 +77,9 @@ export function buildAssetsTab(container) {
   empty.style.cssText =
     "padding:40px 18px;text-align:center;color:#2a3a4a;font-size:11px;line-height:1.8;";
   empty.innerHTML =
-    `<div style="font-size:24px;margin-bottom:8px;">🖼</div>` +
+    `<div style="font-size:24px;margin-bottom:8px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:-0.125em;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>` +
     `Enter a selector above, click the 🎯 picker, or click the ` +
-    `<strong style="color:#785a28;">🖼</strong> button on any element in the Visual Builder.`;
+    `<strong style="color:#785a28;display:inline-flex;align-items:center;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:-0.125em;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></strong> button on any element in the Visual Builder.`;
   container.appendChild(empty);
 
   const content = document.createElement("div");

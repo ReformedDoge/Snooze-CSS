@@ -4229,7 +4229,7 @@ function buildOmniRow() {
       <div id="omni-controls-wrap" class="ci-element-controls" style="padding:10px 12px;"></div>
       <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid #1a2535;">
         <button id="omni-add-all-btn" class="ci-btn-primary" style="font-size:10px;padding:5px 12px;">→ Add All to CSS</button>
-        <button id="omni-extract-btn" class="ci-btn-secondary" style="font-size:10px;padding:5px 12px;">🖼 Extract Assets</button>
+        <button id="omni-extract-btn" class="ci-btn-secondary" style="font-size:10px;padding:5px 12px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:-0.125em;margin-right:4px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Extract Assets</button>
         <span class="ci-flash" id="omni-add-all-flash">Added ✓</span>
       </div>
     </div>
@@ -4795,7 +4795,7 @@ function buildClientFrameRow() {
   const row = document.createElement("div");
   row.className = "ci-generic-row";
   row.innerHTML = `
-    <div class="ci-generic-title">🖼 Client Frame & Glow</div>
+    <div class="ci-generic-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:-0.125em;margin-right:4px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Client Frame & Glow</div>
     <div class="ci-generic-desc">Add a colored border and glow around the entire client window. Targets <code style="color:#c8aa6e;font-size:9px;">#rcp-fe-viewport-root</code>.</div>
     <div class="ci-inline-row">
       <div class="ci-field"><div class="ci-label">Border color</div>
@@ -6746,7 +6746,7 @@ function buildElementRow(el) {
   // Extract assets button
   const extractBtn = document.createElement("button");
   extractBtn.className = "ci-az-send-btn";
-  extractBtn.textContent = "🖼";
+  extractBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:-0.125em;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
   extractBtn.title = "Extract assets for this element";
   extractBtn.style.cssText = "flex-shrink:0;";
   extractBtn.addEventListener("click", (e) => {

@@ -204,7 +204,7 @@ function markUnsaved() {
 
 export function buildRawTab(container) {
   container.innerHTML = `
-    <div class="ci-raw-header">
+    <div class="ci-raw-header" style="flex-shrink: 0;">
       <span class="ci-raw-label">Generated &amp; Custom CSS</span>
       <div style="display:flex;align-items:center;gap:10px;">
         <span class="ci-line-count" id="ci-line-count">0 lines</span>
@@ -218,8 +218,8 @@ export function buildRawTab(container) {
         <button class="ci-btn-secondary ci-profiles-btn" id="ci-btn-profiles" title="Manage CSS profiles">&#x2630; Profiles</button>
       </div>
     </div>
-    <div style="position:relative;display:flex;flex:1;">
-      <div class="ci-raw-editor-shell" style="flex:1;position:relative;min-width:0;">
+    <div style="position:relative;display:flex;flex:1 1 auto;min-height:120px;flex-direction:column;margin-bottom:12px;">
+      <div class="ci-raw-editor-shell" style="flex:1 1 auto;position:relative;min-width:0;display:flex;flex-direction:column;">
         <div class="ci-raw-find" id="ci-raw-find" hidden>
           <div class="ci-raw-find-row">
             <input class="ci-raw-find-input" id="ci-raw-find-input" placeholder="Search CSS" spellcheck="false" autocomplete="off">
@@ -236,11 +236,11 @@ export function buildRawTab(container) {
             <button class="ci-raw-find-action" id="ci-raw-replace-all" title="Replace all matches">All</button>
           </div>
         </div>
-        <div class="ci-textarea-stack" id="ci-textarea-stack">
-          <div class="ci-textarea-backdrop" id="ci-search-backdrop" aria-hidden="true">
+        <div class="ci-textarea-stack" id="ci-textarea-stack" style="flex:1 1 auto;display:flex;flex-direction:column;position:relative;">
+          <div class="ci-textarea-backdrop" id="ci-search-backdrop" aria-hidden="true" style="flex:1 1 auto;">
             <div class="ci-search-highlights" id="ci-search-highlights"></div>
           </div>
-          <textarea class="ci-textarea" id="ci-raw-textarea" placeholder="/* CSS will appear here from the Visual Builder */" spellcheck="false" wrap="off"></textarea>
+          <textarea class="ci-textarea" id="ci-raw-textarea" placeholder="/* CSS will appear here from the Visual Builder */" spellcheck="false" wrap="off" style="flex:1 1 auto; height:auto; min-height:120px; box-sizing:border-box;"></textarea>
         </div>
         <div id="ci-ac-dropdown" class="ci-ac-dropdown" style="display:none;"></div>
         <div id="ci-scroll-btns" class="ci-scroll-btns">
@@ -250,13 +250,16 @@ export function buildRawTab(container) {
       </div>
     </div>
     <div class="ci-raw-actions">
-      <button class="ci-btn-primary" id="ci-btn-apply">Apply</button>
-      <button class="ci-btn-secondary" id="ci-btn-save">Save</button>
-      <button class="ci-btn-secondary" id="ci-btn-reload">&#x21BA; Restart Client</button>
-      <button class="ci-btn-danger" id="ci-btn-clear">Clear</button>
-      <span class="ci-flash" id="ci-flash-raw" style="margin-left:4px;"></span>
-    </div>
-  `;
+      <div class="ci-raw-actions-left">
+        <button class="ci-btn-primary" id="ci-btn-apply">Apply</button>
+        <button class="ci-btn-secondary" id="ci-btn-save">Save</button>
+        <span class="ci-flash" id="ci-flash-raw" style="margin-left:4px;"></span>
+      </div>
+      <div class="ci-raw-actions-right">
+        <button class="ci-btn-secondary" id="ci-btn-reload">&#x21BA; Restart Client</button>
+        <button class="ci-btn-danger" id="ci-btn-clear">Clear</button>
+      </div>
+    </div>`;
 
   textareaEl = container.querySelector("#ci-raw-textarea");
   editorStackEl = container.querySelector("#ci-textarea-stack");
@@ -1372,6 +1375,7 @@ export function cleanupRawTab() {
     rawResizeObserver.disconnect();
     rawResizeObserver = null;
   }
+
   if (searchRaf) {
     cancelAnimationFrame(searchRaf);
     searchRaf = 0;

@@ -9,13 +9,38 @@ export const STYLES = `
     }
 
     :host(.popout) #css-injector-modal {
+      container-type: inline-size;
+      container-name: modal;
+    }
+
+    @container modal (min-width: 800px) {
+      .ci-tab { font-size: 12px; }
+      .ci-input, .ci-select, .ci-textarea { font-size: 12px; }
+      .ci-generic-title { font-size: 13px; }
+      .ci-generic-desc { font-size: 11px; }
+      .ci-raw-find-input { font-size: 13px; }
+      .ci-search-highlights { font-size: 12px; }
+    }
+
+    @container modal (min-width: 1100px) {
+      .ci-tab { font-size: 13px; padding: 12px 20px 14px; }
+      .ci-input, .ci-select, .ci-textarea { font-size: 13px; }
+      .ci-generic-title { font-size: 14px; }
+      .ci-generic-desc { font-size: 12px; }
+      .ci-raw-find-input { font-size: 14px; }
+      .ci-search-highlights { font-size: 13px; }
+      .ci-btn-primary, .ci-btn-secondary { font-size: 12px; padding: 10px 24px; }
+    }
+
+    :host(.popout) #css-injector-modal {
       position: absolute;
       inset: 0;
       width: 100% !important;
       height: 100% !important;
       left: 0 !important;
       top: 0 !important;
-      border: none;
+      box-sizing: border-box;
+      border-radius: 0;
       box-shadow: none;
     }
 
@@ -35,7 +60,55 @@ export const STYLES = `
     }
 
     #css-injector-modal {
+      container-type: inline-size;
+      container-name: modal;
+    }
+
+    @container modal (min-width: 800px) {
+      .ci-tab { font-size: 12px; }
+      .ci-input, .ci-select, .ci-textarea { font-size: 12px; }
+      .ci-generic-title { font-size: 13px; }
+      .ci-generic-desc { font-size: 11px; }
+      .ci-raw-find-input { font-size: 13px; }
+      .ci-search-highlights { font-size: 12px; }
+    }
+
+    @container modal (min-width: 1100px) {
+      .ci-tab { font-size: 13px; padding: 12px 20px 14px; }
+      .ci-input, .ci-select, .ci-textarea { font-size: 13px; }
+      .ci-generic-title { font-size: 14px; }
+      .ci-generic-desc { font-size: 12px; }
+      .ci-raw-find-input { font-size: 14px; }
+      .ci-search-highlights { font-size: 13px; }
+      .ci-btn-primary, .ci-btn-secondary { font-size: 12px; padding: 10px 24px; }
+    }
+
+    #css-injector-modal {
       pointer-events: all;
+    }
+
+    #css-injector-modal {
+      container-type: inline-size;
+      container-name: modal;
+    }
+
+    @container modal (min-width: 800px) {
+      .ci-tab { font-size: 12px; }
+      .ci-input, .ci-select, .ci-textarea { font-size: 12px; }
+      .ci-generic-title { font-size: 13px; }
+      .ci-generic-desc { font-size: 11px; }
+      .ci-raw-find-input { font-size: 13px; }
+      .ci-search-highlights { font-size: 12px; }
+    }
+
+    @container modal (min-width: 1100px) {
+      .ci-tab { font-size: 13px; padding: 12px 20px 14px; }
+      .ci-input, .ci-select, .ci-textarea { font-size: 13px; }
+      .ci-generic-title { font-size: 14px; }
+      .ci-generic-desc { font-size: 12px; }
+      .ci-raw-find-input { font-size: 14px; }
+      .ci-search-highlights { font-size: 13px; }
+      .ci-btn-primary, .ci-btn-secondary { font-size: 12px; padding: 10px 24px; }
     }
 
     #css-injector-modal {
@@ -44,7 +117,8 @@ export const STYLES = `
       min-height: 200px;
       background: #0a1428;
       border: 1px solid #785a28;
-      box-shadow: 0 0 0 1px #000, 0 24px 80px rgba(0,0,0,0.85);
+      border-radius: 2px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.85);
       display: flex;
       flex-direction: column;
       overflow: visible; /* Required for the profiles sidecar to be visible */
@@ -52,16 +126,7 @@ export const STYLES = `
       pointer-events: all;
     }
 
-    .ci-header {
-      display: flex;
-      align-items: center;
-      padding: 14px 18px 10px;
-      gap: 10px;
-      flex-shrink: 0;
-      cursor: move;
-      user-select: none;
-    }
-      
+
     ::-webkit-scrollbar {
       width: 12px;
       height: 12px;
@@ -98,15 +163,7 @@ export const STYLES = `
       background: #060e1a;
     }
 
-    #css-injector-modal::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, #c8aa6e, transparent);
-      pointer-events: none;
-      z-index: 1;
-    }
+
 
     /* RESIZE HANDLES */
     .ci-resize-handle {
@@ -223,12 +280,15 @@ export const STYLES = `
     .ci-tab-active::after { transform: scaleX(1); }
 
     .ci-body {
+      display: flex;
+      flex-direction: column;
       overflow-y: auto;
       flex: 1;
       min-height: 0;
     }
 
-    .ci-panel { padding: 16px 18px; }
+    .ci-panel { padding: 16px 18px; flex: 1 0 auto; }
+    #ci-panel-raw { display: flex; flex-direction: column; }
     .ci-panel--flush { padding: 0; }
     .ci-panel-hidden { display: none !important; }
 
@@ -582,7 +642,6 @@ export const STYLES = `
 
     .ci-textarea-stack {
       position: relative;
-      min-height: 260px;
     }
 
     .ci-textarea-backdrop {
@@ -647,7 +706,7 @@ export const STYLES = `
       flex-direction: column;
       align-items: stretch;
       max-width: calc(100% - 56px);
-      background: rgba(1,10,19,0.96);
+      background: rgba(6, 14, 26, 0.98);
       border: 1px solid #1e2d3d;
       border-bottom-color: #785a28;
       box-shadow: 0 10px 28px rgba(0,0,0,0.58);
@@ -682,7 +741,7 @@ export const STYLES = `
       outline: none;
       padding: 0 9px;
       font-family: 'Fira Code', 'Consolas', monospace;
-      font-size: 11px;
+      font-size: 12px;
     }
 
     .ci-raw-find-input:focus {
@@ -694,14 +753,14 @@ export const STYLES = `
     }
 
     .ci-raw-find-input::placeholder {
-      color: #3a5060;
+      color: #7a8a9a;
     }
 
     .ci-raw-find-count {
       min-width: 54px;
       padding: 0 8px;
-      color: #4a6070;
-      font-size: 10px;
+      color: #8a9aaa;
+      font-size: 11px;
       line-height: 30px;
       text-align: center;
       border-right: 1px solid #1e2d3d;
@@ -725,10 +784,10 @@ export const STYLES = `
       background: transparent;
       border: none;
       border-right: 1px solid #1e2d3d;
-      color: #4a6070;
+      color: #8a9aaa;
       cursor: pointer;
       font-family: inherit;
-      font-size: 11px;
+      font-size: 12px;
       line-height: 1;
       padding: 0;
       transition: background 0.12s, color 0.12s;
@@ -763,8 +822,9 @@ export const STYLES = `
     .ci-textarea {
       width: 100%;
       box-sizing: border-box;
+      min-height: 120px;
       height: 260px;
-      resize: vertical;
+      resize: none;
       font-family: 'Fira Code', 'Consolas', monospace;
       font-size: 11px;
       line-height: 1.6;
@@ -782,8 +842,16 @@ export const STYLES = `
 
     .ci-raw-actions {
       display: flex;
-      gap: 8px;
+      justify-content: space-between;
+      align-items: center;
       margin-top: 10px;
+      flex-shrink: 0;
+    }
+
+    .ci-raw-actions-left,
+    .ci-raw-actions-right {
+      display: flex;
+      gap: 8px;
       align-items: center;
     }
 
@@ -1722,6 +1790,30 @@ export const STYLES = `
     }
 
     /* READABILITY PASS */
+    #css-injector-modal {
+      container-type: inline-size;
+      container-name: modal;
+    }
+
+    @container modal (min-width: 800px) {
+      .ci-tab { font-size: 12px; }
+      .ci-input, .ci-select, .ci-textarea { font-size: 12px; }
+      .ci-generic-title { font-size: 13px; }
+      .ci-generic-desc { font-size: 11px; }
+      .ci-raw-find-input { font-size: 13px; }
+      .ci-search-highlights { font-size: 12px; }
+    }
+
+    @container modal (min-width: 1100px) {
+      .ci-tab { font-size: 13px; padding: 12px 20px 14px; }
+      .ci-input, .ci-select, .ci-textarea { font-size: 13px; }
+      .ci-generic-title { font-size: 14px; }
+      .ci-generic-desc { font-size: 12px; }
+      .ci-raw-find-input { font-size: 14px; }
+      .ci-search-highlights { font-size: 13px; }
+      .ci-btn-primary, .ci-btn-secondary { font-size: 12px; padding: 10px 24px; }
+    }
+
     #css-injector-modal {
       color: #b8c7d3;
       font-family: "Segoe UI", Inter, "Sora", Arial, sans-serif;

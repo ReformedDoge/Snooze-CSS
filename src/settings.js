@@ -305,7 +305,7 @@ export function buildSettingsTab(container) {
   sizeRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
 
   const sizeLabel = document.createElement("span");
-  sizeLabel.style.cssText = "font-size:11px;color:#8a9aaa;";
+  sizeLabel.style.cssText = "font-size:13px;color:#8a9aaa;";
   sizeLabel.textContent = "Window size";
 
   const sizeControlWrap = document.createElement("div");
@@ -320,7 +320,7 @@ export function buildSettingsTab(container) {
 
   const sizeSelect = document.createElement("select");
   sizeSelect.className = "ci-input";
-  sizeSelect.style.cssText = "font-size:11px;padding:4px 8px;";
+  sizeSelect.style.cssText = "font-size:13px;padding:4px 8px;";
   sizePresets.forEach((p) => {
     const opt = document.createElement("option");
     opt.value = p.value;
@@ -336,18 +336,18 @@ export function buildSettingsTab(container) {
   const widthInput = document.createElement("input");
   widthInput.type = "number";
   widthInput.className = "ci-input";
-  widthInput.style.cssText = "width:68px;font-size:11px;padding:4px 6px;text-align:center;";
+  widthInput.style.cssText = "width:68px;font-size:13px;padding:4px 6px;text-align:center;";
   widthInput.min = "800"; widthInput.max = "3840";
   widthInput.value = normPopupDim(state.popoutWindowWidth, 960, 600, 3840);
 
   const dimSep = document.createElement("span");
-  dimSep.style.cssText = "font-size:11px;color:#4a6070;";
+  dimSep.style.cssText = "font-size:13px;color:#4a6070;";
   dimSep.textContent = "×";
 
   const heightInput = document.createElement("input");
   heightInput.type = "number";
   heightInput.className = "ci-input";
-  heightInput.style.cssText = "width:68px;font-size:11px;padding:4px 6px;text-align:center;";
+  heightInput.style.cssText = "width:68px;font-size:13px;padding:4px 6px;text-align:center;";
   heightInput.min = "600"; heightInput.max = "2160";
   heightInput.value = normPopupDim(state.popoutWindowHeight, 680, 400, 2160);
 
@@ -389,7 +389,7 @@ export function buildSettingsTab(container) {
   popoutToggleRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
 
   const popoutToggleLabel = document.createElement("span");
-  popoutToggleLabel.style.cssText = "font-size:11px;color:#8a9aaa;";
+  popoutToggleLabel.style.cssText = "font-size:13px;color:#8a9aaa;";
   popoutToggleLabel.textContent = "Open in separate window";
 
   const setWindowSizeDisabled = (disabled) => {
@@ -422,7 +422,7 @@ export function buildSettingsTab(container) {
     "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
 
   const monLabel = document.createElement("span");
-  monLabel.style.cssText = "font-size:11px;color:#8a9aaa;";
+  monLabel.style.cssText = "font-size:13px;color:#8a9aaa;";
   monLabel.textContent = "Auto-refresh values on screen change";
 
   const toggle = makeToggle(state.autoMonitor, async (val) => {
@@ -438,7 +438,7 @@ export function buildSettingsTab(container) {
 
   const note = document.createElement("div");
   note.style.cssText =
-    "margin-top:10px;padding:8px 10px;background:rgba(200,170,110,0.04);border:1px solid #1a2535;font-size:10px;color:#3a5060;line-height:1.6;";
+    "margin-top:10px;padding:8px 10px;background:rgba(200,170,110,0.04);border:1px solid #1a2535;font-size:12px;color:#3a5060;line-height:1.6;";
   const noteSpan = document.createElement("span");
   noteSpan.style.color = "#785a28";
   noteSpan.textContent = "Note:";
@@ -463,7 +463,7 @@ export function buildSettingsTab(container) {
   updateToggleRow.style.cssText =
     "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
   const updateToggleLabel = document.createElement("span");
-  updateToggleLabel.style.cssText = "font-size:11px;color:#8a9aaa;";
+  updateToggleLabel.style.cssText = "font-size:13px;color:#8a9aaa;";
   updateToggleLabel.textContent = "Auto-check for updates on startup";
   const updateToggle = makeToggle(state.checkUpdates !== false, async (val) => {
     state.checkUpdates = val;
@@ -476,7 +476,7 @@ export function buildSettingsTab(container) {
   // Status area
   const updateStatusEl = document.createElement("div");
   updateStatusEl.style.cssText =
-    "margin-top:10px;padding:8px 10px;background:rgba(0,0,0,0.2);border:1px solid #1a2535;font-size:10px;line-height:1.6;";
+    "margin-top:10px;padding:8px 10px;background:rgba(0,0,0,0.2);border:1px solid #1a2535;font-size:12px;line-height:1.6;";
 
   function renderUpdateStatus() {
     updateStatusEl.innerHTML = "";
@@ -486,17 +486,17 @@ export function buildSettingsTab(container) {
 
       const title = document.createElement("div");
       title.style.cssText =
-        "font-size:11px;font-weight:600;color:#c8aa6e;margin-bottom:4px;";
+        "font-size:13px;font-weight:600;color:#c8aa6e;margin-bottom:4px;";
       title.textContent = `Update available: v${_latestRelease.version}`;
 
       const relName = document.createElement("div");
-      relName.style.cssText = "font-size:10px;color:#8a9aaa;margin-bottom:6px;";
+      relName.style.cssText = "font-size:12px;color:#8a9aaa;margin-bottom:6px;";
       relName.textContent = _latestRelease.name;
 
       if (_latestRelease.body) {
         const notes = document.createElement("div");
         notes.style.cssText =
-          "font-size:9px;color:#4a6070;margin-bottom:8px;white-space:pre-wrap;max-height:80px;overflow:hidden;";
+          "font-size:13px;color:#4a6070;margin-bottom:8px;white-space:pre-wrap;max-height:80px;overflow:hidden;";
         notes.textContent = _latestRelease.body;
         updateStatusEl.appendChild(title);
         updateStatusEl.appendChild(relName);
@@ -512,7 +512,7 @@ export function buildSettingsTab(container) {
       link.href = _latestRelease.url;
       link.target = "_blank";
       link.style.cssText =
-        "font-size:10px;color:#785a28;text-decoration:underline;cursor:pointer;";
+        "font-size:12px;color:#785a28;text-decoration:underline;cursor:pointer;";
       link.textContent = "View release on GitHub";
       linkRow.appendChild(link);
       updateStatusEl.appendChild(linkRow);
@@ -535,10 +535,10 @@ export function buildSettingsTab(container) {
     "display:flex;gap:8px;align-items:center;margin-top:8px;";
   const checkBtn = document.createElement("button");
   checkBtn.className = "ci-btn-secondary";
-  checkBtn.style.cssText = "font-size:10px;padding:5px 12px;";
+  checkBtn.style.cssText = "font-size:12px;padding:5px 12px;";
   checkBtn.textContent = "Check now";
   const checkStatus = document.createElement("span");
-  checkStatus.style.cssText = "font-size:10px;color:#4a6070;";
+  checkStatus.style.cssText = "font-size:12px;color:#4a6070;";
 
   checkBtn.addEventListener("click", async () => {
     checkBtn.disabled = true;
@@ -570,7 +570,7 @@ export function buildSettingsTab(container) {
   const toggleRow = document.createElement("div");
   toggleRow.style.cssText =
     "display:flex;align-items:center;justify-content:space-between;margin-top:10px;";
-  toggleRow.innerHTML = `<span style="font-size:11px;color:#8a9aaa;">Enable WebSocket IDE Bridge</span>`;
+  toggleRow.innerHTML = `<span style="font-size:13px;color:#8a9aaa;">Enable WebSocket IDE Bridge</span>`;
 
   const bridgeToggle = makeToggle(state.bridgeEnabled, async (val) => {
     state.bridgeEnabled = val;
@@ -588,13 +588,13 @@ export function buildSettingsTab(container) {
   const portRow = document.createElement("div");
   portRow.style.cssText = `display:flex;align-items:center;justify-content:space-between;margin-top:12px; padding-left: 10px; transition: opacity 0.2s ease; ${state.bridgeEnabled ? "" : "opacity:0.3; pointer-events:none;"}`;
 
-  portRow.innerHTML = `<span style="font-size:10px;color:#4a6070;text-transform:uppercase;letter-spacing:0.05em;">Connection Port</span>`;
+  portRow.innerHTML = `<span style="font-size:12px;color:#4a6070;text-transform:uppercase;letter-spacing:0.05em;">Connection Port</span>`;
 
   const portInput = document.createElement("input");
   portInput.type = "number";
   portInput.className = "ci-input";
   portInput.style.cssText =
-    "width:80px; padding:6px 10px; font-size:11px; text-align:center; border-color: #1e2d3d;";
+    "width:80px; padding:6px 10px; font-size:13px; text-align:center; border-color: #1e2d3d;";
   portInput.value = state.bridgePort || 8765;
 
   portInput.addEventListener("change", async (e) => {
@@ -616,7 +616,7 @@ export function buildSettingsTab(container) {
 
   const dangerDesc = document.createElement("div");
   dangerDesc.style.cssText =
-    "font-size:10px;color:#3a5060;line-height:1.5;margin-top:6px;margin-bottom:12px;";
+    "font-size:12px;color:#3a5060;line-height:1.5;margin-top:6px;margin-bottom:12px;";
   dangerDesc.textContent =
     "Permanently deletes all saved CSS and settings from DataStore. The plugin will reload clean.";
   dangerSection.appendChild(dangerDesc);
@@ -626,7 +626,7 @@ export function buildSettingsTab(container) {
 
   const deleteBtn = document.createElement("button");
   deleteBtn.style.cssText =
-    "padding:7px 14px;font-family:inherit;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid #5a2828;color:#c84b4b;cursor:pointer;transition:background 0.15s;";
+    "padding:7px 14px;font-family:inherit;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:transparent;border:1px solid #5a2828;color:#c84b4b;cursor:pointer;transition:background 0.15s;";
   deleteBtn.textContent = "Delete All Saved Data";
   deleteBtn.addEventListener("mouseenter", () => {
     deleteBtn.style.background = "rgba(200,75,75,0.1)";
@@ -637,7 +637,7 @@ export function buildSettingsTab(container) {
 
   const deleteStatus = document.createElement("span");
   deleteStatus.style.cssText =
-    "font-size:10px;color:#4caf82;opacity:0;transition:opacity 0.2s;";
+    "font-size:12px;color:#4caf82;opacity:0;transition:opacity 0.2s;";
   deleteStatus.textContent = "Deleted";
 
   deleteBtn.addEventListener("click", async () => {
@@ -663,7 +663,7 @@ export function buildSettingsTab(container) {
 
   const aboutContent = document.createElement("div");
   aboutContent.style.cssText =
-    "font-size:10px;color:#3a5060;line-height:1.8;margin-top:8px;";
+    "font-size:12px;color:#3a5060;line-height:1.8;margin-top:8px;";
 
   const aboutLines = [
     ["Plugin:", "Snooze-CSS by Reformed Doge"],

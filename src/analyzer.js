@@ -1333,8 +1333,8 @@ export function buildAnalyzerTab(container) {
         <div class="ci-field" style="width:82px;">
           <div class="ci-label">Max depth</div>
           <div style="display:flex;align-items:center;gap:4px;">
-            <input type="range" class="ci-slider" id="az-depth" min="1" max="20" value="12" style="width:44px;">
-            <span id="az-depth-val" style="font-size:10px;color:#c8aa6e;min-width:16px;">12</span>
+            <input type="range" class="ci-slider" id="az-depth" min="1" max="100" value="15" style="width:44px;">
+            <span id="az-depth-val" style="font-size:10px;color:#c8aa6e;min-width:16px;">15</span>
           </div>
         </div>
         <div class="ci-field" style="width:auto;">
