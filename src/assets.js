@@ -593,6 +593,42 @@ function buildAssetRow(asset) {
   }
   methodRow.append(methodLabel, methodSelect);
 
+  // SIZING STRATEGY
+  const sizingRow = document.createElement("div");
+  sizingRow.style.cssText = "display:flex;gap:6px;align-items:center;";
+  const sizingLabel = document.createElement("span");
+  sizingLabel.style.cssText = "font-size:9px;color:#4a6070;width:50px;flex-shrink:0;";
+  sizingLabel.textContent = "Sizing:";
+  const sizingSelect = document.createElement("select");
+  sizingSelect.className = "ci-select";
+  sizingSelect.style.cssText = "font-size:10px;flex:1;min-width:0;";
+  
+  const sizingOptions = [
+    { label: "Auto / Computed", val: "auto" },
+    { label: "Contain", val: "contain" },
+    { label: "Cover", val: "cover" },
+    { label: "Stretch (100% 100%)", val: "100% 100%" },
+    { label: "Original (initial)", val: "initial" }
+  ];
+  
+  sizingOptions.forEach(opt => {
+    const o = document.createElement("option"); o.value = opt.val; o.textContent = opt.label;
+    sizingSelect.appendChild(o);
+  });
+  sizingRow.append(sizingLabel, sizingSelect);
+
+  const updateMethodVisibility = () => {
+    const method = methodSelect.value;
+    const prop = asset.prop;
+    if (method === "bg-direct" || method === "parent-after" || prop === "background-image" || prop === "-webkit-mask-image" || prop === "-webkit-mask") {
+       sizingRow.style.display = "flex";
+    } else {
+       sizingRow.style.display = "none";
+    }
+  };
+  methodSelect.addEventListener("change", updateMethodVisibility);
+  updateMethodVisibility();
+
   // INPUT ROW (With File Picker)
   const replaceRow = document.createElement("div");
   replaceRow.style.cssText = "display:flex;gap:4px;align-items:center;";
@@ -630,7 +666,8 @@ function buildAssetRow(asset) {
     const finalAsset = {
       ...asset,
       selector: selSelect.value,
-      strategyId: methodSelect.value
+      strategyId: methodSelect.value,
+      overrideBgSize: sizingSelect.value !== "auto" ? sizingSelect.value : null
     };
     appendCssToRaw(generateReplacementCSS(finalAsset, rep));
     switchTab("raw");
@@ -639,7 +676,7 @@ function buildAssetRow(asset) {
   btnRow.append(downloadBtn, sendBtn);
 
   // Build the main content
-  main.append(meta, urlEl, selRow, methodRow, replaceRow, btnRow);
+  main.append(meta, urlEl, selRow, methodRow, sizingRow, replaceRow, btnRow);
 
   // SUGGESTED EFFECTS (LAZY LOADED)
   const effectWrap = document.createElement("div");
@@ -666,13 +703,85 @@ function buildAssetRow(asset) {
     
     if (effectOpen && !effectLoaded) {
       effectLoaded = true;
-      effectBody.innerHTML = `<div style="text-align:center;padding:10px;color:#4a6070;">Detecting base color...</div>`;
+      effectBody.innerHTML = `<div style="text-align:center;padding:10px;color:#4a6070;">Analyzing element & detecting base color...</div>`;
       
+      // Run stacking context analysis NOW (lazy, on first open)
+      const stackCtx = analyzeStackingContext(asset.domNode);
+
       const isVideo = ["webm", "mp4", "ogg"].includes(ext);
       const baseRgb = await extractDominantColor(asset.url, isVideo);
       const baseHex = rgbToHexStr(baseRgb.r, baseRgb.g, baseRgb.b);
       
       effectBody.innerHTML = "";
+
+      // Stacking Context Info Panel 
+      const ctxPanel = document.createElement("div");
+      ctxPanel.style.cssText = "margin-bottom:8px;border:1px solid rgba(120,90,40,0.3);border-radius:2px;overflow:hidden;";
+
+      const ctxHeader = document.createElement("div");
+      ctxHeader.style.cssText = "display:flex;align-items:center;gap:5px;padding:4px 8px;background:rgba(120,90,40,0.08);font-size:9px;color:#c8aa6e;text-transform:uppercase;letter-spacing:0.05em;";
+
+      // Determine overall health indicator
+      const hasIssues = stackCtx.pseudoBefore && stackCtx.pseudoAfter;
+      const hasPseudoWarn = stackCtx.pseudoBefore || stackCtx.pseudoAfter;
+      const hasChildZWarn = stackCtx.childZIndexes.length > 0;
+      const hasSiblingZWarn = stackCtx.siblingZIndexes.length > 0 && stackCtx.filterCreatesContext;
+      const dot = hasIssues ? "🔴" : (hasPseudoWarn || hasChildZWarn || hasSiblingZWarn) ? "🟡" : "🟢";
+      ctxHeader.innerHTML = `<span>${dot}</span> <span>Stacking Context Analysis</span>`;
+      ctxPanel.appendChild(ctxHeader);
+
+      const ctxBody = document.createElement("div");
+      ctxBody.style.cssText = "padding:5px 8px;font-size:9px;color:#7a8a9a;line-height:1.7;background:rgba(0,0,0,0.15);";
+
+      // Filter-creates-context warning — most important, show first
+      if (stackCtx.filterCreatesContext) {
+        ctxBody.innerHTML += `<div style="color:#e0a030;margin-bottom:3px;padding:3px 5px;background:rgba(224,160,48,0.08);border-left:2px solid #e0a030;">⚠ Applying <code>filter</code> will create a new stacking context on this element. It may paint over or behind positioned siblings regardless of z-index.</div>`;
+      }
+
+      // Position row
+      const posOk = stackCtx.safeToAddRelative;
+      ctxBody.innerHTML += `<div><span style="color:#4a6070;">position:</span> <span style="color:${posOk ? "#4caf6e" : "#c8aa6e"};">${stackCtx.position}</span>${posOk ? " <span style=\"color:#4a6070;\">(✓ already non-static)</span>" : " <span style=\"color:#c8aa6e;\">(⚠ adding relative creates new context)</span>"}</div>`;
+
+      // z-index row
+      ctxBody.innerHTML += `<div><span style="color:#4a6070;">z-index:</span> <span style="color:#9ab;">${stackCtx.zIndex}</span></div>`;
+
+      // Pseudo occupancy rows
+      const beforeColor = stackCtx.pseudoBefore ? "#e07050" : "#4caf6e";
+      const afterColor  = stackCtx.pseudoAfter  ? "#e07050" : "#4caf6e";
+      ctxBody.innerHTML += `<div><span style="color:#4a6070;">::before:</span> <span style="color:${beforeColor};">${stackCtx.pseudoBefore ? "occupied ⚠" : "free ✓"}</span> &nbsp; <span style="color:#4a6070;">::after:</span> <span style="color:${afterColor};">${stackCtx.pseudoAfter ? "occupied ⚠" : "free ✓"}</span></div>`;
+
+      // Child z-index rows
+      if (stackCtx.childZIndexes.length > 0) {
+        const childStr = stackCtx.childZIndexes
+          .map(c => {
+            const label = c.el.id ? `#${c.el.id}` : (c.el.className ? `.${[...c.el.classList][0]}` : c.el.tagName.toLowerCase());
+            return `<span style="color:#c8aa6e;">${label}</span><span style="color:#4a6070;"> z:${c.zIndex}</span>`;
+          })
+          .join(" &nbsp; ");
+        ctxBody.innerHTML += `<div style="margin-top:2px;"><span style="color:#4a6070;">children with z-index:</span> ${childStr}</div>`;
+      }
+
+      // Sibling z-index rows — critical for filter stacking context issues
+      if (stackCtx.siblingZIndexes.length > 0) {
+        const sibStr = stackCtx.siblingZIndexes
+          .map(s => {
+            const label = s.el.id ? `#${s.el.id}` : (s.el.className ? `.${[...s.el.classList][0]}` : s.el.tagName.toLowerCase());
+            return `<span style="color:#c8aa6e;">${label}</span><span style="color:#4a6070;"> z:${s.zIndex}</span>`;
+          })
+          .join(" &nbsp; ");
+        const sibColor = stackCtx.filterCreatesContext ? "#e07050" : "#7a8a9a";
+        ctxBody.innerHTML += `<div style="margin-top:2px;"><span style="color:${sibColor};">positioned siblings${stackCtx.filterCreatesContext ? " ⚠" : ""}:</span> ${sibStr}</div>`;
+        if (stackCtx.filterCreatesContext) {
+          ctxBody.innerHTML += `<div style="color:#9a7a7a;font-size:8.5px;margin-top:2px;">Fix: add <code>z-index</code> to this element to control its paint order, or use isolate mode (::before) to contain the filter.</div>`;
+        }
+      }
+
+      if (hasIssues) {
+        ctxBody.innerHTML += `<div style="margin-top:3px;color:#e07050;">Both pseudo-elements are occupied. The isolate mode will use ::before but may conflict with existing styles.</div>`;
+      }
+
+      ctxPanel.appendChild(ctxBody);
+      effectBody.appendChild(ctxPanel);
       
       const controlsRow = document.createElement("div");
       controlsRow.style.cssText = "display:flex;gap:12px;margin-bottom:8px;align-items:center;flex-wrap:wrap;";
@@ -731,6 +840,18 @@ function buildAssetRow(asset) {
       isolateWrap.appendChild(isolateCheck);
       isolateWrap.appendChild(document.createTextNode("Apply to background only (preserve children)"));
       optionsRow.appendChild(isolateWrap);
+
+      const zFixWrap = document.createElement("label");
+      zFixWrap.style.cssText = "display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;color:#a0b4c8;";
+      const zFixCheck = document.createElement("input");
+      zFixCheck.type = "checkbox";
+      zFixCheck.style.accentColor = "#c8aa6e";
+      if (stackCtx.filterCreatesContext && stackCtx.hasSiblings) {
+         zFixCheck.checked = true;
+      }
+      zFixWrap.appendChild(zFixCheck);
+      zFixWrap.appendChild(document.createTextNode("Push behind siblings (z-index: -1)"));
+      optionsRow.appendChild(zFixWrap);
       
       const tag = asset.domNode?.tagName?.toLowerCase() || "";
       const isReplacedElement = tag === "img" || tag === "video" || tag === "source";
@@ -810,13 +931,87 @@ function buildAssetRow(asset) {
          const targetSelector = selSelect.value + videoSuffix;
          
          if (isolate) {
-            cssOut.value = `${comment}\n/* If the effect escapes the container, uncomment the position line below */\n${targetSelector} {\n  /* position: relative !important; */\n}\n${targetSelector}::before {\n  content: "" !important;\n  position: absolute !important;\n  inset: 0 !important;\n  background-image: inherit !important;\n  background-size: inherit !important;\n  background-repeat: inherit !important;\n  background-position: inherit !important;\n  filter: ${filterStr} !important;\n  pointer-events: none !important;\n  z-index: 0 !important;\n  border-radius: inherit !important;\n}\n${targetSelector} > * {\n z-index: 1 !important;\n}`;
+            // Smart isolate mode
+            // Choose which pseudo-element to use based on occupancy
+            let pseudo = "::before";
+            let pseudoWarn = "";
+            if (stackCtx.pseudoBefore && !stackCtx.pseudoAfter) {
+              pseudo = "::after";
+              pseudoWarn = `/* ℹ ::before is occupied — using ::after instead */\n`;
+            } else if (stackCtx.pseudoBefore && stackCtx.pseudoAfter) {
+              pseudoWarn = `/* ⚠ Both ::before and ::after are occupied on this element.\n   The rule below may conflict with existing pseudo-element styles.\n   Consider wrapping children in a dedicated element instead. */\n`;
+            }
+
+            // Decide whether to include position:relative
+            let posBlock = "";
+            let posWarn = "";
+            if (!stackCtx.safeToAddRelative) {
+              posBlock += `  position: relative !important;\n`;
+              if (stackCtx.childZIndexes.length > 0) {
+                const childList = stackCtx.childZIndexes
+                  .map(c => {
+                    const label = c.el.id ? `#${c.el.id}` : (c.el.className ? `.${[...c.el.classList][0]}` : c.el.tagName.toLowerCase());
+                    return `${label} (z:${c.zIndex})`;
+                  })
+                  .join(", ");
+                posWarn = `/* ⚠ position:relative will create a new stacking context.\n   Children with z-index detected: ${childList}\n   See child z-index rule below — uncomment & adjust if needed. */\n`;
+              }
+            }
+            
+            if (zFixCheck.checked) {
+               posBlock += `  z-index: -1 !important;\n`;
+            }
+
+            // Pick a safe z-index for the pseudo that stays BEHIND children
+            //    If children have explicit z-index, go below the minimum.
+            //    Default to -1 only if we NEED to be behind children; otherwise 0.
+            let pseudoZ;
+            let childZRule = "";
+            if (stackCtx.childZIndexes.length > 0) {
+              pseudoZ = (stackCtx.minChildZ !== null) ? stackCtx.minChildZ - 1 : -1;
+              // If pseudoZ is negative we need the parent to have overflow:visible (default) — warn if not
+              const needsChildRule = pseudoZ < 0;
+              const childZVal = (stackCtx.minChildZ !== null) ? stackCtx.minChildZ : 1;
+              childZRule = `${targetSelector} > * {\n  /* Uncomment if children disappear behind the pseudo-element: */\n  /* z-index: ${childZVal} !important; */\n}\n`;
+            } else {
+              pseudoZ = 0;
+            }
+
+            let parentBlock = "";
+            if (posBlock) {
+               parentBlock = `${targetSelector} {\n${posBlock}}\n`;
+            }
+
+            cssOut.value =
+              `${comment}\n` +
+              posWarn +
+              pseudoWarn +
+              parentBlock +
+              `${targetSelector}${pseudo} {\n` +
+              `  content: "" !important;\n` +
+              `  position: absolute !important;\n` +
+              `  inset: 0 !important;\n` +
+              `  background-image: inherit !important;\n` +
+              `  background-size: inherit !important;\n` +
+              `  background-repeat: inherit !important;\n` +
+              `  background-position: inherit !important;\n` +
+              `  filter: ${filterStr} !important;\n` +
+              `  pointer-events: none !important;\n` +
+              `  z-index: ${pseudoZ} !important;\n` +
+              `  border-radius: inherit !important;\n` +
+              `}\n` +
+              childZRule;
          } else {
-            cssOut.value = `${comment}\n${targetSelector} {\n  filter: ${filterStr} !important;\n}`;
+            let posBlock = "";
+            if (zFixCheck.checked) {
+               posBlock = `\n  z-index: -1 !important;`;
+            }
+            cssOut.value = `${comment}\n${targetSelector} {\n  filter: ${filterStr} !important;${posBlock}\n}`;
          }
       };
       
       modeSelect.addEventListener("change", updateFilter);
+      zFixCheck.addEventListener("change", updateFilter);
       baseInput.addEventListener("input", updateFilter);
       targetInput.addEventListener("input", updateFilter);
       selSelect.addEventListener("change", updateFilter);
@@ -887,6 +1082,20 @@ export function buildCompactAssetRow(asset, onAdd) {
     info.appendChild(hint);
   }
 
+  let sizeSelect = document.createElement("select");
+  sizeSelect.className = "ci-select";
+  sizeSelect.style.cssText = "font-size:9px; margin-top:2px; width:100%;";
+  [
+    { label: "Sizing: Auto", val: "auto" },
+    { label: "Sizing: Contain", val: "contain" },
+    { label: "Sizing: Cover", val: "cover" },
+    { label: "Sizing: Stretch", val: "100% 100%" }
+  ].forEach(opt => {
+    const o = document.createElement("option"); o.value = opt.val; o.textContent = opt.label;
+    sizeSelect.appendChild(o);
+  });
+  info.appendChild(sizeSelect);
+
   top.appendChild(thumb);
   top.appendChild(info);
 
@@ -912,6 +1121,7 @@ export function buildCompactAssetRow(asset, onAdd) {
     const rep = input.value.trim();
     if (!rep) return;
     asset.strategyId = sSelect ? sSelect.value : "default";
+    asset.overrideBgSize = sizeSelect.value !== "auto" ? sizeSelect.value : null;
     asset.isGlobal = false;
     const css = generateReplacementCSS(asset, rep);
     onAdd(css);
@@ -924,6 +1134,205 @@ export function buildCompactAssetRow(asset, onAdd) {
   wrap.appendChild(top);
   wrap.appendChild(bottom);
   return wrap;
+}
+
+// STACKING CONTEXT & SIZING ANALYSIS
+
+/**
+ * Inspects a DOM node for stacking context properties so CSS generation can
+ * avoid inadvertently reordering elements.
+ *
+ * Returns:
+ *   hasStackingContext  — node already forms a stacking context
+ *   position            — computed position value
+ *   zIndex              — computed z-index ("auto" or number)
+ *   safeToAddRelative   — true if position is already non-static (no new context created)
+ *   pseudoBefore        — true if ::before is already occupied (content !== "none")
+ *   pseudoAfter         — true if ::after is already occupied
+ *   childZIndexes       — array of { el, zIndex } for direct children with explicit z-index
+ *   minChildZ           — lowest integer z-index found among children (or null)
+ *   maxChildZ           — highest integer z-index found among children (or null)
+ */
+export function analyzeStackingContext(node) {
+  const result = {
+    hasStackingContext: false,
+    position: "static",
+    zIndex: "auto",
+    safeToAddRelative: false,
+    pseudoBefore: false,
+    pseudoAfter: false,
+    childZIndexes: [],
+    minChildZ: null,
+    maxChildZ: null,
+    // Siblings with explicit z-index — relevant because applying `filter` to this
+    // node creates a NEW stacking context on it, which can reorder it relative to siblings.
+    siblingZIndexes: [],
+    filterCreatesContext: false, // true if node doesn't already have a filter/stacking context
+  };
+
+  if (!node || node.nodeType !== 1) return result;
+
+  let cs;
+  try { cs = window.getComputedStyle(node); } catch { return result; }
+
+  result.position = cs.getPropertyValue("position") || "static";
+  const rawZ = cs.getPropertyValue("z-index");
+  result.zIndex = rawZ === "auto" ? "auto" : parseInt(rawZ, 10);
+
+  result.safeToAddRelative = result.position !== "static";
+
+  // A node is a stacking context if it has a non-auto z-index with non-static position,
+  // or triggers it via opacity<1, transform, filter, isolation, will-change, etc.
+  const opacity = parseFloat(cs.getPropertyValue("opacity"));
+  const transform = cs.getPropertyValue("transform");
+  const filter = cs.getPropertyValue("filter");
+  const isolation = cs.getPropertyValue("isolation");
+  const willChange = cs.getPropertyValue("will-change");
+
+  result.hasStackingContext =
+    (result.position !== "static" && result.zIndex !== "auto") ||
+    opacity < 1 ||
+    (transform && transform !== "none") ||
+    (filter && filter !== "none") ||
+    isolation === "isolate" ||
+    (willChange && (willChange.includes("transform") || willChange.includes("opacity") || willChange.includes("z-index")));
+
+  // If the node doesn't already have a stacking context, applying `filter` will CREATE one.
+  // This can reorder the node relative to its siblings even without touching z-index.
+  result.filterCreatesContext = !result.hasStackingContext;
+
+  // Pseudo-element occupancy
+  try {
+    const pBefore = window.getComputedStyle(node, "::before");
+    const cBefore = pBefore.getPropertyValue("content");
+    result.pseudoBefore = !!cBefore && cBefore !== "none" && cBefore !== '""' && cBefore !== "normal";
+  } catch {}
+  try {
+    const pAfter = window.getComputedStyle(node, "::after");
+    const cAfter = pAfter.getPropertyValue("content");
+    result.pseudoAfter = !!cAfter && cAfter !== "none" && cAfter !== '""' && cAfter !== "normal";
+  } catch {}
+
+  // Scan direct children for explicit z-index values
+  let minZ = null, maxZ = null;
+  for (const child of node.children) {
+    let ccs;
+    try { ccs = window.getComputedStyle(child); } catch { continue; }
+    const cPos = ccs.getPropertyValue("position");
+    const cZ = ccs.getPropertyValue("z-index");
+    if (cPos !== "static" && cZ !== "auto") {
+      const zNum = parseInt(cZ, 10);
+      if (!isNaN(zNum)) {
+        result.childZIndexes.push({ el: child, zIndex: zNum });
+        if (minZ === null || zNum < minZ) minZ = zNum;
+        if (maxZ === null || zNum > maxZ) maxZ = zNum;
+      }
+    }
+  }
+  result.minChildZ = minZ;
+  result.maxChildZ = maxZ;
+  
+  result.hasSiblings = false;
+
+  // Scan siblings for explicit z-index values.
+  // Critical for filter: applying filter to this node creates a new stacking context
+  // which can cause it to paint over/under positioned siblings unexpectedly.
+  if (node.parentElement) {
+    if (node.parentElement.children.length > 1) {
+       result.hasSiblings = true;
+    }
+    for (const sib of node.parentElement.children) {
+      if (sib === node) continue;
+      let scs;
+      try { scs = window.getComputedStyle(sib); } catch { continue; }
+      const sPos = scs.getPropertyValue("position");
+      const sZ   = scs.getPropertyValue("z-index");
+      // Include siblings that are non-static (even auto z-index matters in a stacking context)
+      if (sPos !== "static") {
+        const zNum = sZ === "auto" ? "auto" : parseInt(sZ, 10);
+        result.siblingZIndexes.push({ el: sib, zIndex: zNum });
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Inspects a node's sizing properties to recommend the correct background-size
+ * (and related props) when replacing an asset via CSS background tricks.
+ *
+ * Returns:
+ *   bgSize          — computed background-size (or "auto" if unset)
+ *   bgRepeat        — computed background-repeat
+ *   bgPosition      — computed background-position
+ *   objectFit       — computed object-fit (for replaced elements)
+ *   objectPosition  — computed object-position
+ *   nodeRect        — getBoundingClientRect() of the node
+ *   parentRect      — getBoundingClientRect() of the parent (or null)
+ *   isSizeConstrained — parent is smaller than node in either dimension
+ *   recommendedBgSize — best background-size string to use in replacement CSS
+ *   recommendedBgPos  — best background-position string
+ */
+export function analyzeAssetSizing(node, prop) {
+  const result = {
+    bgSize: "auto",
+    bgRepeat: "no-repeat",
+    bgPosition: "center",
+    objectFit: "fill",
+    objectPosition: "50% 50%",
+    nodeRect: null,
+    parentRect: null,
+    isSizeConstrained: false,
+    recommendedBgSize: "100% 100%",
+    recommendedBgPos: "center",
+  };
+
+  if (!node || node.nodeType !== 1) return result;
+
+  let cs;
+  try { cs = window.getComputedStyle(node); } catch { return result; }
+
+  result.bgSize = cs.getPropertyValue("background-size") || "auto";
+  result.bgRepeat = cs.getPropertyValue("background-repeat") || "no-repeat";
+  result.bgPosition = cs.getPropertyValue("background-position") || "center";
+  result.objectFit = cs.getPropertyValue("object-fit") || "fill";
+  result.objectPosition = cs.getPropertyValue("object-position") || "50% 50%";
+
+  try { result.nodeRect = node.getBoundingClientRect(); } catch {}
+  try {
+    if (node.parentElement) result.parentRect = node.parentElement.getBoundingClientRect();
+  } catch {}
+
+  if (result.nodeRect && result.parentRect) {
+    result.isSizeConstrained =
+      result.nodeRect.width > result.parentRect.width ||
+      result.nodeRect.height > result.parentRect.height;
+  }
+
+  // Derive best replacement background-size:
+  // For replaced elements (img/video), mirror their object-fit as background-size.
+  const tag = node.tagName?.toLowerCase() || "";
+  const isReplaced = tag === "img" || tag === "video" || tag === "source";
+
+  if (isReplaced) {
+    switch (result.objectFit) {
+      case "contain": result.recommendedBgSize = "contain"; break;
+      case "cover":   result.recommendedBgSize = "cover"; break;
+      case "none":    result.recommendedBgSize = "auto"; break;
+      case "scale-down": result.recommendedBgSize = "contain"; break;
+      default:        result.recommendedBgSize = "100% 100%"; break; // fill / default
+    }
+    // Mirror object-position → background-position
+    result.recommendedBgPos = result.objectPosition || "center";
+  } else {
+    // For CSS background properties, reuse the existing computed value if meaningful
+    const existing = result.bgSize;
+    result.recommendedBgSize = (existing && existing !== "auto") ? existing : "100% 100%";
+    result.recommendedBgPos = (result.bgPosition && result.bgPosition !== "0% 0%") ? result.bgPosition : "center";
+  }
+
+  return result;
 }
 
 // CSS GENERATION STRATEGIES
@@ -981,22 +1390,95 @@ export function generateReplacementCSS(asset, replacementUrl) {
   const sel = asset.selector;
   const tag = asset.domNode?.tagName?.toLowerCase() || "";
 
-  // 1. Handle HTML Attributes (src, poster)
+  // Handle HTML Attributes (src, poster)
   if (type === "img-src" || type === "video-src" || type === "uikit-video-src") {
     const videoSuffix = (type.includes("video") && tag !== "video" && tag !== "source") ? " video" : "";
     const target = sel + videoSuffix;
 
     if (method === "bg-direct") {
-      return `/* Asset: ${origUrl} (Background Trick) */\n${target} {\n\tobject-position: -9999px !important;\n\tbackground: ${rep} 0 0 / 100% 100% no-repeat !important;\n}\n`;
+      // Smart sizing: mirror object-fit → background-size so the replacement
+      // is contained/covered the same way the original was.
+      const sizing = analyzeAssetSizing(asset.domNode, asset.prop);
+      const bgSize = asset.overrideBgSize || sizing.recommendedBgSize;
+      const bgPos  = sizing.recommendedBgPos;
+
+      // Build a comment if we had to override the hardcoded fallback
+      const sizeNote = (!asset.overrideBgSize && bgSize !== "100% 100%")
+        ? `\n/* Sizing mirrored from object-fit:${sizing.objectFit} → background-size:${bgSize} */`
+        : "";
+
+      return `/* Asset: ${origUrl} (Background Trick) */${sizeNote}\n${target} {\n\tobject-position: -9999px !important;\n\tbackground-image: ${rep} !important;\n\tbackground-size: ${bgSize} !important;\n\tbackground-repeat: no-repeat !important;\n\tbackground-position: ${bgPos} !important;\n}\n`;
+
     } else if (method === "parent-after") {
-        return `/* Asset: ${origUrl} (Parent ::after) */\n${sel}:has(img) {\n\tposition: relative !important;\n}\n${sel} img {\n\topacity: 0 !important;\n}\n${sel}::after {\n\tcontent: ''; position: absolute; inset: 0;\n\tbackground: ${rep} center/cover no-repeat;\n}\n`;
+      // Stacking-context-aware: check if the parent already has a non-static
+      // position, and whether ::after is already occupied.
+      const parentEl = asset.domNode?.parentElement || null;
+      const parentCtx = parentEl ? analyzeStackingContext(parentEl) : null;
+
+      let positionLine = "";
+      let posNote = "";
+      if (!parentCtx || !parentCtx.safeToAddRelative) {
+        // Need to add position:relative — emit a warning if children have z-indexes
+        positionLine = "\tposition: relative !important;\n";
+        if (parentCtx?.childZIndexes?.length) {
+          const childList = parentCtx.childZIndexes
+            .map(c => `${c.el.tagName.toLowerCase()}${c.el.className ? "." + [...c.el.classList].join(".") : ""} (z:${c.zIndex})`)
+            .join(", ");
+          posNote = `\n/* ⚠ position:relative added — children with z-index detected: ${childList}.\n   Verify stacking order after applying. */`;
+        }
+      } else {
+        posNote = `\n/* ✓ position:${parentCtx.position} already set — no stacking context change. */`;
+      }
+
+      // ::after occupancy check
+      let pseudoNote = "";
+      if (parentCtx?.pseudoAfter) {
+        pseudoNote = `\n/* ⚠ ::after on this element is already occupied — you may need to use ::before instead,\n   or wrap the replacement in a child element. */`;
+      }
+      
+      const bgSize = asset.overrideBgSize || "cover";
+
+      return `/* Asset: ${origUrl} (Parent ::after) */${posNote}${pseudoNote}\n${sel}:has(img) {\n${positionLine}}\n${sel} img {\n\topacity: 0 !important;\n}\n${sel}::after {\n\tcontent: '' !important;\n\tposition: absolute !important;\n\tinset: 0 !important;\n\tbackground: ${rep} center / ${bgSize} no-repeat !important;\n\tpointer-events: none !important;\n}\n`;
+
     } else {
       // Content mode (Default)
       return `/* Asset: ${origUrl} (Content Swap) */\n${target} {\n\tcontent: ${rep} !important;\n}\n`;
     }
   }
 
-  // 2. Handle Standard CSS Properties (background-image, mask, etc.)
+  // Handle Standard CSS Properties (background-image, mask, etc.)
+  if (asset.prop === "background-image") {
+    // Read the computed sizing from the live element so the replacement image
+    // renders at the correct size/position — not browser default "auto 0% 0% repeat"
+    const sizing = analyzeAssetSizing(asset.domNode, "background-image");
+
+    // Only emit sizing props that are actually set to something meaningful —
+    // no point overriding if the element doesn't have them.
+    const bgSize = asset.overrideBgSize || (sizing.bgSize && sizing.bgSize !== "auto" ? sizing.bgSize : null);
+    const bgPos  = sizing.bgPosition && sizing.bgPosition !== "0% 0%" ? sizing.bgPosition : null;
+    const bgRep  = sizing.bgRepeat ? sizing.bgRepeat : null;
+
+    let sizeLines = "";
+    if (bgSize) sizeLines += `\n\tbackground-size: ${bgSize} !important;`;
+    if (bgPos)  sizeLines += `\n\tbackground-position: ${bgPos} !important;`;
+    if (bgRep)  sizeLines += `\n\tbackground-repeat: ${bgRep} !important;`;
+
+    const sizeComment = (!asset.overrideBgSize && sizeLines)
+      ? `\n/* Sizing locked from computed values — adjust if the image appears wrong */`
+      : "";
+
+    return `/* Asset: ${origUrl} */${sizeComment}\n${sel} {\n\t${asset.prop}: ${rep} !important;${sizeLines}\n}\n`;
+  }
+
+  if (asset.prop === "-webkit-mask-image" || asset.prop === "-webkit-mask") {
+     const maskSize = asset.overrideBgSize;
+     let extra = "";
+     if (maskSize) {
+        extra = `\n\t-webkit-mask-size: ${maskSize} !important;`;
+     }
+     return `/* Asset: ${origUrl} */\n${sel} {\n\t${asset.prop}: ${rep} !important;${extra}\n}\n`;
+  }
+
   return `/* Asset: ${origUrl} */\n${sel} {\n\t${asset.prop}: ${rep} !important;\n}\n`;
 }
 
