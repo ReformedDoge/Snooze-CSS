@@ -2211,8 +2211,32 @@ function buildBackgroundCustomizationRow() {
           </div>
         </div>
       </div>
-      
-      <div style="font-size:9px;color:#3a5060;margin-bottom:10px;">Use the dedicated Global Dim Controller section for theme-wide darkening. This background tool now focuses on image replacement only.</div>
+
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Overlay Color</div>
+          <div class="ci-color-pair">
+            <input class="ci-color-input" id="bc-dim-picker" type="color" value="#000000">
+            <input class="ci-input" id="bc-dim-text" type="text" value="#000000" style="width:70px;">
+          </div>
+        </div>
+        <div class="ci-field">
+          <div class="ci-label">Overlay Opacity (0 = no dim)</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="bc-dim-slider" class="ci-slider" min="0" max="0.95" step="0.05" value="0" style="width:60px;">
+            <input class="ci-input" id="bc-dim-opacity" type="text" value="0" style="width:45px;">
+          </div>
+        </div>
+      </div>
+      <div class="ci-inline-row" style="margin-bottom: 10px;">
+        <div class="ci-field">
+          <div class="ci-label">Background Blur (px)</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="bc-blur-slider" class="ci-slider" min="0" max="30" step="1" value="0" style="width:60px;">
+            <input class="ci-input" id="bc-blur-text" type="text" value="0" style="width:45px;">
+          </div>
+        </div>
+      </div>
 
       <div class="ci-label" style="margin-bottom:4px;">Screens to Replace:</div>
       <div id="bc-replace-screens" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
@@ -2437,6 +2461,19 @@ function buildBackgroundCustomizationRow() {
   effAlpha.addEventListener("change", syncEffectColor);
   effName.addEventListener("change", syncEffectColor);
   syncEffectColor();
+  const dimPicker = row.querySelector("#bc-dim-picker");
+  const dimText = row.querySelector("#bc-dim-text");
+  const dimSlider = row.querySelector("#bc-dim-slider");
+  const dimOpacity = row.querySelector("#bc-dim-opacity");
+  const bgBlurSlider = row.querySelector("#bc-blur-slider");
+  const bgBlurText = row.querySelector("#bc-blur-text");
+
+  dimPicker.addEventListener("input", () => (dimText.value = dimPicker.value));
+  dimText.addEventListener("input", () => { if (/^#[0-9a-f]{6}$/i.test(dimText.value)) dimPicker.value = dimText.value; });
+  dimSlider.addEventListener("input", () => (dimOpacity.value = dimSlider.value));
+  dimOpacity.addEventListener("input", () => { const v = parseFloat(dimOpacity.value); if (!Number.isNaN(v)) dimSlider.value = v; });
+  bgBlurSlider.addEventListener("input", () => (bgBlurText.value = bgBlurSlider.value));
+  bgBlurText.addEventListener("input", () => { const v = parseInt(bgBlurText.value); if (!Number.isNaN(v)) bgBlurSlider.value = v; });
 
   row.querySelector("#bc-effect-apply-btn").addEventListener("click", async () => {
     const s = getSettings();
@@ -2463,7 +2500,25 @@ function buildBackgroundCustomizationRow() {
       return;
     }
 
-    const currentBlur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sc-bg-blur')) || 0;
+    // Read new dim & blur values
+    const overlayColor = row.querySelector("#bc-dim-text").value.trim() || "#000000";
+    const overlayOp = parseFloat(row.querySelector("#bc-dim-opacity").value) || 0;
+    const blurPx = parseInt(row.querySelector("#bc-blur-text").value) || 0;
+
+    const hexToRgb = (hex) => {
+      const r = parseInt(hex.slice(1,3),16);
+      const g = parseInt(hex.slice(3,5),16);
+      const b = parseInt(hex.slice(5,7),16);
+      return `${r}, ${g}, ${b}`;
+    };
+
+    // Conditionally build the background-image rule
+    let bgImageRule = `url('${bgUrl}')`;
+    if (overlayOp > 0) {
+      const rgba = `rgba(${hexToRgb(overlayColor)}, ${overlayOp})`;
+      bgImageRule = `linear-gradient(${rgba}, ${rgba}), url('${bgUrl}')`;
+    }
+
     const isAll = row.querySelector("#rep-all").checked;
     const selectedReplaceIds = isAll
       ? replaceScreens.slice(1).map((s) => s.id)
@@ -2480,7 +2535,6 @@ function buildBackgroundCustomizationRow() {
     const START_MARKER = "/* === BC: BACKGROUND REPLACEMENT === */";
     const END_MARKER = "/* === END BC: BACKGROUND REPLACEMENT === */";
     const lines = [START_MARKER];
-    lines.push(`:root { --bc-custom-bg: url('${bgUrl}'); }`);
     lines.push(`body { overflow: hidden !important; }`);
     lines.push(`.lol-social-sidebar .alpha-version-panel { border-top: none !important; }`)
 
@@ -2506,30 +2560,28 @@ function buildBackgroundCustomizationRow() {
     }
 
     if (isAll) {
-      // ALL mode: apply ::before to the broad viewport roots correctly
-      const allTargets = [
-        "#rcp-fe-viewport-root"
-      ];
-      
+      const allTargets = ["#rcp-fe-viewport-root"];
       const selectors = allTargets.join(",\n");
       const beforeSelectors = allTargets.map(sel => sel + "::before").join(",\n");
 
       lines.push(`${selectors} {`);
       lines.push(`  position: relative !important;`);
-      if (currentBlur > 0) lines.push(`  isolation: isolate !important;`);
-      lines.push(`  overflow: hidden !important;`); // Vital to contain the blurred/expanded inset
+      if (blurPx > 0) lines.push(`  isolation: isolate !important;`);
+      lines.push(`  overflow: hidden !important;`);
       lines.push(`}`);
       
       lines.push(`${beforeSelectors} {`);
       lines.push(`  content: '' !important;`);
-      lines.push(`  background-image: linear-gradient(var(--sc-dim-overlay, rgba(0, 0, 0, 0.45)), var(--sc-dim-overlay, rgba(0, 0, 0, 0.45))), var(--bc-custom-bg) !important;`);
+      lines.push(`  background-image: ${bgImageRule} !important;`);
       lines.push(`  background-size: cover !important;`);
       lines.push(`  background-position: center center !important;`);
       lines.push(`  background-repeat: no-repeat !important;`);
+      lines.push(`  will-change: transform !important;`);
+      lines.push(`  transform: translateZ(0) !important;`);
       lines.push(`  position: absolute !important;`);
-      if (currentBlur > 0) {
-        lines.push(`  inset: calc(var(--sc-bg-blur, 0px) * -2) !important;`);
-        lines.push(`  filter: blur(var(--sc-bg-blur, 0px)) !important;`);
+      if (blurPx > 0) {
+        lines.push(`  inset: -${blurPx * 2}px !important;`);
+        lines.push(`  filter: blur(${blurPx}px) !important;`);
       } else {
         lines.push(`  inset: 0 !important;`);
       }
@@ -2540,7 +2592,6 @@ function buildBackgroundCustomizationRow() {
       lines.push(`}`);
       lines.push(``);
       
-      // Also clear native backgrounds so they don't show through
       const allTransparent = [
         "body", "html", ".parties-view", ".parties-background", ".parties-background-mask",
         ".parties-content", ".parties-lower-section", ".lol-social-sidebar", ".rcp-fe-viewport-sidebar",
@@ -2551,9 +2602,8 @@ function buildBackgroundCustomizationRow() {
         ".rcp-fe-lol-event-shop-application", ".event-shop-index", ".event-shop-page-header", ".event-shop-progression", ".event-shop-progression-info",
         ".postgame-header-section", ".postgame-champion-background-wrapper", ".rcp-fe-lol-tft-application-background",
         ".lobby-header-overlay", ".navbar-blur", ".navbar_backdrop",
-		".champion-select",  ".lol-loading-screen-container", ".rcp-fe-lol-game-in-progress", 
-        ".rcp-fe-lol-pre-end-of-game",  ".rcp-fe-lol-reconnect", ".rcp-fe-lol-waiting-for-stats", 
-        ".reconnect-container"
+        ".champion-select", ".lol-loading-screen-container", ".rcp-fe-lol-game-in-progress", 
+        ".rcp-fe-lol-pre-end-of-game", ".rcp-fe-lol-reconnect", ".rcp-fe-lol-waiting-for-stats", ".reconnect-container"
       ];
       lines.push(`${allTransparent.join(",\n")} {`);
       lines.push(`  background: transparent !important;`);
@@ -2583,19 +2633,21 @@ function buildBackgroundCustomizationRow() {
         parts.forEach((part) => {
           lines.push(`${part} {`);
           lines.push(`  position: relative !important;`);
-          if (currentBlur > 0) lines.push(`  isolation: isolate !important;`);
+          if (blurPx > 0) lines.push(`  isolation: isolate !important;`);
           lines.push(`  overflow: hidden !important;`);
           lines.push(`}`);
           lines.push(`${part}::before {`);
           lines.push(`  content: '' !important;`);
-          lines.push(`  background-image: linear-gradient(var(--sc-dim-overlay, rgba(0, 0, 0, 0.45)), var(--sc-dim-overlay, rgba(0, 0, 0, 0.45))), var(--bc-custom-bg) !important;`);
+          lines.push(`  background-image: ${bgImageRule} !important;`);
           lines.push(`  background-size: cover !important;`);
           lines.push(`  background-position: center center !important;`);
           lines.push(`  background-repeat: no-repeat !important;`);
+          lines.push(`  will-change: transform !important;`);
+          lines.push(`  transform: translateZ(0) !important;`);
           lines.push(`  position: absolute !important;`);
-          if (currentBlur > 0) {
-            lines.push(`  inset: calc(var(--sc-bg-blur, 0px) * -2) !important;`);
-            lines.push(`  filter: blur(var(--sc-bg-blur, 0px)) !important;`);
+          if (blurPx > 0) {
+            lines.push(`  inset: -${blurPx * 2}px !important;`);
+            lines.push(`  filter: blur(${blurPx}px) !important;`);
           } else {
             lines.push(`  inset: 0 !important;`);
           }
@@ -2638,7 +2690,6 @@ function buildBackgroundCustomizationRow() {
     replaceOrAppendBlock(lines.join("\n"), START_MARKER, END_MARKER);
     flashMessage(row.querySelector("#bc-flash"), "Background set!", "#4caf82");
   });
-  
   // Action: Remove
   row.querySelector("#bc-remove-btn").addEventListener("click", () => {
     const isAll = row.querySelector("#rem-all").checked;
