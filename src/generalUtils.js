@@ -6,6 +6,106 @@
  * @link https://github.com/ReformedDoge
  */
 
+// Debug is exposed via Utils (Utils.Debug)
+
+const _debugState = { enabled: false };
+function setDebugEnabled(v) { _debugState.enabled = !!v; }
+const Debug = {
+  setEnabled: setDebugEnabled,
+  log(...args) { if (!_debugState.enabled) return; console.log(...args); },
+  info(...args) { if (!_debugState.enabled) return; console.info(...args); },
+  warn(...args) { if (!_debugState.enabled) return; console.warn(...args); },
+  error(...args) { if (!_debugState.enabled) return; console.error(...args); }
+};
+
+const Toast = {
+    _ensureContainer() {
+        let container = document.getElementById('snooze-toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'snooze-toast-container';
+            Object.assign(container.style, {
+                position: 'fixed',
+                top: '24px',
+                left: '24px',
+                zIndex: '2147483647',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                pointerEvents: 'none'
+            });
+
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes snoozeToastSlideIn {
+                    from { transform: translateX(-120%); opacity: 0; filter: blur(4px); }
+                    to { transform: translateX(0); opacity: 1; filter: blur(0); }
+                }
+                @keyframes snoozeToastFadeOut {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(-20%); opacity: 0; filter: blur(2px); }
+                }
+                .snooze-toast {
+                    background: rgba(1, 10, 19, 0.9);
+                    border-left: 4px solid #0ac8b9;
+                    border-top: 1px solid rgba(255, 255, 255, 0.05);
+                    border-right: 1px solid rgba(255, 255, 255, 0.05);
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                    border-radius: 6px;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+                    backdrop-filter: blur(10px);
+                    color: #f0e6d2;
+                    padding: 12px 18px;
+                    font-family: var(--font-body), "Segoe UI", sans-serif;
+                    font-size: 13px;
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    animation: snoozeToastSlideIn 0.35s cubic-bezier(0.2, 0.85, 0.32, 1.2) forwards;
+                    transition: all 0.3s ease;
+                }
+                .snooze-toast.hiding {
+                    animation: snoozeToastFadeOut 0.3s forwards;
+                }
+            `;
+            document.head.appendChild(style);
+            document.body.appendChild(container);
+        }
+        return container;
+    },
+
+    show(message, type = 'success', duration = 3000) {
+        const container = this._ensureContainer();
+        const toast = document.createElement('div');
+        toast.className = 'snooze-toast';
+        
+        // Colors match Snooze styling
+        const color = type === 'success' ? '#0ac8b9' : (type === 'error' ? '#e84057' : '#c8aa6e');
+        toast.style.borderLeftColor = color;
+
+        // Custom SVGs based on type
+        const iconSvg = type === 'success' 
+            ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+            : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;">${iconSvg}</div>
+            <div style="font-weight:500;line-height:1.4;">${message}</div>
+        `;
+
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            toast.classList.add('hiding');
+            toast.addEventListener('animationend', () => toast.remove());
+        }, duration);
+    },
+
+    success(message, duration) { this.show(message, 'success', duration); },
+    error(message, duration)   { this.show(message, 'error', duration); },
+    info(message, duration)    { this.show(message, 'info', duration); }
+};
+
 /**
  * Smart DOM observer:
  * - Runs callbacks only for matching selectors
@@ -16,7 +116,7 @@
 function createSmartObserver(root = document.documentElement) {
     const registry = new Map(); // selector -> Set<{ callback, seen }>
     let scheduled = false;
-    let pendingNodes = [];
+    let pendingNodes = new Set();
     let observing = false;
 
     const observer = new MutationObserver((mutations) => {
@@ -24,7 +124,7 @@ function createSmartObserver(root = document.documentElement) {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
                 if (node.nodeType === Node.ELEMENT_NODE) {
-                    pendingNodes.push(node);
+                    pendingNodes.add(node);
                 }
             }
         }
@@ -36,7 +136,7 @@ function createSmartObserver(root = document.documentElement) {
             scheduled = false;
 
             const nodes = pendingNodes;
-            pendingNodes = [];
+            pendingNodes = new Set();
 
             for (const node of nodes) {
                 processNode(node);
@@ -57,7 +157,7 @@ function createSmartObserver(root = document.documentElement) {
         if (registry.size > 0 || !observing) return;
         observer.disconnect();
         observing = false;
-        pendingNodes = [];
+        pendingNodes = new Set();
         scheduled = false;
     }
 
@@ -90,7 +190,7 @@ function createSmartObserver(root = document.documentElement) {
         try {
             cb(el);
         } catch (e) {
-            console.error("SmartObserver error:", e);
+          Debug.error("SmartObserver error:", e);
         }
     }
 
@@ -127,7 +227,7 @@ function createSmartObserver(root = document.documentElement) {
             registry.clear();
             observer.disconnect();
             observing = false;
-            pendingNodes = [];
+            pendingNodes = new Set();
             scheduled = false;
         }
     };
@@ -139,47 +239,83 @@ const observer = createSmartObserver();
  * Ember Hook
  */
 
-const EmberHook = {
+const EmberHook = window.__SM_EmberHook || (window.__SM_EmberHook = {
   _rules: [],
   _installed: false,
   _wrappedMark: Symbol('SnoozeEmberWrapped'),
   _appliedRulesKey: '__snoozeAppliedRules',
+  _retroKey: '__sm_retro_applied',
 
   install(context) {
     if (this._installed) {
-      console.warn('[EmberHook] Already installed');
+      Debug.warn('[EmberHook] Already installed');
       return;
     }
     this._installed = true;
 
+    // Try sync Ember first (eager modules), fall back to async Promise (lazy modules).
     context.rcp.postInit('rcp-fe-ember-libs', (api) => {
       const emberLibs = api;
       if (!emberLibs || typeof emberLibs.getEmber !== 'function') {
-        console.warn('[EmberHook] rcp-fe-ember-libs has no getEmber');
+        Debug.warn('[EmberHook] rcp-fe-ember-libs has no getEmber');
         return;
       }
 
-      const target = emberLibs;
-      if (target[this._wrappedMark]) {
-        return;
-      }
-
-      const originalGetEmber = emberLibs.getEmber.bind(emberLibs);
-      emberLibs.getEmber = function(...args) {
-        const p = originalGetEmber(...args);
-        return Promise.resolve(p).then(Ember => {
+      const hookEmber = (Ember) => {
+        if (!Ember || !Ember.Component) return;
+        if (!emberLibs[this._wrappedMark]) {
           try {
             this._hookComponentExtend(Ember);
             this._hookServiceExtend(Ember);
+            Debug.log('[EmberHook] hooks installed');
           } catch (e) {
-            console.warn('[EmberHook] hookComponentExtend error:', e);
+            Debug.warn('[EmberHook] hook error:', e);
           }
-          return Ember;
-        });
-      }.bind(this);
+          emberLibs[this._wrappedMark] = true;
+        }
+      };
 
-      target[this._wrappedMark] = true;
+      // Sync path. catches eagerly-loaded component extends
+      const Ember = this._findEmberSync(emberLibs);
+      if (Ember) {
+        hookEmber(Ember);
+      }
+
+      // Async fallback. catches lazily-loaded components
+      Promise.resolve(emberLibs.getEmber()).then(Ember => hookEmber(Ember));
     }, true);
+  },
+
+  _findEmberSync(emberLibs) {
+    if (window.Ember && typeof window.Ember.Component?.extend === 'function' &&
+        typeof window.Ember.Service?.extend === 'function') {
+      return window.Ember;
+    }
+
+    for (const key of Object.getOwnPropertyNames(emberLibs)) {
+      const val = emberLibs[key];
+      if (val && val !== emberLibs.getEmber &&
+          typeof val.Component?.extend === 'function' &&
+          typeof val.Service?.extend === 'function') {
+        return val;
+      }
+    }
+
+    try {
+      const wpr = window.__webpack_require__;
+      if (wpr?.c) {
+        for (const id in wpr.c) {
+          const mod = wpr.c[id];
+          if (mod.exports &&
+              typeof mod.exports.Component?.extend === 'function' &&
+              typeof mod.exports.Service?.extend === 'function') {
+            return mod.exports;
+          }
+        }
+      }
+    } catch (e) {}
+
+    return null;
   },
 
   _wrapMethod(target, name, replacement) {
@@ -219,10 +355,15 @@ const EmberHook = {
 
     if (rule.mixin) {
       try {
-        const mixinObj = rule.mixin(Ember, extendArgs);
+        let mixinObj = rule.mixin(Ember, extendArgs);
+        // Runtime componentName filter: wrap init so only matching instances
+        // (by _debugContainerKey) execute the hook code.
+        if (rule.componentName && mixinObj && mixinObj.init) {
+          mixinObj.init = this._wrapInitWithNameCheck(mixinObj.init, rule.componentName);
+        }
         cur = cur.extend(mixinObj);
       } catch (e) {
-        console.warn('[EmberHook] mixin failed:', rule.name, e);
+        Debug.warn('[EmberHook] mixin failed:', rule.name, e);
       }
     }
 
@@ -239,7 +380,30 @@ const EmberHook = {
           proto[this._appliedRulesKey] = applied;
         }
       } catch (e) {
-        console.warn('[EmberHook] wraps failed:', rule.name, e);
+        Debug.warn('[EmberHook] wraps failed:', rule.name, e);
+      }
+    }
+
+    const hookList = rule.hookMethods || (rule.hookMethod ? [rule.hookMethod] : []);
+    if (hookList.length) {
+      try {
+        const proto = cur.proto();
+        const applied = (proto[this._appliedRulesKey] ??= new Set());
+        if (!applied.has(rule.name)) {
+          for (const hm of hookList) {
+            const original = proto[hm.name];
+            proto[hm.name] = function(...args) {
+              const proxyOriginal = (...callArgs) => {
+                if (typeof original === 'function') return original.apply(this, callArgs);
+              };
+              return hm.callback.call(this, Ember, proxyOriginal, ...args);
+            };
+          }
+          applied.add(rule.name);
+          proto[this._appliedRulesKey] = applied;
+        }
+      } catch (e) {
+        Debug.warn('[EmberHook] hookMethods failed:', rule.name, e);
       }
     }
 
@@ -249,7 +413,7 @@ const EmberHook = {
   _hookComponentExtend(Ember) {
     const Component = Ember.Component;
     if (!Component || typeof Component.extend !== 'function') {
-      console.warn('[EmberHook] Ember.Component.extend not found');
+      Debug.warn('[EmberHook] Ember.Component.extend not found');
       return;
     }
 
@@ -264,16 +428,12 @@ const EmberHook = {
 
       if (this._rules.length > 0) {
         for (const rule of this._rules) {
-          if (rule.type === 'service') continue;
+          if (rule.type === 'service' || rule.enabled === false) continue;
           const m = rule.matcher;
           let matched = false;
 
           if (typeof m === 'function') {
-            try {
-              matched = m(args);
-            } catch (e) {
-              matched = false;
-            }
+            try { matched = m(args); } catch(e) { matched = false; }
           } else if (m === '*') {
             matched = true;
           } else {
@@ -285,12 +445,33 @@ const EmberHook = {
             klass = this._applyRuleToClass(Ember, klass, args, rule);
           }
         }
+        if (klass) klass[this._retroKey] = true;
       }
 
       return klass;
     }.bind(this);
 
     target[this._wrappedMark] = true;
+  },
+
+  // Wraps init with runtime _debugContainerKey check; non-matching instances fall through to _super.
+  _wrapInitWithNameCheck(initFn, componentName) {
+    return function(...args) {
+      const debugKey = this._debugContainerKey;
+      let matchName = null;
+      if (debugKey) {
+        const afterColon = debugKey.split(':')[1];
+        if (afterColon) matchName = afterColon.split('@')[0];
+      }
+      if (matchName && matchName !== componentName) {
+        // Non-matching: just call _super (source init) without the hook code
+        if (typeof this._super === 'function') {
+          return this._super(...args);
+        }
+        return;
+      }
+      return initFn.apply(this, args);
+    };
   },
 
   _hookServiceExtend(Ember) {
@@ -306,12 +487,12 @@ const EmberHook = {
 
       if (this._rules.length > 0) {
         for (const rule of this._rules) {
-          if (rule.type !== 'service') continue;
+          if (rule.type !== 'service' || rule.enabled === false) continue;
           const m = rule.matcher;
           let matched = false;
 
           if (typeof m === 'function') {
-            try { matched = m(args); } catch (e) { matched = false; }
+            try { matched = m(args); } catch(e) { matched = false; }
           } else if (m === '*') {
             matched = true;
           } else {
@@ -323,6 +504,7 @@ const EmberHook = {
             klass = this._applyRuleToClass(Ember, klass, args, rule);
           }
         }
+        if (klass) klass[this._retroKey] = true;
       }
 
       return klass;
@@ -332,19 +514,23 @@ const EmberHook = {
   },
 
   registerRule(rule) {
+    if (rule.enabled === undefined) rule.enabled = true;
     const i = this._rules.findIndex(r => r.name === rule.name);
     if (i >= 0) {
       this._rules[i] = rule;
     } else {
       this._rules.push(rule);
     }
+    return () => {
+      const idx = this._rules.indexOf(rule);
+      if (idx >= 0) this._rules.splice(idx, 1);
+    };
   },
 
   getRulesCount() {
     return this._rules.length;
   },
-};
-window.SnoozeEmberHook = EmberHook;
+});
 
 
 // Serialize a request body for LCU HTTP methods.
@@ -371,7 +557,7 @@ const LCU = {
     }
     this._ctx = ctx;
     window.LCU = this;
-    console.log('[LCU] bindContext');
+    Debug.log('[LCU] bindContext');
     this._uris.forEach(u => this._subscribe(u));
   },
 
@@ -495,6 +681,13 @@ function settingsUtils(context, pluginConfig) {
   const categoryTitles = window.SnoozeCategoryTitles = window.SnoozeCategoryTitles || new Map();
   categoryTitles.set(pluginConfig.titleKey, pluginConfig.titleName);
 
+  // Shared registries written by every module, read by a single patch
+  const _smRoutes    = window.__SM_ROUTES    = window.__SM_ROUTES    || new Set();
+  const _smTemplates = window.__SM_TEMPLATES = window.__SM_TEMPLATES || new Map();
+
+  _smRoutes.add(pluginConfig.name);
+  _smTemplates.set(pluginConfig.name, pluginConfig);
+
   const strings = {
     'snooze_plugins':         'Plugins',
     'snooze_plugins_capital': 'PLUGINS',
@@ -535,41 +728,53 @@ function settingsUtils(context, pluginConfig) {
     window.__SM_EMBER = rcp;
     const em = await rcp.getEmber();
 
-    const nativeExtend = em.Router.extend;
-    em.Router.extend = function() {
-      const patchedRouter = nativeExtend.apply(this, arguments);
-      patchedRouter.map(function() { this.route(pluginConfig.name); });
-      return patchedRouter;
-    };
-
-    const appFactory = await rcp.getEmberApplicationFactory();
-    const nativeBuilder = appFactory.factoryDefinitionBuilder;
-    appFactory.factoryDefinitionBuilder = function() {
-      const def = nativeBuilder.apply(this, arguments);
-      const nativeBuild = def.build;
-      def.build = function() {
-        if (this.getName() === "rcp-fe-lol-settings") {
-          this.addTemplate(
-            pluginConfig.name,
-            em.HTMLBars.template({
-              id: pluginConfig.name,
-              block: JSON.stringify({
-                statements: [
-                  ["open-element", "lol-uikit-scrollable", []],
-                  ["static-attr", "class", pluginConfig.class],
-                  ["flush-element"],
-                  ["close-element"]
-                ],
-                locals: [], named: [], yields: [], blocks: [], hasPartials: false
-              }),
-              meta: {}
-            })
-          );
-        }
-        return nativeBuild.apply(this, arguments);
+    // Router patch.  install once, route map reads from shared registry
+    if (!em.Router.__snoozePatched) {
+      em.Router.__snoozePatched = true;
+      const nativeExtend = em.Router.extend;
+      em.Router.extend = function() {
+        const patchedRouter = nativeExtend.apply(this, arguments);
+        patchedRouter.map(function() {
+          _smRoutes.forEach(name => this.route(name));
+        });
+        return patchedRouter;
       };
-      return def;
-    };
+    }
+
+    // App factory patch. install once, template build reads from shared registry
+    const appFactory = await rcp.getEmberApplicationFactory();
+    if (!appFactory.__snoozePatched) {
+      appFactory.__snoozePatched = true;
+      const nativeBuilder = appFactory.factoryDefinitionBuilder;
+      appFactory.factoryDefinitionBuilder = function() {
+        const def = nativeBuilder.apply(this, arguments);
+        const nativeBuild = def.build;
+        def.build = function() {
+          if (this.getName() === "rcp-fe-lol-settings") {
+            _smTemplates.forEach((cfg) => {
+              this.addTemplate(
+                cfg.name,
+                em.HTMLBars.template({
+                  id: cfg.name,
+                  block: JSON.stringify({
+                    statements: [
+                      ["open-element", "lol-uikit-scrollable", []],
+                      ["static-attr", "class", cfg.class],
+                      ["flush-element"],
+                      ["close-element"]
+                    ],
+                    locals: [], named: [], yields: [], blocks: [], hasPartials: false
+                  }),
+                  meta: {}
+                })
+              );
+            });
+          }
+          return nativeBuild.apply(this, arguments);
+        };
+        return def;
+      };
+    }
   });
 
   context.rcp.postInit("rcp-fe-lol-l10n", async (rcp) => {
@@ -583,18 +788,146 @@ function settingsUtils(context, pluginConfig) {
   if (LCU && !LCU._ctx) LCU.bind(context);
 }
 
+function createToggleRow(labelText, checked, onChange) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.width = '100%';
+    row.style.gap = '10px';
+
+    const origin = document.createElement('lol-uikit-flat-checkbox');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !!checked;
+    if (checkbox.checked) origin.classList.add('checked');
+    checkbox.setAttribute('slot', 'input');
+
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    label.setAttribute('slot', 'label');
+
+    checkbox.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const nextValue = checkbox.checked;
+        origin.classList.toggle('checked', nextValue);
+        if (typeof onChange === 'function') onChange(nextValue);
+    });
+
+    origin.appendChild(checkbox);
+    origin.appendChild(label);
+    row.appendChild(origin);
+    return row;
+}
+
+function createSelectRow(labelText, options, value, onChange) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    label.style.color = '#a09b8c';
+    label.style.fontSize = '12px';
+    label.style.whiteSpace = 'nowrap';
+
+    const select = document.createElement('select');
+    select.style.background = '#111';
+    select.style.color = '#f0e6d2';
+    select.style.border = '1px solid #3e2e13';
+    select.style.padding = '5px 8px';
+    select.style.borderRadius = '2px';
+    select.style.outline = 'none';
+    select.style.fontSize = '13px';
+
+    (options || []).forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        if (String(o.value) === String(value)) opt.selected = true;
+        select.appendChild(opt);
+    });
+
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', () => {
+        if (typeof onChange === 'function') onChange(select.value);
+    });
+
+    row.appendChild(label);
+    row.appendChild(select);
+    return row;
+}
+
+function createNumberInputRow(labelText, value, min, max, step, onChange) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    label.style.color = '#a09b8c';
+    label.style.fontSize = '12px';
+    label.style.whiteSpace = 'nowrap';
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(value);
+    input.style.background = '#111';
+    input.style.border = '1px solid #3e2e13';
+    input.style.color = '#f0e6d2';
+    input.style.padding = '5px 8px';
+    input.style.borderRadius = '2px';
+    input.style.outline = 'none';
+    input.style.width = '70px';
+    input.style.fontSize = '13px';
+
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('change', () => {
+        let v = parseFloat(input.value);
+        if (!isFinite(v)) v = min;
+        v = Math.min(max, Math.max(min, v));
+        v = Math.round(v * 10) / 10;
+        input.value = String(v);
+        if (typeof onChange === 'function') onChange(v);
+    });
+
+    row.appendChild(label);
+    row.appendChild(input);
+    return row;
+}
+
+function createInfoBox(htmlContent) {
+    const box = document.createElement('div');
+    box.style.padding = '10px';
+    box.style.background = 'rgba(0,0,0,0.2)';
+    box.style.border = '1px solid rgba(255,255,255,0.05)';
+    box.style.borderRadius = '4px';
+    box.style.color = '#8a9aaa';
+    box.style.fontSize = '12px';
+    box.style.lineHeight = '1.5';
+    box.innerHTML = htmlContent;
+    return box;
+}
+
 // Shared Assets & Match History Helpers
 
 const Assets = {
   champs: {}, items: {}, spells: {}, perks: {}, queues: [],
   _initPromise: null,
   _initialized: false,
+  _maxRetries: 15,
   async init() {
     if (!LCU) return;
+    if (this._initialized) return;
     if (this._initPromise) return this._initPromise;
 
     this._initPromise = (async () => {
-      try {
+      const attemptFetch = async () => {
         const [c, i, s, p, ps, q] = await Promise.all([
           LCU.get('/lol-game-data/assets/v1/champion-summary.json').catch(()=>[]),
           LCU.get('/lol-game-data/assets/v1/items.json').catch(()=>[]),
@@ -603,26 +936,50 @@ const Assets = {
           LCU.get('/lol-game-data/assets/v1/perkstyles.json').catch(()=>({styles:[]})),
           LCU.get('/lol-game-queues/v1/queues').catch(()=>[])
         ]);
-        if (Array.isArray(c) && c.length > 0) c.forEach(x => this.champs[x.id] = x);
-        if (Array.isArray(i) && i.length > 0) i.forEach(x => this.items[x.id] = x);
-        if (Array.isArray(s) && s.length > 0) s.forEach(x => this.spells[x.id] = x);
-        if (Array.isArray(p) && p.length > 0) p.forEach(x => this.perks[x.id] = x);
-        if (ps && Array.isArray(ps.styles) && ps.styles.length > 0) ps.styles.forEach(x => this.perks[x.id] = x);
-        if (Array.isArray(q) && q.length > 0) {
-          this.queues = q.filter(x => x.name && x.id).map(x => ({
-            id: x.id, name: x.shortName || x.name, tag: 'q_' + x.id
-          })).sort((a, b) => a.name.localeCompare(b.name));
-        }
-        
-        this._initialized = true;
+        return { c, i, s, p, ps, q };
+      };
 
-        if (this.queues.length === 0 || Object.keys(this.champs).length === 0) {
-          this._initPromise = null;
-          this._initialized = false;
+      for (let attempt = 1; attempt <= this._maxRetries; attempt++) {
+        try {
+          const { c, i, s, p, ps, q } = await attemptFetch();
+
+          if (Array.isArray(c) && c.length > 0) c.forEach(x => this.champs[x.id] = x);
+          if (Array.isArray(i) && i.length > 0) i.forEach(x => this.items[x.id] = x);
+          if (Array.isArray(s) && s.length > 0) s.forEach(x => this.spells[x.id] = x);
+          if (Array.isArray(p) && p.length > 0) p.forEach(x => this.perks[x.id] = x);
+          if (ps && Array.isArray(ps.styles) && ps.styles.length > 0) ps.styles.forEach(x => this.perks[x.id] = x);
+          if (Array.isArray(q) && q.length > 0) {
+            this.queues = q.filter(x => x.name && x.id).map(x => ({
+              ...x, tag: 'q_' + x.id
+            })).sort((a, b) => {
+              const catOrder = { PvP: 0, VersusAi: 1, Custom: 2 };
+              const ac = catOrder[a.category] ?? 3;
+              const bc = catOrder[b.category] ?? 3;
+              if (ac !== bc) return ac - bc;
+              return a.name.localeCompare(b.name);
+            });
+          }
+
+          if (this.queues.length > 0 && Object.keys(this.champs).length > 0) {
+            this._initialized = true;
+            Debug.log(`[Assets] Initialized (${Object.keys(this.champs).length} champs, ${this.queues.length} queues)`);
+            return;
+          }
+
+          if (attempt < this._maxRetries) {
+            const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+            Debug.log(`[Assets] Retry ${attempt}/${this._maxRetries} in ${delay}ms (game-data may not be ready)`);
+            await new Promise(r => setTimeout(r, delay));
+          }
+        } catch (e) {
+          if (attempt >= this._maxRetries) {
+            Debug.log('[Assets] Failed after max retries', e);
+            throw e;
+          }
+          const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+          Debug.log(`[Assets] Retry ${attempt}/${this._maxRetries} in ${delay}ms (error: ${e.message})`);
+          await new Promise(r => setTimeout(r, delay));
         }
-      } catch (e) {
-        this._initPromise = null;
-        this._initialized = false;
       }
     })();
 
@@ -637,63 +994,113 @@ const Assets = {
   }
 };
 
-let sgpContextCache = null;
-let sgpContextCacheExpiresAt = 0;
-let sgpContextPromise = null;
+const sgpContextCache = new Map();
+const sgpContextPromise = new Map();
 
-async function getSgpContext() {
+async function getSgpContext(overrideRegion = null) {
     const now = Date.now();
-    if (sgpContextCache && now < sgpContextCacheExpiresAt) return sgpContextCache;
-    if (sgpContextPromise) return sgpContextPromise;
+    const cacheKey = overrideRegion || 'LOCAL';
+    const cached = sgpContextCache.get(cacheKey);
+    
+    if (cached && now < cached.expiresAt) return cached;
+    if (sgpContextPromise.has(cacheKey)) return sgpContextPromise.get(cacheKey);
 
-    sgpContextPromise = (async () => {
-    const entToken = await LCU.get('/entitlements/v1/token');
-    let serverCode = 'EUW';
-    if (entToken && entToken.issuer) {
-      const externalMatch = entToken.issuer.match(/https?:\/\/([a-z0-9]+)-[a-z0-9]+\.(?:lol\.)?sgp\.pvp\.net/);
-      if (externalMatch) serverCode = externalMatch[1].toUpperCase();
-    }
-    if (serverCode === 'EUW1') serverCode = 'EUW';
-    if (serverCode === 'NA1' || serverCode === 'NA') serverCode = 'NA1';
+    const promise = (async () => {
+        const entToken = await LCU.get('/entitlements/v1/token').catch(() => null);
+        let serverCode = 'EUW';
+        
+        if (overrideRegion) {
+            serverCode = overrideRegion;
+        } else {
+            const regionLocale = await LCU.get('/riotclient/region-locale').catch(() => null);
+            if (regionLocale && regionLocale.region) {
+                serverCode = regionLocale.region.toUpperCase();
+            } else if (entToken && entToken.issuer) {
+                const externalMatch = entToken.issuer.match(/https?:\/\/([a-z0-9]+)-[a-z0-9]+\.(?:lol\.)?sgp\.pvp\.net/);
+                if (externalMatch) serverCode = externalMatch[1].toUpperCase();
+            }
+            
+            // Normalize regions to SGP routing codes
+            if (serverCode === 'EUW1') serverCode = 'EUW';
+            if (serverCode === 'NA' || serverCode === 'NA1') serverCode = 'NA1';
+            if (serverCode === 'EUNE') serverCode = 'EUN1';
+            if (serverCode === 'TR') serverCode = 'TR1';
+            if (serverCode === 'JP') serverCode = 'JP1';
+            if (serverCode === 'BR') serverCode = 'BR1';
+            if (serverCode === 'OCE') serverCode = 'OC1';
+            if (serverCode === 'LAN') serverCode = 'LA1';
+            if (serverCode === 'LAS') serverCode = 'LA2';
+            if (serverCode === 'RU') serverCode = 'RU';
+        }
 
-    const SGP_SERVERS = {
-      TW2: 'https://apse1-red.pp.sgp.pvp.net', SG2: 'https://apse1-red.pp.sgp.pvp.net',
-      PH2: 'https://apse1-red.pp.sgp.pvp.net', VN2: 'https://apse1-red.pp.sgp.pvp.net',
-      TH2: 'https://apse1-red.pp.sgp.pvp.net', JP1: 'https://apne1-red.pp.sgp.pvp.net',
-      KR:  'https://apne1-red.pp.sgp.pvp.net', NA1: 'https://usw2-red.pp.sgp.pvp.net',
-      BR1: 'https://usw2-red.pp.sgp.pvp.net', LA1: 'https://usw2-red.pp.sgp.pvp.net',
-      LA2: 'https://usw2-red.pp.sgp.pvp.net', OC1: 'https://apse1-red.pp.sgp.pvp.net',
-      EUW: 'https://euc1-red.pp.sgp.pvp.net', TR1: 'https://euc1-red.pp.sgp.pvp.net',
-      RU:  'https://euc1-red.pp.sgp.pvp.net', PBE: 'https://usw2-red.pp.sgp.pvp.net'
-    };
+        const SGP_SERVERS = {
+            TW2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://tw2-red.lol.sgp.pvp.net' },
+            SG2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://sg2-red.lol.sgp.pvp.net' },
+            PH2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://ph2-red.lol.sgp.pvp.net' },
+            VN2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://vn2-red.lol.sgp.pvp.net' },
+            TH2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://th2-red.lol.sgp.pvp.net' },
+            JP1:  { matchHistory: 'https://apne1-red.pp.sgp.pvp.net', common: 'https://jp-red.lol.sgp.pvp.net' },
+            KR:   { matchHistory: 'https://apne1-red.pp.sgp.pvp.net', common: 'https://kr-red.lol.sgp.pvp.net' },
+            NA1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://na-red.lol.sgp.pvp.net' },
+            BR1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://br-red.lol.sgp.pvp.net' },
+            LA1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://lan-red.lol.sgp.pvp.net' },
+            LA2:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://las-red.lol.sgp.pvp.net' },
+            PBE:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://pbe-red.lol.sgp.pvp.net' },
+            OC1:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://oce-red.lol.sgp.pvp.net' },
+            EUW:  { matchHistory: 'https://euc1-red.pp.sgp.pvp.net', common: 'https://euw-red.lol.sgp.pvp.net' },
+            EUN1: { matchHistory: 'https://euc1-red.pp.sgp.pvp.net', common: 'https://eune-red.lol.sgp.pvp.net' },
+            TR1:  { matchHistory: 'https://euc1-red.pp.sgp.pvp.net', common: 'https://tr-red.lol.sgp.pvp.net' },
+            RU:   { matchHistory: 'https://euc1-red.pp.sgp.pvp.net', common: 'https://ru-red.lol.sgp.pvp.net' }
+        };
 
-    let sgpBase = SGP_SERVERS[serverCode];
-    if (!sgpBase && entToken && entToken.issuer && entToken.issuer.includes('.qq.com')) {
-      const tencentMatch = entToken.issuer.match(/https?:\/\/([a-z0-9]+)(?:-[a-z0-9]+)*\.lol\.qq\.com/);
-      if (tencentMatch) {
-        const tCode = tencentMatch[1];
-        if (tCode.startsWith('hn')) sgpBase = `https://${tCode}-k8s-sgp.lol.qq.com:21019`;
-        else sgpBase = `https://${tCode}-sgp.lol.qq.com:21019`;
-      }
-    }
-    if (!sgpBase) sgpBase = 'https://euc1-red.pp.sgp.pvp.net';
+        let matchHistoryBase = '';
+        let commonBase = '';
 
-    sgpContextCache = { accessToken: entToken.accessToken, sgpBase };
-    sgpContextCacheExpiresAt = now + 5 * 60 * 1000;
-    return sgpContextCache;
+        const endpoints = SGP_SERVERS[serverCode];
+        if (endpoints) {
+            matchHistoryBase = endpoints.matchHistory;
+            commonBase = endpoints.common;
+        } else if (entToken && entToken.issuer && entToken.issuer.includes('.qq.com')) {
+            const tencentMatch = entToken.issuer.match(/https?:\/\/([a-z0-9]+)(?:-[a-z0-9]+)*\.lol\.qq\.com/);
+            if (tencentMatch) {
+                const tCode = tencentMatch[1];
+                if (tCode.startsWith('hn') || tCode.startsWith('bgp')) {
+                    matchHistoryBase = `https://${tCode}-k8s-sgp.lol.qq.com:21019`;
+                    commonBase = `https://${tCode}-k8s-sgp.lol.qq.com:21019`;
+                } else {
+                    matchHistoryBase = `https://${tCode}-sgp.lol.qq.com:21019`;
+                    commonBase = `https://${tCode}-sgp.lol.qq.com:21019`;
+                }
+            }
+        }
+
+        if (!matchHistoryBase) matchHistoryBase = 'https://euc1-red.pp.sgp.pvp.net';
+        if (!commonBase) commonBase = 'https://euw-red.lol.sgp.pvp.net';
+
+        // sgpBase acts as an alias for matchHistoryBase to ensure older code doesn't break
+        const context = { 
+            accessToken: entToken?.accessToken, 
+            sgpBase: matchHistoryBase, 
+            matchHistoryBase, 
+            commonBase,
+            expiresAt: now + 5 * 60 * 1000
+        };
+        sgpContextCache.set(cacheKey, context);
+        return context;
     })();
 
+    sgpContextPromise.set(cacheKey, promise);
     try {
-        return await sgpContextPromise;
+        return await promise;
     } finally {
-        sgpContextPromise = null;
+        sgpContextPromise.delete(cacheKey);
     }
 }
 
-async function getSgpMatchHistory(puuid, startIndex = 0, count = 15, tag = '') {
+async function getSgpMatchHistory(puuid, startIndex = 0, count = 20, tag = '', overrideRegion = null) {
     if (!LCU) return null;
     try {
-        const { accessToken, sgpBase } = await getSgpContext();
+        const { accessToken, sgpBase } = await getSgpContext(overrideRegion);
 
         let url = `${sgpBase}/match-history-query/v1/products/lol/player/${puuid}/SUMMARY?startIndex=${startIndex}&count=${count}`;
         if (tag) url += `&tag=${tag}`;
@@ -702,8 +1109,8 @@ async function getSgpMatchHistory(puuid, startIndex = 0, count = 15, tag = '') {
         if (!resp.ok) throw new Error('SGP Error: ' + resp.status);
         return resp.json();
     } catch(err) {
-        console.error('SGP Match History Error:', err);
-        return null;
+      Debug.error('SGP Match History Error:', err);
+      return null;
     }
 }
 
@@ -773,12 +1180,26 @@ const FetchHook = {
         this.install();
         if (!this._reqHooks.has(pattern)) this._reqHooks.set(pattern, []);
         this._reqHooks.get(pattern).push(callback);
+        return () => {
+            const hooks = this._reqHooks.get(pattern);
+            if (!hooks) return;
+            const idx = hooks.indexOf(callback);
+            if (idx !== -1) hooks.splice(idx, 1);
+            if (hooks.length === 0) this._reqHooks.delete(pattern);
+        };
     },
 
     hookRes(pattern, callback) {
         this.install();
         if (!this._resHooks.has(pattern)) this._resHooks.set(pattern, []);
         this._resHooks.get(pattern).push(callback);
+        return () => {
+            const hooks = this._resHooks.get(pattern);
+            if (!hooks) return;
+            const idx = hooks.indexOf(callback);
+            if (idx !== -1) hooks.splice(idx, 1);
+            if (hooks.length === 0) this._resHooks.delete(pattern);
+        };
     }
 };
 
@@ -868,12 +1289,26 @@ const XhrHook = {
         this.install();
         if (!this._reqHooks.has(pattern)) this._reqHooks.set(pattern, []);
         this._reqHooks.get(pattern).push(callback);
+        return () => {
+            const hooks = this._reqHooks.get(pattern);
+            if (!hooks) return;
+            const idx = hooks.indexOf(callback);
+            if (idx !== -1) hooks.splice(idx, 1);
+            if (hooks.length === 0) this._reqHooks.delete(pattern);
+        };
     },
 
     hookRes(pattern, callback) {
         this.install();
         if (!this._resHooks.has(pattern)) this._resHooks.set(pattern, []);
         this._resHooks.get(pattern).push(callback);
+        return () => {
+            const hooks = this._resHooks.get(pattern);
+            if (!hooks) return;
+            const idx = hooks.indexOf(callback);
+            if (idx !== -1) hooks.splice(idx, 1);
+            if (hooks.length === 0) this._resHooks.delete(pattern);
+        };
     }
 };
 
@@ -912,6 +1347,13 @@ const WSHook = {
     hook(pattern, callback) {
         if (!this._hooks.has(pattern)) this._hooks.set(pattern, []);
         this._hooks.get(pattern).push(callback);
+        return () => {
+            const hooks = this._hooks.get(pattern);
+            if (!hooks) return;
+            const idx = hooks.indexOf(callback);
+            if (idx !== -1) hooks.splice(idx, 1);
+            if (hooks.length === 0) this._hooks.delete(pattern);
+        };
     }
 };
 
@@ -1020,12 +1462,112 @@ const Store = {
     }
 };
 
+const Panic = {
+    _callbacks: new Set(),
+    _installed: false,
+
+    install() {
+        if (this._installed) return;
+        this._installed = true;
+
+        if (Store.get('global', 'panicKey') === undefined) {
+            Store.set('global', 'panicKey', 'F2');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const key = Store.get('global', 'panicKey') || 'F2';
+            if (e.key.toLowerCase() === key.toLowerCase() && this._callbacks.size > 0) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                this._callbacks.forEach(cb => {
+                    try { cb(); } catch(err) {}
+                });
+
+                Toast.success('Auto Actions Cancelled');
+            }
+        });
+    },
+
+    register(callback) {
+        this.install();
+        this._callbacks.add(callback);
+        return () => {
+            this._callbacks.delete(callback);
+        };
+    }
+};
+
+function createHotkeyRow(labelText, currentKey, onChange, descriptionText) {
+    const container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.width = '100%';
+    container.style.marginTop = '10px';
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.width = '100%';
+    row.style.gap = '10px';
+
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    Object.assign(label.style, { color: '#f0e6d2', fontSize: '13px' });
+
+    const btn = document.createElement('button');
+    btn.textContent = currentKey || 'Unbound';
+    Object.assign(btn.style, {
+        background: '#111', color: '#c8aa6e', border: '1px solid #3e2e13',
+        padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', minWidth: '80px',
+        fontSize: '12px', fontWeight: 'bold'
+    });
+
+    let listening = false;
+    btn.addEventListener('click', () => {
+        if (listening) return;
+        listening = true;
+        btn.textContent = 'Press a key...';
+        btn.style.color = '#f0e6d2';
+
+        const handler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            let newKey = e.key;
+            if (newKey === ' ') newKey = 'Space';
+            document.removeEventListener('keydown', handler);
+            listening = false;
+            btn.textContent = newKey;
+            btn.style.color = '#c8aa6e';
+            onChange(newKey);
+        };
+        document.addEventListener('keydown', handler);
+    });
+
+    row.appendChild(label);
+    row.appendChild(btn);
+    container.appendChild(row);
+
+    if (descriptionText) {
+        const desc = document.createElement('div');
+        desc.textContent = descriptionText;
+        Object.assign(desc.style, { color: '#8a9aaa', fontSize: '12px', marginTop: '6px', lineHeight: '1.4' });
+        container.appendChild(desc);
+    }
+
+    return container;
+}
+
 export const Utils = {
     DOM: { createSmartObserver, observer },
     Hooks: { Ember: EmberHook, Fetch: FetchHook, Xhr: XhrHook, WS: WSHook },
+	Debug,
     LCU,
     Store,
-    Settings: { inject: settingsUtils },
+    Panic,
+	Toast, 
+    Settings: { inject: settingsUtils, createToggleRow, createSelectRow, createNumberInputRow, createInfoBox, createHotkeyRow },
     GameData: { Assets, getSgpContext, getSgpMatchHistory }
 };
 export default Utils;

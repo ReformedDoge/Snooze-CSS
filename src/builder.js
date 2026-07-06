@@ -2463,6 +2463,7 @@ function buildBackgroundCustomizationRow() {
       return;
     }
 
+    const currentBlur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sc-bg-blur')) || 0;
     const isAll = row.querySelector("#rep-all").checked;
     const selectedReplaceIds = isAll
       ? replaceScreens.slice(1).map((s) => s.id)
@@ -2507,14 +2508,7 @@ function buildBackgroundCustomizationRow() {
     if (isAll) {
       // ALL mode: apply ::before to the broad viewport roots correctly
       const allTargets = [
-        "#rcp-fe-viewport-root", 
-        ".champion-select", 
-        ".lol-loading-screen-container",
-        ".rcp-fe-lol-game-in-progress", 
-        ".rcp-fe-lol-pre-end-of-game", 
-        ".rcp-fe-lol-reconnect", 
-        ".rcp-fe-lol-waiting-for-stats", 
-        ".reconnect-container"
+        "#rcp-fe-viewport-root"
       ];
       
       const selectors = allTargets.join(",\n");
@@ -2522,7 +2516,7 @@ function buildBackgroundCustomizationRow() {
 
       lines.push(`${selectors} {`);
       lines.push(`  position: relative !important;`);
-      lines.push(`  isolation: isolate !important;`);
+      if (currentBlur > 0) lines.push(`  isolation: isolate !important;`);
       lines.push(`  overflow: hidden !important;`); // Vital to contain the blurred/expanded inset
       lines.push(`}`);
       
@@ -2533,12 +2527,16 @@ function buildBackgroundCustomizationRow() {
       lines.push(`  background-position: center center !important;`);
       lines.push(`  background-repeat: no-repeat !important;`);
       lines.push(`  position: absolute !important;`);
-      lines.push(`  inset: calc(var(--sc-bg-blur, 0px) * -2) !important;`); 
+      if (currentBlur > 0) {
+        lines.push(`  inset: calc(var(--sc-bg-blur, 0px) * -2) !important;`);
+        lines.push(`  filter: blur(var(--sc-bg-blur, 0px)) !important;`);
+      } else {
+        lines.push(`  inset: 0 !important;`);
+      }
       lines.push(`  z-index: -1 !important;`);
       lines.push(`  opacity: 1 !important;`);
       lines.push(`  visibility: visible !important;`);
       lines.push(`  pointer-events: none !important;`);
-      lines.push(`  filter: blur(var(--sc-bg-blur, 0px)) !important;`);
       lines.push(`}`);
       lines.push(``);
       
@@ -2552,7 +2550,10 @@ function buildBackgroundCustomizationRow() {
         ".champ-select-bg-darken", ".stats-backdrop", ".match-details-root", ".cdp-backdrop-component",
         ".rcp-fe-lol-event-shop-application", ".event-shop-index", ".event-shop-page-header", ".event-shop-progression", ".event-shop-progression-info",
         ".postgame-header-section", ".postgame-champion-background-wrapper", ".rcp-fe-lol-tft-application-background",
-        ".lobby-header-overlay", ".navbar-blur", ".navbar_backdrop"
+        ".lobby-header-overlay", ".navbar-blur", ".navbar_backdrop",
+		".champion-select",  ".lol-loading-screen-container", ".rcp-fe-lol-game-in-progress", 
+        ".rcp-fe-lol-pre-end-of-game",  ".rcp-fe-lol-reconnect", ".rcp-fe-lol-waiting-for-stats", 
+        ".reconnect-container"
       ];
       lines.push(`${allTransparent.join(",\n")} {`);
       lines.push(`  background: transparent !important;`);
@@ -2582,7 +2583,7 @@ function buildBackgroundCustomizationRow() {
         parts.forEach((part) => {
           lines.push(`${part} {`);
           lines.push(`  position: relative !important;`);
-          lines.push(`  isolation: isolate !important;`);
+          if (currentBlur > 0) lines.push(`  isolation: isolate !important;`);
           lines.push(`  overflow: hidden !important;`);
           lines.push(`}`);
           lines.push(`${part}::before {`);
@@ -2592,12 +2593,16 @@ function buildBackgroundCustomizationRow() {
           lines.push(`  background-position: center center !important;`);
           lines.push(`  background-repeat: no-repeat !important;`);
           lines.push(`  position: absolute !important;`);
-          lines.push(`  inset: calc(var(--sc-bg-blur, 0px) * -2) !important;`);
+          if (currentBlur > 0) {
+            lines.push(`  inset: calc(var(--sc-bg-blur, 0px) * -2) !important;`);
+            lines.push(`  filter: blur(var(--sc-bg-blur, 0px)) !important;`);
+          } else {
+            lines.push(`  inset: 0 !important;`);
+          }
           lines.push(`  z-index: -1 !important;`);
           lines.push(`  opacity: 1 !important;`);
           lines.push(`  visibility: visible !important;`);
           lines.push(`  pointer-events: none !important;`);
-          lines.push(`  filter: blur(var(--sc-bg-blur, 0px)) !important;`);
           lines.push(`}`);
         });
         
@@ -2809,7 +2814,7 @@ function buildActivityCenterRow() {
 
   row.innerHTML = `
     <div class="ci-generic-title" style="color:#f0e6d3; font-size:13px; margin-bottom: 6px;">Home / Activity Center</div>
-    <div class="ci-generic-desc" style="margin-bottom: 12px;">Use the pasted theme behavior by default: transparent activity surfaces, hidden background art, and hover-to-reveal tabs, with full-hide only as an optional extra.</div>
+    <div class="ci-generic-desc" style="margin-bottom: 12px;">Transparent activity surfaces, hidden background art, and hover-to-reveal tabs, with full-hide only as an optional extra.</div>
     
     <div style="display:flex;flex-direction:column;gap:8px;">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -3404,7 +3409,7 @@ function buildPlayerIdentityRow() {
 
   row.querySelector("#pi-srv-remove-border").addEventListener("click", () => {
     const flash = row.querySelector("#pi-srv-flash");
-    Utils.LCU.put("/lol-regalia/v2/current-summoner/regalia", { preferredCrestType: "prestige", preferredBannerType: "blank" })
+    Utils.LCU.put("/lol-regalia/v2/current-summoner/regalia", { preferredCrestType: "prestige", preferredBannerType: "blank", selectedPrestigeCrest: 22 })
     .then(() => {
         flashMessage(flash, "Border removed!", "#4caf82");
     }).catch((e) => {
