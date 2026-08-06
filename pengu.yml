@@ -1,0 +1,16 @@
+id: snooze-css
+name: Snooze CSS
+description: Theme loader and developer toolkit — visual builder, element inspector and raw CSS editor.
+version: 1.3.0
+
+repo: https://github.com/nomi-san/Snooze-CSS
+
+author:
+  name: SnoozeFest
+  github: ReformedDoge
+
+theme: true
+tags: [theme, css, devtools]
+
+install:
+  release: "Snooze-CSS-*.zip"
