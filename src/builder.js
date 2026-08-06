@@ -2578,6 +2578,8 @@ function buildBackgroundCustomizationRow() {
       lines.push(`  background-repeat: no-repeat !important;`);
       lines.push(`  will-change: transform !important;`);
       lines.push(`  transform: translateZ(0) !important;`);
+      lines.push(`  backface-visibility: hidden !important;`);
+      lines.push(`  -webkit-backface-visibility: hidden !important;`);
       lines.push(`  position: absolute !important;`);
       if (blurPx > 0) {
         lines.push(`  inset: -${blurPx * 2}px !important;`);
@@ -2644,6 +2646,8 @@ function buildBackgroundCustomizationRow() {
           lines.push(`  background-repeat: no-repeat !important;`);
           lines.push(`  will-change: transform !important;`);
           lines.push(`  transform: translateZ(0) !important;`);
+          lines.push(`  backface-visibility: hidden !important;`);
+          lines.push(`  -webkit-backface-visibility: hidden !important;`);
           lines.push(`  position: absolute !important;`);
           if (blurPx > 0) {
             lines.push(`  inset: -${blurPx * 2}px !important;`);
