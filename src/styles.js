@@ -116,7 +116,7 @@ export const STYLES = `
       min-width: 400px;
       min-height: 200px;
       background: #0a1428;
-      border: 1px solid #785a28;
+      border: 2px solid #785a28;
       border-radius: 2px;
       box-shadow: 0 24px 80px rgba(0,0,0,0.85);
       display: flex;

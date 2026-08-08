@@ -21,8 +21,20 @@ export function load() {
   loadSettings().then((settings) => {
     applyWindowEffect(settings.windowEffect);
   });
-  // Check for updates if enabled by the user
-  checkForUpdates(); 
+  // Run the update check once the client UI shell is fully loaded.
+  const runUpdateCheck = (path) => {
+    console.log(`[Snooze-CSS] Update check: ${path}`);
+    checkForUpdates();
+  };
+  const rcp = window.rcp;
+  if (rcp && typeof rcp.whenReady === "function") {
+    rcp.whenReady("rcp-fe-lol-social").then(
+      () => runUpdateCheck("rcp-fe-lol-social ready"),
+      () => runUpdateCheck("rcp-fe-lol-social rejected"),
+    );
+  } else {
+    runUpdateCheck("no rcp available (immediate)");
+  } 
 
   // Initialize shadow tracking
   initShadowRootManager();

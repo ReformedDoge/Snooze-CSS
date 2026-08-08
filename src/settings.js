@@ -1,4 +1,5 @@
 // Settings state
+import Utils from "./generalUtils.js";
 import { Storage } from "./storage.js";
 import { makeSection, makeToggle } from "./utils.js";
 import { CATALOG } from "./catalog.js";
@@ -275,6 +276,13 @@ export async function checkForUpdates(force = false) {
 
     // Update the UI badge if the modal is open
     if (_updateBadgeCallback) _updateBadgeCallback(_latestRelease);
+
+    if (_latestRelease) {
+      Utils.Toast.warning(
+        `Snooze-CSS update available: v${_latestRelease.version} — check Settings > Updates!`,
+        { duration: 10000, closable: true, position: "bottom-right" },
+      );
+    }
   } catch (err) {
     console.warn("[Snooze-CSS] Update check failed:", err);
   } finally {
