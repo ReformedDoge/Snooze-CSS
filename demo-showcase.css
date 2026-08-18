@@ -436,7 +436,7 @@ body::before {
 .ticker-button {
 	transform: scale(0.5) !important;
 	position: relative;
-	left: 115%;
+	left: 145%;
 }
 /* == END NAVBAR PLAY BUTTON OFFSET == */
 
