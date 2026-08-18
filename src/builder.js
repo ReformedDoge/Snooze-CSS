@@ -2322,8 +2322,8 @@ function buildBackgroundCustomizationRow() {
           </select>
         </div>
         <div class="ci-field">
-          <div class="ci-label">Computed Tint</div>
-          <input type="text" id="bc-effect-color" class="ci-input" value="${initEffect.color}" readonly>
+          <div class="ci-label">Computed Tint <span id="bc-effect-color-badge" style="display:none;font-size:8px;color:#80c8a0;border:1px solid rgba(100,200,150,0.4);border-radius:8px;padding:1px 5px;margin-left:4px;vertical-align:middle;">custom</span></div>
+          <input type="text" id="bc-effect-color" class="ci-input" value="${initEffect.color}">
         </div>
       </div>
 
@@ -2445,21 +2445,36 @@ function buildBackgroundCustomizationRow() {
   const effBaseText = row.querySelector("#bc-effect-base-text");
   const effAlpha = row.querySelector("#bc-effect-alpha");
   const effColor = row.querySelector("#bc-effect-color");
+  const effColorBadge = row.querySelector("#bc-effect-color-badge");
   const effMaterial = row.querySelector("#bc-effect-material");
   const effHint = row.querySelector("#bc-effect-hint");
+  let effColorManual = initEffect.colorManual === true;
+  const renderEffColorState = () => {
+    effColorBadge.style.display = effColorManual ? "inline" : "none";
+    effColor.style.borderColor = effColorManual ? "rgba(100,200,150,0.5)" : "";
+  };
   const syncEffectColor = () => {
     const base = effBaseText.value.trim() || effBasePicker.value || "#ff0000";
     if (/^#[0-9a-f]{6}$/i.test(base)) effBasePicker.value = base;
-    effColor.value = composeEffectColor(base, effAlpha.value);
+    if (!effColorManual) effColor.value = composeEffectColor(base, effAlpha.value);
     effHint.textContent = getWindowEffectHint(effName.value);
+    renderEffColorState();
+  };
+  const resumeAutoColor = () => {
+    effColorManual = false;
+    syncEffectColor();
   };
   effBasePicker.addEventListener("input", () => {
     effBaseText.value = effBasePicker.value;
-    syncEffectColor();
+    resumeAutoColor();
   });
-  effBaseText.addEventListener("input", syncEffectColor);
-  effAlpha.addEventListener("change", syncEffectColor);
+  effBaseText.addEventListener("input", resumeAutoColor);
+  effAlpha.addEventListener("change", resumeAutoColor);
   effName.addEventListener("change", syncEffectColor);
+  effColor.addEventListener("input", () => {
+    effColorManual = true;
+    renderEffColorState();
+  });
   syncEffectColor();
   const dimPicker = row.querySelector("#bc-dim-picker");
   const dimText = row.querySelector("#bc-dim-text");
@@ -2483,6 +2498,10 @@ function buildBackgroundCustomizationRow() {
       colorBase: effBaseText.value.trim() || effBasePicker.value || "#ff0000",
       alpha: effAlpha.value,
       color: effColor.value,
+      colorManual:
+        effColorManual &&
+        (/^#[0-9a-f]{8}$/i.test(effColor.value.trim()) ||
+          /^#[0-9a-f]{4}$/i.test(effColor.value.trim())),
       material: effMaterial.value,
     };
     s.blurEnabled = s.windowEffect.enabled && s.windowEffect.name === "blurbehind";

@@ -31,6 +31,7 @@ const defaults = {
     alpha: "10",
     color: "#ff000010",
     material: "none",
+    colorManual: false,
   },
   selectorConfig: {
     ids: true,
@@ -64,26 +65,50 @@ export function normalizeWindowEffect(effect = {}, legacy = {}) {
       ? color
       : defaults.windowEffect.color;
 
-  const colorBase =
-    effect.colorBase ||
-    (normalizedColor.length === 9
-      ? normalizedColor.slice(0, 7)
-      : normalizedColor.length === 5
-        ? "#" +
+  // A manually typed "Computed Tint" (custom override).
+  const colorManual =
+    effect.colorManual === true &&
+    (/^#[0-9a-f]{8}$/i.test(normalizedColor) || /^#[0-9a-f]{4}$/i.test(normalizedColor));
+
+  let colorBase;
+  let alpha;
+  if (colorManual) {
+    colorBase =
+      normalizedColor.length === 9
+        ? normalizedColor.slice(0, 7)
+        : "#" +
           normalizedColor[1] +
           normalizedColor[1] +
           normalizedColor[2] +
           normalizedColor[2] +
           normalizedColor[3] +
-          normalizedColor[3]
-        : defaults.windowEffect.colorBase);
-  const alpha =
-    effect.alpha ||
-    (normalizedColor.length === 9
-      ? normalizedColor.slice(7, 9)
-      : normalizedColor.length === 5
-        ? normalizedColor.slice(4, 5).repeat(2)
-        : defaults.windowEffect.alpha);
+          normalizedColor[3];
+    alpha =
+      normalizedColor.length === 9
+        ? normalizedColor.slice(7, 9)
+        : normalizedColor.slice(4, 5).repeat(2);
+  } else {
+    colorBase =
+      effect.colorBase ||
+      (normalizedColor.length === 9
+        ? normalizedColor.slice(0, 7)
+        : normalizedColor.length === 5
+          ? "#" +
+            normalizedColor[1] +
+            normalizedColor[1] +
+            normalizedColor[2] +
+            normalizedColor[2] +
+            normalizedColor[3] +
+            normalizedColor[3]
+          : defaults.windowEffect.colorBase);
+    alpha =
+      effect.alpha ||
+      (normalizedColor.length === 9
+        ? normalizedColor.slice(7, 9)
+        : normalizedColor.length === 5
+          ? normalizedColor.slice(4, 5).repeat(2)
+          : defaults.windowEffect.alpha);
+  }
 
   return {
     enabled: effect.enabled !== undefined ? effect.enabled : legacyEnabled,
@@ -92,6 +117,7 @@ export function normalizeWindowEffect(effect = {}, legacy = {}) {
     alpha: alpha.toUpperCase(),
     color: `${colorBase}${alpha.toUpperCase()}`,
     material: effect.material || "none",
+    colorManual,
   };
 }
 
